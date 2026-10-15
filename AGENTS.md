@@ -50,9 +50,18 @@ to run it, the timing tests, adding an adjustment).
   the same call. (Architecture 3, Batch.)
 - **Injected directories.** `PresetStore(directory:)`,
   `SidecarStore(folder:)`, `Library(rememberFolder:)`, `ExportQueue`'s
-  `Worker` and `remember:`, `Thumbnails`' decoder and renderer. Every test points them at
-  a temporary directory and never at a user folder or UserDefaults; the app
-  alone passes the real ones. (Testing, Injected directories.)
+  `Worker` and `remember:`, `Thumbnails`' decoder and renderer, `PhotosAccess` (the
+  `PhotoKitClient`, the sidecar and originals directories). Every test
+  points them at a temporary directory and never at a user folder or
+  UserDefaults; the app alone passes the real ones. (Testing, Injected
+  directories.)
+- **PhotoKit only through `PhotoKitClient`** (`Photos.swift`). No `PHAsset`
+  outside `PhotoKitLive`; nothing fetches before `PhotosAuthorization.canRead`;
+  `requestAuthorization` is called from the sheet's Allow button alone,
+  never at launch and never from a test (the real tests `XCTSkip` unless
+  already authorized). Originals are copied once into the Caches directory
+  and read from there; the library is never written to. (Architecture 2,
+  PhotosSource.)
 - **Photo ids are the URLs `Library.scan` returns** (symlinks resolved:
   `/var/...` comes back as `/private/var/...`). Key recipes by those ids,
   never by a URL you built yourself. (Features, Grid.)

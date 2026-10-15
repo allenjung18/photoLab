@@ -97,8 +97,14 @@ enum ImageLoading {
 /// (`withTaskCancellationHandler` cancels the detached handle) and the decode
 /// or render body checks it at its start: a cell scrolled past before its
 /// turn costs nothing, and a result that finishes for a cancelled request is
-/// not cached. The class itself is immutable (`decode`, `render` and the
-/// cache are `let`), so the shared instance is safe to use from any task.
+/// not cached. The cache, `render` and the injected decoder are `let`; the
+/// one mutable field, `source`, sits behind a lock, so the shared instance
+/// is safe to use from any task.
+///
+/// Without an injected decoder (the app's `shared`), the plain entry of a
+/// `.file` id is an ImageIO downsample and that of an `.asset` id is asked
+/// of `source`, the open `PhotoSource` (`Library.open` sets it): one cache,
+/// one decode path per kind of id, never a second cache for a Photos album.
 final class Thumbnails: @unchecked Sendable {
     typealias Decoder = @Sendable (PhotoID, Int) -> NSImage?
     /// The chain over a cached plain thumbnail: `Renderer.shared.render` at
@@ -133,22 +139,37 @@ final class Thumbnails: @unchecked Sendable {
     static let shared = Thumbnails()
     static let pixelSize = 480
 
-    private let decode: Decoder
+    private let decode: Decoder?
     private let render: Render
     private let cache: NSCache<CacheKey, NSImage> = {
         let c = NSCache<CacheKey, NSImage>()
         c.countLimit = 3000
         return c
     }()
+    private let sourceLock = NSLock()
+    private var openSource: (any PhotoSource)?
 
-    /// `decode` is `ImageLoading.downsampled` in the app (a file's ImageIO
-    /// downsample; the `FolderSource` thumbnail) and `render` is
-    /// `Renderer.shared.render` over the cached base; tests inject ones that
-    /// count, block or report what they saw.
-    init(decode: @escaping Decoder = { ImageLoading.downsampled($0, maxPixelSize: $1) },
+
+    /// The source `.asset` ids decode through when no decoder is injected.
+    var source: (any PhotoSource)? {
+        get { sourceLock.lock(); defer { sourceLock.unlock() }; return openSource }
+        set { sourceLock.lock(); defer { sourceLock.unlock() }; openSource = newValue }
+    }
+
+    /// `decode` nil is the app's rule above (ImageIO for a file, the open
+    /// source for an asset) and `render` is `Renderer.shared.render` over the
+    /// cached base; tests inject ones that count, block or report what they
+    /// saw.
+    init(decode: Decoder? = nil,
          render: @escaping Render = { Renderer.shared.render(CIImage(cgImage: $0), recipe: $1)?.image }) {
         self.decode = decode
         self.render = render
+    }
+
+    private func produce(_ id: PhotoID, _ pixelSize: Int) -> NSImage? {
+        if let decode { return decode(id, pixelSize) }
+        if let url = id.fileURL { return ImageLoading.downsampled(url, maxPixelSize: pixelSize) }
+        return source?.thumbnail(for: id, maxPixelSize: pixelSize)
     }
 
     func cached(_ key: Key) -> NSImage? { cache.object(forKey: CacheKey(key)) }
@@ -180,9 +201,8 @@ final class Thumbnails: @unchecked Sendable {
     private func plain(_ id: PhotoID) async -> NSImage? {
         let key = Key(id)
         if let hit = cached(key) { return hit }
-        let decode = decode
         let pixelSize = Thumbnails.pixelSize
-        guard let image = await detached({ decode(id, pixelSize) }) else { return nil }
+        guard let image = await detached({ self.produce(id, pixelSize) }) else { return nil }
         cache.setObject(image, forKey: CacheKey(key))
         return image
     }

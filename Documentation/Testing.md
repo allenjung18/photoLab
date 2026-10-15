@@ -13,10 +13,12 @@ with `@testable import PhotoLab`.
 The filter is a regular expression over `Class/test`. Build with Xcode
 selected (README, Run): the Command Line Tools toolchain cannot build the
 SwiftUI target. A green run prints the executed count with its failures and
-skips; one test skips by design (the real-RAW timing, below), and a timed
-render gate that misses on a swamped box skips rather than fails (Load
-sensitivity, below). The timed tests print a `BENCH` line with their numbers
-beside the verdict; read it, not only the pass.
+skips; three tests skip by design (the real-RAW timing, below, and the two
+real-PhotoKit tests in `PhotosTests`, which run only in a process that is
+already authorized for Photos), and a timed render gate that misses on a
+swamped box skips rather than fails (Load sensitivity, below). The timed
+tests print a `BENCH` line with their numbers beside the verdict; read it,
+not only the pass.
 
 ## What each file proves
 
@@ -55,6 +57,32 @@ beside the verdict; read it, not only the pass.
   through `FolderSource` with its sidecars at `.photolab/<relative
   path>.json`, the two namings map ids to files, and `PhotoID` round trips
   through JSON and keys one thumbnail cache.
+- `PhotosTests.swift` — `PhotosSource` behind `FakePhotoKit`, a complete
+  in-memory `PhotoKitClient` (status, albums, assets, a 4 px thumbnail that
+  can be held on a semaphore, an original that can be held or made to
+  fail, every call counted): nothing is fetched before access is allowed
+  (`PhotosBrowser` lists no albums, `photos()` throws
+  `PhotosError.notAuthorized`, `Library.open(album:access:)` is refused,
+  no thumbnail is asked) and `PhotosBrowser.requestAccess` is the one
+  prompt, after which the albums come; a denied grant lists nothing;
+  Recents is first and an album opens in the client's order with the
+  originals' file names and flat sidecars in the injected directory;
+  `PhotoKitLive.assetFetchOptions()` is images only by `creationDate`
+  ascending; the shared decoder rule sends an `.asset` id to
+  `Thumbnails.source` and a `.file` id to ImageIO, and a request cancelled
+  while the client is at work sees the cancellation inside the client and
+  caches nothing (the control decodes once); an original is written once
+  over two calls as `<safe-id>.<ext>` in the injected directory, two
+  concurrent asks share one write, a fresh source finds the copy, a failed
+  write leaves nothing and is retried, an unlisted id throws; the last
+  source is remembered by kind in an injected `UserDefaults` suite and
+  restored, and a launch before access is allowed opens nothing and never
+  prompts. Two real tests, `testRealLibraryListsRecentsFirst` and
+  `testRealOriginalIsCachedUnderTheOriginalsDirectory`, call PhotoKit
+  itself: they `throw XCTSkip` unless
+  `PHPhotoLibrary.authorizationStatus(for: .readWrite)` is already
+  `.authorized` (never `requestAuthorization`; the `xctest` host under
+  `swift test` is not, so they skip there and say so).
 - `CullingTests.swift` — a flag and rating on a neutral recipe round trip
   through a fresh `Library` (the sidecar kept for the marks alone), Reset
   keeps the flag while an unmarked reset removes the file, marks never enter
@@ -219,8 +247,16 @@ place the app writes is injected:
   so its `.photolab/` sidecars are the test's own. A source without a
   folder gets `SidecarStore(directory:naming:)` with a temporary directory
   (the fake source in `SourceTests`).
-- `Library(rememberFolder: false)`: the opened folder stays out of
-  UserDefaults.
+- `Library(rememberFolder: false)`: the opened source stays out of
+  UserDefaults; `Library(rememberFolder:defaults:)` takes a
+  `UserDefaults(suiteName:)` the test removes afterwards when remembering
+  is what is tested.
+- `PhotosAccess(client:sidecarDirectory:originalsDirectory:)`: the fake
+  client and two temporary directories; `PhotosAccess.live` (the real
+  client, `~/Library/Application Support/PhotoLab/photos-sidecars/` and
+  `~/Library/Caches/PhotoLab/originals/`) is the app's alone. No test calls
+  `requestAuthorization`: the permission dialog is the user's click, from
+  the bundled app.
 - `ExportQueue`: `init(remember:worker:)` leaves `remember:` off (the folder
   and options stay in memory) and takes a `ExportQueue.Worker`, so a test
   can count, slow or fail jobs without rendering; exports that do render go

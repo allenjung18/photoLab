@@ -45,6 +45,9 @@ struct ContentView: View {
         .sheet(item: $exports.request) { request in
             ExportSheet(request: request, options: exports.options, folder: exports.folder)
         }
+        .sheet(isPresented: $library.photosSheet) {
+            PhotosAlbumSheet()
+        }
     }
 
     private var viewBinding: Binding<Bool> {
@@ -123,7 +126,7 @@ struct WelcomeView: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 64))
                 .foregroundStyle(.secondary)
-            Text("Open a folder of photos to begin")
+            Text("Open a folder of photos, or a Photos album, to begin")
                 .font(.title2)
             if let error = library.openError {
                 Text(error)
@@ -132,8 +135,21 @@ struct WelcomeView: View {
                     .lineLimit(2)
                     .frame(maxWidth: 480)
             }
-            Button("Open Folder…") { library.chooseFolder() }
-                .keyboardShortcut(.defaultAction)
+            HStack(spacing: 12) {
+                Button("Open Folder…") { library.chooseFolder() }
+                    .keyboardShortcut(.defaultAction)
+                Button("Open Photos Library…") { library.choosePhotosAlbum() }
+                    .disabled(!PhotosAccess.hasBundle)
+            }
+            if !PhotosAccess.hasBundle {
+                // Photos access is granted to an app bundle, never to a bare
+                // `swift run` binary.
+                Text("The Photos library opens from the app bundle: run scripts/bundle.sh --open and use build/PhotoLab.app.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -529,27 +545,45 @@ struct ThumbnailCell: View {
     }
 }
 
+/// Where the loupe stands with a photo whose file its source has to
+/// produce (a Photos asset): being fetched (an iCloud original downloads
+/// here), or failed with the source's reason (offline, asset gone).
+enum OriginalFetch: Equatable {
+    case none, fetching, failed(String)
+}
+
 /// The loupe: the canvas and the panel, both fed the photo's original file
 /// from the open source (`Library.originalFile(for:)`). A folder photo's
 /// file is known at once (`Photo.fileURL`); another source's is fetched
-/// here, and the canvas shows the thumbnail until it arrives.
+/// here, and the canvas shows the thumbnail with a Downloading state until
+/// it arrives, or why it did not.
 struct LoupeView: View {
     @Environment(Library.self) private var library
     let photo: Photo
     @State private var preview = PreviewModel()
     @State private var file: URL?
+    @State private var fetch = OriginalFetch.none
 
     var body: some View {
         HStack(spacing: 0) {
-            PreviewCanvas(photo: photo, file: resolvedFile, preview: preview)
+            PreviewCanvas(photo: photo, file: resolvedFile, fetch: fetch, preview: preview)
             Divider()
             AdjustmentsPanel(photo: photo, file: resolvedFile, preview: preview)
                 .frame(width: 280)
         }
         .task(id: photo.id) {
-            guard photo.fileURL == nil else { return }
+            guard photo.fileURL == nil else { fetch = .none; return }
             file = nil
-            file = try? await library.originalFile(for: photo.id)
+            fetch = .fetching
+            do {
+                let url = try await library.originalFile(for: photo.id)
+                guard !Task.isCancelled else { return }
+                file = url
+                fetch = .none
+            } catch {
+                guard !Task.isCancelled else { return }
+                fetch = .failed(error.localizedDescription)
+            }
         }
     }
 
@@ -564,6 +598,8 @@ private struct PreviewCanvas: View {
     let photo: Photo
     /// The photo's original file; nil until the source has it.
     let file: URL?
+    /// How the file is coming along while it is nil.
+    let fetch: OriginalFetch
     let preview: PreviewModel
     @State private var pixelSize = 0
 
@@ -586,11 +622,23 @@ private struct PreviewCanvas: View {
                             .font(.callout)
                     }
                     .foregroundStyle(.secondary)
+                } else if case .failed(let why) = fetch {
+                    VStack(spacing: 6) {
+                        Image(systemName: "icloud.slash")
+                            .font(.title2)
+                        Text("Original not available for \(photo.name)")
+                            .font(.callout)
+                        Text(why)
+                            .font(.caption)
+                            .lineLimit(2)
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 480)
                 } else if let thumb = Thumbnails.shared.cached(photo.id, recipe: recipe) ?? Thumbnails.shared.cached(photo.id) {
                     Image(nsImage: thumb).resizable().scaledToFit().padding(8)
-                        .overlay(ProgressView().controlSize(.regular))
+                        .overlay(fetchOverlay)
                 } else {
-                    ProgressView()
+                    fetchOverlay
                 }
                 if library.showBefore {
                     Text("Before")
@@ -613,6 +661,21 @@ private struct PreviewCanvas: View {
         .onChange(of: recipe) { request() }
         .onChange(of: pixelSize) { request() }
         .onChange(of: library.showClipping, initial: true) { _, on in preview.setClipping(on) }
+    }
+
+    /// A spinner, labelled while the source downloads the original.
+    @ViewBuilder private var fetchOverlay: some View {
+        if fetch == .fetching {
+            VStack(spacing: 8) {
+                ProgressView().controlSize(.regular)
+                Text("Downloading original…")
+                    .font(.caption.weight(.semibold))
+            }
+            .padding(12)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        } else {
+            ProgressView().controlSize(.regular)
+        }
     }
 
     private func longestSide(_ size: CGSize) -> Int {

@@ -34,7 +34,7 @@ struct PhotoLabApp: App {
                     if let arg = CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("-") }) {
                         library.open(URL(fileURLWithPath: arg))
                     } else {
-                        library.restoreLastFolder()
+                        library.restoreLastSource()
                     }
                 }
         }
@@ -42,6 +42,8 @@ struct PhotoLabApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Open Folder…") { library.chooseFolder() }
                     .keyboardShortcut("o")
+                Button("Open Photos Library…") { library.choosePhotosAlbum() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
             }
             // Export the selection (one photo in the loupe, the multi-selection
             // in the grid): the options sheet, then the queue.

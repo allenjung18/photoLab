@@ -8,19 +8,24 @@ document is the layer between: screen to type. Every name in backticks is in
 `Sources/PhotoLab/`.
 
 The window is `ContentView` (`ContentView.swift`): the welcome screen while
-no folder is open (`Library.folder` is nil), the loupe while `Library.loupe`
+no source is open (`Library.source` is nil), the loupe while `Library.loupe`
 is on and a photo is selected, the grid otherwise; a toolbar with Open Folder
 and a Grid / Loupe picker; the hidden keyboard shortcuts; the export bar at
-the bottom when a run is going; and the two sheets, Sync and Export. The
-title is the folder's name, the subtitle "n of N" in the loupe (with the
+the bottom when a run is going; and three sheets, Sync, Export and Open
+Photos Library. The
+title is the source's name (the folder's, or the album's), the subtitle "n of N" in the loupe (with the
 photo's flag and stars when it has them) and "N photos · n selected" in the
 grid; under a filter both count the photos shown, "n of N shown".
 
 ## Welcome
 
-`WelcomeView` (`ContentView.swift`): an icon, "Open a folder of photos to
-begin", the last open error in red if there is one, and **Open Folder…**
-(also **Return**).
+`WelcomeView` (`ContentView.swift`): an icon, "Open a folder of photos, or
+a Photos album, to begin", the last open error in red if there is one,
+**Open Folder…** (also **Return**) and **Open Photos Library…**. Under a
+bare `swift run` the Photos button is disabled and a line says to run
+`scripts/bundle.sh --open` and use `build/PhotoLab.app`
+(`PhotosAccess.hasBundle`): the system grants Photos access to an app
+bundle, never to a bare binary.
 
 - **Open Folder…** is `Library.chooseFolder` (`Library.swift`): an
   `NSOpenPanel` for directories only, then `Library.open` with the choice.
@@ -39,16 +44,46 @@ begin", the last open error in red if there is one, and **Open Folder…**
   that photo; the first write then moves the old file to a
   `.unreadable-<stamp>` backup beside the new sidecar (`UnreadableBackup`)
   and never over it.
-- **The remembered last folder.** `Library.open` stores the folder's path in
-  `UserDefaults` under `lastFolder` (`Library.lastFolderKey`) when the
-  library was made with `rememberFolder` on, which the app's is and a test's
-  (`Library(rememberFolder: false)`) is not. At launch `PhotoLabApp` opens
-  the first non-flag command-line argument, else calls
-  `Library.restoreLastFolder`, which opens the stored path if it still
-  exists; this runs once per process (`launched`), so a window re-created
-  from the Dock does not reopen the argument and wipe the selection.
+- **Open Photos Library…** is `Library.choosePhotosAlbum` (`Library.swift`),
+  which raises `Library.photosSheet`; the File menu's **⇧⌘O** calls the
+  same method. The sheet is `PhotosAlbumSheet` (`PhotosSheet.swift`) over a
+  `PhotosBrowser` (`Photos.swift`) made with `PhotosAccess.live`:
+  - not yet asked (`PhotosAuthorization.notDetermined`): a line of text and
+    **Allow Access to Photos…**, the one button that shows the system
+    dialog (`PhotosBrowser.requestAccess`). Nothing is fetched before it;
+    opening the sheet, or launching, never prompts.
+  - refused (`denied`): **Open System Settings…** (`PhotosBrowser.settingsURL`,
+    the Privacy & Security › Photos pane) and **Check Again**; `restricted`
+    says so and offers nothing.
+  - allowed (`authorized` or `limited`): the albums, Recents first with a
+    clock, then the regular albums by title, each with its image count;
+    select and **Open** (also **Return**, or double-click) calls
+    `Library.open(album:access:)`, **Cancel** / **Esc** dismisses. A footer
+    says edits made in Photos are not shown: PhotoLab edits the original.
+  `Library.open(album:access:)` wraps the album in a `PhotosSource` and goes
+  through `Library.open(_:)`: before access is allowed `photos()` throws
+  `PhotosError.notAuthorized` and the open is refused like a missing path
+  (`openError`). The grid then shows the album oldest capture first, named
+  by the originals' file names; the thumbnails come from Photos
+  (`Thumbnails.source`, Architecture 1).
+- **The remembered last source.** `Library.open` stores the kind under
+  `lastSourceKind` (`Library.lastSourceKindKey`, `folder` or `photos`) with
+  the folder's path under `lastFolder` (`Library.lastFolderKey`) or the
+  album's identifier under `lastPhotosAlbum` (`Library.lastAlbumKey`) in
+  the library's `UserDefaults`, when it was made with `rememberFolder` on,
+  which the app's is and a test's (`Library(rememberFolder: false)`, or one
+  given its own `defaults`) is not. At launch `PhotoLabApp` opens the first
+  non-flag command-line argument, else calls `Library.restoreLastSource`,
+  which opens the stored folder if it still exists, or the stored album if
+  Photos access is already allowed (never a prompt at launch) and the album
+  is still there; this runs once per process (`launched`), so a window
+  re-created from the Dock does not reopen the argument and wipe the
+  selection.
 
-Writes: the last folder in UserDefaults. Nothing else.
+Writes: the last source in UserDefaults. Opening an album writes nothing
+until a photo is viewed in the loupe (its original is then copied into
+the originals cache, below) or edited (a sidecar under
+`~/Library/Application Support/PhotoLab/photos-sidecars/`).
 
 ## Grid
 
@@ -220,7 +255,13 @@ Nothing else; the copied settings live in memory.
   calls `PreviewModel.request(url:recipe:maxPixelSize:)`. Until the first
   frame of a photo arrives it shows the grid's cached thumbnail (the edited
   one when the grid has rendered it, else the plain one) under a spinner.
-  `PreviewModel` (`Preview.swift`) decodes the master once at
+  A Photos asset's file has to be fetched first
+  (`Library.originalFile(for:)`, Architecture 2): `LoupeView` keeps an
+  `OriginalFetch`, and the canvas shows the thumbnail under
+  "Downloading original…" while it is `fetching` (an iCloud-only original
+  downloads here, once; the copy lands in `~/Library/Caches/PhotoLab/originals/`)
+  and "Original not available" with the reason when it `failed` (offline,
+  or the asset gone). `PreviewModel` (`Preview.swift`) decodes the master once at
   `PreviewModel.masterPixelSize` through `Renderer.previewMaster`, renders
   through `Renderer.render` off the main thread, and coalesces requests
   (latest wins, at most one render in flight). Double-click the photo to go
@@ -236,7 +277,8 @@ Nothing else; the copied settings live in memory.
   **Esc** leaves the loupe; **Return** and **E** enter it; **G** goes to the grid
   (see Menus and shortcuts).
 
-Writes: nothing. The loupe only reads the recipe.
+Writes: nothing to the photo. The loupe only reads the recipe; for a
+Photos asset it fills the originals cache (Architecture 2).
 
 ## Adjustments panel
 
@@ -400,7 +442,8 @@ Two places define keys; the README's Keys table is the user's list.
 
 - **Menus** are the `.commands` of `PhotoLabApp` (`PhotoLabApp.swift`),
   each a `CommandGroup` or `CommandMenu`:
-  - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) replaces
+  - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) and **Open
+    Photos Library…** **⇧⌘O** (`Library.choosePhotosAlbum`) replace
     `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
     `batchTargets`, disabled with nothing targeted or a run going) replaces
     `.importExport`.
@@ -429,8 +472,9 @@ Two places define keys; the README's Keys table is the user's list.
   selected).
 - **Launch**: `PhotoLabApp` opens the first command-line argument that does
   not start with `-` (a folder, or a file to open in the loupe), else the
-  remembered folder; the process is made a regular foreground app so a
-  `swift run` without a bundle still gets a window and a menu bar.
+  remembered source (`Library.restoreLastSource`); the process is made a
+  regular foreground app so a `swift run` without a bundle still gets a
+  window and a menu bar (but no Photos access: see Welcome).
 
 Writes: nothing directly; each command's target is listed in its own
 section above.

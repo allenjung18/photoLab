@@ -136,16 +136,25 @@ forwarded into the detached decode and the detached render alike, so a
 cell scrolled past costs nothing and nothing is cached for it; the decoder
 and the renderer are injected (`Thumbnails.Decoder`, a `PhotoID` in and an
 image out; `Thumbnails.Render`, a base image and a recipe in) so a test
-can count or block either. The loupe's master and the export decode the
-file the source names for the photo (`Library.originalFile(for:)`,
+can count or block either. Without an injected decoder (the app's
+`Thumbnails.shared`) the plain entry follows one rule: a `PhotoID.file` is
+the ImageIO downsample, a `PhotoID.asset` is asked of `Thumbnails.source`,
+the open `PhotoSource`, which `Library.open(_:)` sets, so a Photos album's
+thumbnails come from the same cache through
+`PhotosSource.thumbnail(for:maxPixelSize:)`, never a second one. The
+loupe's master and the export decode the file the source names for the
+photo (`Library.originalFile(for:)`,
 `PhotoSource.originalFile(for:)`): a folder photo's own file, known at once
-(`Photo.fileURL`); `LoupeView` resolves it and hands it to the canvas, the
-panel and the strip.
+(`Photo.fileURL`), or a Photos asset's cached copy, fetched when the loupe
+opens it; `LoupeView` resolves it and hands it to the canvas, the panel and
+the strip, with an `OriginalFetch` state (`fetching` shows the thumbnail
+under "Downloading original…", `failed` the source's reason) until it is
+there.
 
 ## 2. Data model
 
 All of it is in `Adjustments.swift`, `Sidecar.swift`, `Presets.swift`,
-`Export.swift` and `PhotoSource.swift`.
+`Export.swift`, `PhotoSource.swift` and `Photos.swift`.
 
 ### `PhotoID`, `Photo` and `PhotoSource`
 
@@ -168,10 +177,56 @@ folder: `Library.scan` lists it, `SidecarStore(folder:)` keeps the edits
 under `.photolab/`, `ImageLoading.downsampled` makes the thumbnails, and a
 photo's original is its own file. `Library.open(_:)` takes a source, or a
 URL that it wraps in a `FolderSource` (a folder, or a file whose folder
-opens with that photo in the loupe); `Library.source` is the open one and
+opens with that photo in the loupe), and `Library.open(album:access:)` an
+album wrapped in a `PhotosSource`; `Library.source` is the open one and
 `Library.folder` its folder when it is a `FolderSource`. A source whose
 `photos()` throws is refused like a missing path: the open source stays and
 `openError` says why.
+
+### `PhotosSource` and `PhotoKitClient`
+
+A Photos album is a `PhotosSource` (`Photos.swift`): a `PhotosAlbum` (the
+collection's identifier, title, image count, and whether it is Recents)
+plus a `PhotosAccess`, the three things the source is given rather than
+finds: the `PhotoKitClient`, the `sidecarDirectory` and the
+`originalsDirectory`. `PhotoKitClient` is everything the source asks of
+PhotoKit, so the test fake is complete and no `PHAsset` leaves
+`PhotoKitLive`: `authorizationStatus()` (never a prompt),
+`requestAuthorization()` (the Allow button and nothing else calls it),
+`albums()` (Recents, then the regular albums by title), `assets(in:)`
+(images only, oldest capture first: `PhotoKitLive.assetFetchOptions()`),
+`thumbnail(for:maxPixelSize:)` and `writeOriginal(of:to:)`. The live
+client needs an app bundle: the system keys Photos access to a bundle
+identifier and a usage string, both written by `scripts/bundle.sh`; under a
+bare `swift run` it never fetches, and `PhotosAccess.hasBundle` is what the
+Welcome view checks before offering the album sheet.
+
+`PhotosSource.photos()` throws `PhotosError.notAuthorized` until the status
+reads (`PhotosAuthorization.canRead`: authorized or limited), so `Library`
+refuses the open and nothing is fetched; it lists the album through the
+client and names each photo by its original's file name
+(`PhotosAsset.originalFilename`). Thumbnails come from Photos' own cache:
+the live client asks `PHImageManager` synchronously (480 px aspect-fit,
+version unadjusted, high quality, fast resize, iCloud allowed) from inside
+`Thumbnails`' detached decode, and a request cancelled while it waits is
+dropped the same way as a file's. The original is the only input, as for a
+folder: `PhotosSource.originalFile(for:)` hands the asset to an
+`OriginalsCache`, which writes the asset's original resource once (the RAW
+of a RAW+JPEG pair when there is one, `PhotoKitLive.originalResource(of:)`,
+else the photo) through `PHAssetResourceManager` into
+`<originalsDirectory>/<safe-id>.<ext>`, `safe-id` the identifier with its
+slashes as underscores (`SidecarStore.flatName`) and `ext` the original file
+name's; the write goes to a `.part` file moved into place when complete, so
+a copy on disk is always whole, two concurrent asks share one write, and a
+copy that exists is returned at once by any later source. The directory is a
+cache (`~/Library/Caches/PhotoLab/originals/` in the app,
+`PhotosAccess.defaultOriginalsDirectory`): deleting it costs a download,
+never an edit, and `Renderer.previewMaster`, `Renderer.fullResolution` and
+the export's metadata read the copy like any file. Sidecars of Photos
+assets take the flat naming under `PhotosAccess.defaultSidecarDirectory`
+(`~/Library/Application Support/PhotoLab/photos-sidecars/`). Photos' own
+edits are not stacked: the unadjusted original is what the grid, the loupe
+and the export show.
 
 ### `AdjustmentKind`
 
@@ -356,7 +411,8 @@ passes true; tests never do).
 ## 3. The edit path
 
 `Library` (`Library.swift`) holds the open source (`Library.source`, a
-`PhotoSource`; a folder through `FolderSource`): its photos, the selection,
+`PhotoSource`; a folder through `FolderSource`, an album through
+`PhotosSource`): its photos, the selection,
 and `recipes`, the edits of the source keyed by `PhotoID`, mirrored to the
 source's sidecars. `Library.open(_:)` fills it from a source, or from a URL
 (a folder, or a file's folder with that file in the loupe); the source is
@@ -483,7 +539,8 @@ one photo:
 
 ```
    original file (never written; PhotoSource.originalFile(for:),
-        |          a folder photo's own file)
+        |          a folder photo's own file, or a Photos asset's copy
+        |          in <Caches>/PhotoLab/originals/ via OriginalsCache)
         |  ImageIO downsample                       CIImage(contentsOf:)
         |  Renderer.previewMaster                   Renderer.fullResolution
         v                                                  v
@@ -511,6 +568,7 @@ one photo:
                  |
                  v
         SidecarStore  <folder>/.photolab/<file>.json   (atomic; recipe + marks;
+                      or <App Support>/PhotoLab/photos-sidecars/<safe-id>.json
                                                         default and unmarked = deleted)
         PresetStore   <presets dir>/<name>.json        (reads feed Preset.apply)
 ```

@@ -13,6 +13,20 @@ Native Swift, SwiftUI and Core Image. Originals are never written to.
     swift test                    # the test suite
     scripts/bundle.sh --open      # release build as build/PhotoLab.app
 
+**Photos library:** File › Open Photos Library… (`⇧⌘O`, or the Welcome
+button) lists Recents and your albums; the first time, click **Allow** in
+the system dialog. It works only from the bundled app
+(`scripts/bundle.sh --open`, then `build/PhotoLab.app`): macOS grants Photos
+access to an app bundle, never to a bare `swift run`, whose Welcome screen
+says so. The bundle is ad-hoc signed by default, and the grant is tied to
+the signature, so Photos asks again after every rebuild; to keep it, make a
+self-signed code-signing certificate once (Keychain Access › Certificate
+Assistant › Create a Certificate, type Code Signing, e.g. "PhotoLab Dev")
+and build with `PHOTOLAB_SIGN_IDENTITY="PhotoLab Dev" scripts/bundle.sh
+--open`. PhotoLab reads the originals (the RAW of a RAW+JPEG pair) and
+shows them unadjusted: an edit made in Photos is not shown. An iCloud-only
+original is downloaded the first time its photo opens in the loupe.
+
 Needs macOS 14 or later (the `platforms` line in `Package.swift`) and Xcode
 (free; no developer account is needed to build or run locally). On macOS 27
 the bare Command Line Tools cannot build SwiftUI (the SDK needs a macro
@@ -26,6 +40,7 @@ in Xcode works too.
 | Key | Does |
 | --- | --- |
 | `⌘O` | Open Folder… |
+| `⇧⌘O` | Open Photos Library… (the album sheet) |
 | `G` | Grid |
 | `E` or `Return` | Loupe (the selected photo, or the first) |
 | `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
@@ -157,14 +172,25 @@ Everything the app writes, and nothing else:
 - **Presets** — `~/Library/Application Support/PhotoLab/presets/<name>.json`,
   one per preset; the six starter looks are written there when that folder
   does not exist yet.
-- **Preferences** — in the app's UserDefaults: the last opened folder, the
+- **Photos sidecars** — `~/Library/Application Support/PhotoLab/photos-sidecars/<asset-id>.json`,
+  one per edited, flagged or rated photo of a Photos album (the asset's
+  identifier with its slashes as underscores), with the same rules as a
+  folder's sidecars. The Photos library itself is never written to.
+- **Originals cache** — `~/Library/Caches/PhotoLab/originals/<asset-id>.<ext>`,
+  a copy of each Photos original the loupe or an export has opened (an
+  iCloud-only original is downloaded into it once). A cache: delete the
+  folder to reclaim the space; the next open downloads again, and no edit
+  is lost.
+- **Preferences** — in the app's UserDefaults: the last opened source (a
+  folder's path, or a Photos album's identifier), the
   last export folder and the last export options (format, quality, size,
   suffix, collision policy, metadata), so the next export sheet opens with
   them.
 - **Exports** — the files you ask for, in the folder you choose, written
   through a hidden partial file and moved into place when complete.
 - **The release bundle** — `build/PhotoLab.app`, made by `scripts/bundle.sh`
-  (ad-hoc signed; `swift build` puts debug builds under `.build/`).
+  (signed with `PHOTOLAB_SIGN_IDENTITY`, default ad hoc; `swift build` puts
+  debug builds under `.build/`).
 
 The original photo is never written to, under any of these.
 

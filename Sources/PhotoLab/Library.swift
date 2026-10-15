@@ -47,10 +47,11 @@ enum PhotoFilter: Hashable, CaseIterable {
     }
 }
 
-/// The library is one `PhotoSource` (a folder, through `FolderSource`).
-/// Originals are never written to: every edit is a recipe, held in memory
-/// for the open source and persisted as a sidecar (`SidecarStore`, the
-/// source's) the moment it changes.
+/// The library is one `PhotoSource` (a folder through `FolderSource`, a
+/// Photos album through `PhotosSource`). Originals are never written to:
+/// every edit is a recipe, held in memory for the open source and
+/// persisted as a sidecar (`SidecarStore`, the source's) the moment it
+/// changes.
 @MainActor
 @Observable
 final class Library {
@@ -94,8 +95,11 @@ final class Library {
     var showClipping = false
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
-    /// Why the last `open` was refused (a missing path); nil after one succeeds.
+    /// Why the last `open` was refused (a missing path, an album before
+    /// Photos access); nil after one succeeds.
     private(set) var openError: String?
+    /// The Open Photos Library sheet the window should show.
+    var photosSheet = false
     /// Photos whose sidecar exists but could not be decoded; their edits show
     /// as neutral and their sidecars are left alone until the user edits.
     private(set) var unreadableSidecars: Set<Photo.ID> = []
@@ -105,14 +109,22 @@ final class Library {
     /// A slider drag in progress: one undo step from mouse-down to mouse-up.
     private var openEdit: (id: Photo.ID, before: Recipe)?
     private let rememberFolder: Bool
+    private let defaults: UserDefaults
 
+    /// The last source, by kind: `lastSourceKind` is `folder` (the path in
+    /// `lastFolder`, the key every earlier build wrote) or `photos` (the
+    /// album's identifier in `lastPhotosAlbum`).
     private static let lastFolderKey = "lastFolder"
+    private static let lastSourceKindKey = "lastSourceKind"
+    private static let lastAlbumKey = "lastPhotosAlbum"
     nonisolated static let maxUndoDepth = 100
 
 
-    /// `rememberFolder: false` keeps the folder out of UserDefaults (tests).
-    init(rememberFolder: Bool = true) {
+    /// `rememberFolder: false` keeps the source out of UserDefaults (tests);
+    /// `defaults` is where it is remembered when it is.
+    init(rememberFolder: Bool = true, defaults: UserDefaults = .standard) {
         self.rememberFolder = rememberFolder
+        self.defaults = defaults
     }
 
     func chooseFolder() {
@@ -139,10 +151,31 @@ final class Library {
         let dir = isDir.boolValue ? url : url.deletingLastPathComponent()
         open(FolderSource(dir))
         guard openError == nil else { return }
-        if rememberFolder { UserDefaults.standard.set(dir.path, forKey: Self.lastFolderKey) }
+        if rememberFolder {
+            defaults.set(dir.path, forKey: Self.lastFolderKey)
+            defaults.set("folder", forKey: Self.lastSourceKindKey)
+        }
         if !isDir.boolValue, let hit = photos.first(where: { $0.fileURL?.standardizedFileURL == url.standardizedFileURL }) {
             selection = hit.id
             loupe = true
+        }
+    }
+
+    /// Asks the window for the Open Photos Library sheet (albums, or the
+    /// Allow button when access was never asked for).
+    func choosePhotosAlbum() {
+        photosSheet = true
+    }
+
+    /// Opens a Photos album through `PhotosSource` and remembers it as the
+    /// last source. Refused like any source whose listing fails (before
+    /// access is allowed, `photos()` throws `PhotosError.notAuthorized`).
+    func open(album: PhotosAlbum, access: PhotosAccess = .live) {
+        open(access.source(for: album))
+        guard openError == nil else { return }
+        if rememberFolder {
+            defaults.set(album.id, forKey: Self.lastAlbumKey)
+            defaults.set("photos", forKey: Self.lastSourceKindKey)
         }
     }
 
@@ -150,7 +183,8 @@ final class Library {
     /// read before the first frame, so a photo opens with its edit; the
     /// selection, the open drag and the undo history are reset. A source
     /// whose listing fails is refused the same way as a missing path: the
-    /// current source stays and `openError` says why.
+    /// current source stays and `openError` says why. The shared thumbnail
+    /// cache decodes `.asset` ids through the open source from here on.
     func open(_ source: any PhotoSource) {
         let listed: [Photo]
         do {
@@ -161,6 +195,7 @@ final class Library {
         }
         openError = nil
         self.source = source
+        Thumbnails.shared.source = source
         selection = nil
         loupe = false
         showBefore = false
@@ -193,9 +228,19 @@ final class Library {
         return try await source.originalFile(for: id)
     }
 
-    func restoreLastFolder() {
-        guard source == nil,
-              let path = UserDefaults.standard.string(forKey: Self.lastFolderKey),
+    /// Reopens the last source at launch: the folder if it still exists,
+    /// or the album if Photos access is already allowed (never a prompt at
+    /// launch) and the album is still there. Otherwise the Welcome view.
+    func restoreLastSource(access: PhotosAccess = .live) {
+        guard source == nil else { return }
+        if defaults.string(forKey: Self.lastSourceKindKey) == "photos" {
+            guard let id = defaults.string(forKey: Self.lastAlbumKey),
+                  access.client.authorizationStatus().canRead,
+                  let album = access.client.albums().first(where: { $0.id == id }) else { return }
+            open(album: album, access: access)
+            return
+        }
+        guard let path = defaults.string(forKey: Self.lastFolderKey),
               FileManager.default.fileExists(atPath: path) else { return }
         open(URL(fileURLWithPath: path))
     }
