@@ -1,0 +1,266 @@
+import XCTest
+import AppKit
+import ImageIO
+@testable import PhotoLab
+
+/// Grid thumbnails: the embedded-preview rule in `ImageLoading`, the folder
+/// cost at 500 photos, a real RAW through the embedded preview, and the
+/// cancellation `Thumbnails.thumbnail(for:)` forwards into its decode.
+///
+/// The timed tests are load-sensitive. Each prints the 1-minute load average
+/// beside its number and scales its bound by `loadFactor()` (1 up to a load
+/// of 8, then proportional), so a busy box cannot fail the suite on load
+/// alone; read the printed BENCH line, not only the verdict.
+final class ThumbnailTests: XCTestCase {
+
+    // MARK: Fixtures
+
+    private var tempDir: URL!
+
+    override func setUpWithError() throws {
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("photolab-thumbs-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+
+    /// Writes `image` as a JPEG. `embedThumbnail` asks ImageIO to embed its
+    /// own EXIF thumbnail (160 px on the long side), the way a camera does.
+    private func writeJPEG(_ image: CGImage, to url: URL, embedThumbnail: Bool) throws {
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil))
+        var props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.85]
+        if embedThumbnail { props[kCGImageDestinationEmbedThumbnail] = true }
+        CGImageDestinationAddImage(dest, image, props as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(dest), "write \(url.lastPathComponent)")
+    }
+
+    private static func loadAverage() -> Double {
+        var loads = [Double](repeating: 0, count: 3)
+        return getloadavg(&loads, 3) >= 1 ? loads[0] : .nan
+    }
+
+    /// 1 on a quiet box, load/8 above a load of 8.
+    private static func loadFactor(_ load: Double) -> Double {
+        load.isNaN ? 1 : max(1, load / 8)
+    }
+
+    private func milliseconds(_ body: () -> Void) -> Double {
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        body()
+        return Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
+    }
+
+    // MARK: The size rule
+
+    /// A JPEG whose embedded thumbnail is 160 px must come back at 480 px:
+    /// the 160 px preview fails the size rule and the image is decoded. The
+    /// same file asked for 160 px or less is served from the embedded preview.
+    func testEmbeddedThumbnailSmallerThanRequestIsRefusedAndTheImageDecoded() throws {
+        let url = tempDir.appendingPathComponent("embedded-160.jpg")
+        try writeJPEG(syntheticImage(width: 2400, height: 1600), to: url, embedThumbnail: true)
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+
+        // The fixture is real: ImageIO's embedded thumbnail is 160 px on the long side.
+        let raw = try XCTUnwrap(CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+            kCGImageSourceThumbnailMaxPixelSize: 10_000,
+        ] as CFDictionary), "the file carries an embedded thumbnail")
+        XCTAssertEqual(max(raw.width, raw.height), 160, "embedded thumbnail long side")
+
+        // Asked for 480: the embedded 160 px preview is refused and the image decoded.
+        XCTAssertNil(ImageLoading.embeddedPreview(from: source, maxPixelSize: Thumbnails.pixelSize))
+        let thumb = try XCTUnwrap(ImageLoading.thumbnail(from: source, maxPixelSize: Thumbnails.pixelSize))
+        XCTAssertEqual(thumb.source, .decoded)
+        XCTAssertEqual(max(thumb.image.width, thumb.image.height), 480, "not the 160 px embedded thumbnail")
+        let app = try XCTUnwrap(ImageLoading.downsampledCGImage(url, maxPixelSize: Thumbnails.pixelSize))
+        XCTAssertEqual(max(app.width, app.height), 480)
+
+        // Asked for 160 or less: the embedded preview is large enough and is used.
+        let small = try XCTUnwrap(ImageLoading.thumbnail(from: source, maxPixelSize: 120))
+        XCTAssertEqual(small.source, .embedded)
+        XCTAssertEqual(max(small.image.width, small.image.height), 120)
+
+        // A file without an embedded preview decodes once and reports it.
+        let plain = tempDir.appendingPathComponent("plain.jpg")
+        try writeJPEG(syntheticImage(width: 2400, height: 1600), to: plain, embedThumbnail: false)
+        let plainSource = try XCTUnwrap(CGImageSourceCreateWithURL(plain as CFURL, nil))
+        let plainThumb = try XCTUnwrap(ImageLoading.thumbnail(from: plainSource, maxPixelSize: Thumbnails.pixelSize))
+        XCTAssertEqual(max(plainThumb.image.width, plainThumb.image.height), 480)
+    }
+
+    // MARK: 500 photos
+
+    /// 500 synthetic 24 MP JPEGs (eight distinct images, cycled) through
+    /// `Thumbnails.thumbnail(for:)` all at once, the way `LazyVGrid` fires
+    /// `.task` for every laid-out cell: under 3 s on a quiet box.
+    func test500SyntheticJPEGsThumbnailConcurrentlyUnder3s() async throws {
+        let variants = 8
+        let count = 500
+        let writeMs = milliseconds {
+            DispatchQueue.concurrentPerform(iterations: variants) { i in
+                let image = syntheticImage(width: 6000 - i * 8, height: 4000 + i * 8)
+                let url = tempDir.appendingPathComponent("variant-\(i).jpg")
+                do { try writeJPEG(image, to: url, embedThumbnail: false) } catch { XCTFail("\(error)") }
+            }
+        }
+        var urls: [URL] = []
+        for n in 0..<count {
+            let url = tempDir.appendingPathComponent(String(format: "photo-%03d.jpg", n))
+            try FileManager.default.copyItem(at: tempDir.appendingPathComponent("variant-\(n % variants).jpg"), to: url)
+            urls.append(url)
+        }
+        let bytes = try urls.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: $1.path)[.size] as? Int ?? 0) }
+
+        let thumbs = Thumbnails()
+        let load = Self.loadAverage()
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        let delivered = await withTaskGroup(of: Bool.self, returning: Int.self) { group in
+            for url in urls {
+                group.addTask { await thumbs.thumbnail(for: url) != nil }
+            }
+            var n = 0
+            for await ok in group where ok { n += 1 }
+            return n
+        }
+        let totalMs = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
+        let bound = 3000 * Self.loadFactor(load)
+        print(String(format: "BENCH-THUMBS-500 %d JPEGs (%.0f MB, %d×%d-ish, written in %.0f ms): all %d thumbnails concurrent, cold cache: %.0f ms — bound %.0f ms, load %.2f",
+                     count, Double(bytes) / 1_048_576, 6000, 4000, writeMs, delivered, totalMs, bound, load))
+        XCTAssertEqual(delivered, count, "every photo got a thumbnail")
+        for url in urls.prefix(5) {
+            let image = try XCTUnwrap(thumbs.cached(url))
+            XCTAssertEqual(Int(max(image.size.width, image.size.height)), Thumbnails.pixelSize)
+        }
+        XCTAssertLessThan(totalMs, bound, String(format: "500 thumbnails took %.0f ms at load %.2f", totalMs, load))
+    }
+
+    // MARK: A real RAW
+
+    /// A camera RAW named by `PHOTOLAB_BENCH_RAW` thumbnails from its embedded
+    /// preview in under 100 ms cold (nothing of the file decoded yet in this
+    /// process); the full decode is printed beside it for the ratio. Skipped
+    /// when unset.
+    ///
+    /// The very first RAW touch in a process also loads the RAW codec, ~100 ms
+    /// on this box charged to whatever ImageIO call comes first: the app pays
+    /// it once per launch, not per file. The test pays it on a header-only
+    /// properties read and prints it as its own number, so the bound measures
+    /// the per-file cost.
+    func testRealRAWThumbnailsFromEmbeddedPreviewUnder100msCold() throws {
+        guard let path = ProcessInfo.processInfo.environment["PHOTOLAB_BENCH_RAW"] else {
+            throw XCTSkip("set PHOTOLAB_BENCH_RAW=<file.ARW> to time a real RAW")
+        }
+        let url = URL(fileURLWithPath: path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "PHOTOLAB_BENCH_RAW exists")
+        let load = Self.loadAverage()
+
+        // The one-time RAW codec load, on a header-only read.
+        var header: CFDictionary?
+        let codecMs = milliseconds {
+            if let s = CGImageSourceCreateWithURL(url as CFURL, nil) { header = CGImageSourceCopyPropertiesAtIndex(s, 0, nil) }
+        }
+        XCTAssertNotNil(header, "the RAW's header is readable")
+
+        // Cold: the file's first thumbnail in this process, through the app path.
+        var cold: NSImage?
+        let coldMs = milliseconds { cold = ImageLoading.downsampled(url, maxPixelSize: Thumbnails.pixelSize) }
+        let image = try XCTUnwrap(cold, "the RAW decoded")
+        XCTAssertEqual(Int(max(image.size.width, image.size.height)), Thumbnails.pixelSize)
+
+        // Warm: the same again, and which path it took.
+        var again: (image: CGImage, source: ImageLoading.Source)?
+        let warmMs = milliseconds {
+            if let s = CGImageSourceCreateWithURL(url as CFURL, nil) { again = ImageLoading.thumbnail(from: s, maxPixelSize: Thumbnails.pixelSize) }
+        }
+        let thumb = try XCTUnwrap(again)
+        XCTAssertEqual(thumb.source, .embedded, "the RAW's embedded preview is large enough for 480 px")
+
+        // Control: the full-decode path the thumbnails took before.
+        var full: CGImage?
+        let fullMs = milliseconds {
+            if let s = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                full = CGImageSourceCreateThumbnailAtIndex(s, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: Thumbnails.pixelSize,
+                ] as CFDictionary)
+            }
+        }
+        XCTAssertNotNil(full)
+        let bound = 100 * Self.loadFactor(load)
+        print(String(format: "BENCH-THUMB-RAW %@: RAW codec first load %.0f ms (once per process); embedded preview %.1f ms cold, %.1f ms warm (%d×%d) vs full decode %.0f ms (%.0f× cold, %.0f× warm) — bound %.0f ms, load %.2f",
+                     url.lastPathComponent, codecMs, coldMs, warmMs, Int(image.size.width), Int(image.size.height), fullMs,
+                     coldMs > 0 ? fullMs / coldMs : 0, warmMs > 0 ? fullMs / warmMs : 0, bound, load))
+        XCTAssertLessThan(coldMs, bound, String(format: "cold RAW thumbnail took %.1f ms at load %.2f", coldMs, load))
+    }
+
+    // MARK: Cancellation
+
+    /// A request cancelled before its decode is queued decodes nothing and
+    /// caches nothing; one cancelled while its decode waits sees the
+    /// cancellation inside the detached body (it is forwarded) and, if the
+    /// decode runs anyway, its result is not cached.
+    func testCancelledRequestDecodesNothingAndCachesNothing() async throws {
+        let url = tempDir.appendingPathComponent("never-decoded.jpg")
+        try writeJPEG(syntheticImage(width: 600, height: 400), to: url, embedThumbnail: false)
+
+        // 1. Cancelled before the call: the decoder is never invoked.
+        let calls = Counter()
+        let counting = Thumbnails { u, size in
+            calls.increment()
+            return ImageLoading.downsampled(u, maxPixelSize: size)
+        }
+        let cancelledFirst = Task { () -> NSImage? in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await counting.thumbnail(for: url)
+        }
+        let early = await cancelledFirst.value
+        XCTAssertNil(early)
+        XCTAssertEqual(calls.value, 0, "a request cancelled before enqueue decodes nothing")
+        XCTAssertNil(counting.cached(url), "and caches nothing")
+
+        // 2. Cancelled while the decode is in flight: the detached body sees it.
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let sawCancel = Counter()
+        let blocking = Thumbnails { u, size in
+            entered.signal()
+            release.wait()
+            if Task.isCancelled { sawCancel.increment() }
+            return ImageLoading.downsampled(u, maxPixelSize: size)
+        }
+        let inFlight = Task { await blocking.thumbnail(for: url) }
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success, "the decode started")
+        inFlight.cancel()
+        release.signal()
+        let late = await inFlight.value
+        XCTAssertNil(late, "a cancelled request returns nothing")
+        XCTAssertEqual(sawCancel.value, 1, "the parent's cancellation reached the detached decode body")
+        XCTAssertNil(blocking.cached(url), "a decode that finished for a cancelled request is not cached")
+
+        // 3. Control: the same request uncancelled decodes once and caches.
+        let image = await blocking.thumbnailReleasing(url, release)
+        XCTAssertNotNil(image)
+        XCTAssertNotNil(blocking.cached(url))
+    }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+    func increment() { lock.lock(); n += 1; lock.unlock() }
+}
+
+private extension Thumbnails {
+    /// Runs a request whose decoder blocks on `release`, letting it through.
+    func thumbnailReleasing(_ url: URL, _ release: DispatchSemaphore) async -> NSImage? {
+        let task = Task { await self.thumbnail(for: url) }
+        release.signal()
+        return await task.value
+    }
+}

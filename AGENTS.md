@@ -88,6 +88,19 @@
   and Core Image charges 5–15 ms the first time it meets a size; the test
   gates those kinds on a second pass over the same sizes.
 - Keep ImageIO for thumbnails (fast, orientation-aware, reads RAW and HEIC).
+  `ImageLoading.thumbnail(from:maxPixelSize:)` asks for the container's
+  embedded preview first (`IfAbsent`) and accepts it only when its long side
+  is at least the requested size (a RAW's 1616 px preview serves a 480 px
+  cell in ~15 ms where the full decode is 100-800 ms; an iPhone JPEG's
+  320×240 thumbnail is refused and the image decoded). `Thumbnails.thumbnail(for:)`
+  forwards the caller's cancellation into its detached decode
+  (`withTaskCancellationHandler`) and checks it inside the body, so a cell
+  scrolled past costs nothing and a cancelled result is never cached; its
+  decoder is injected so a test can count or block it.
+  `Tests/PhotoLabTests/ThumbnailTests.swift` has the size rule, the 500-photo
+  folder timing, the cancellation proof, and a real-RAW timing that runs only
+  with `PHOTOLAB_BENCH_RAW=<file.ARW>` set. Timed tests print the load average
+  and scale their bound above a load of 8.
 - Keyboard shortcuts are global hidden buttons in `ContentView.swift`
   (`HiddenShortcuts`); add new ones there.
 - No AI attribution lines in commit messages.
