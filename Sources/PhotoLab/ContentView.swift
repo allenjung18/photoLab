@@ -249,12 +249,17 @@ private struct PreviewCanvas: View {
     }
 }
 
-/// One slider per adjustment with an enable checkbox, a hold-to-compare
-/// button, reset, and the live render time of the last frame.
+/// The adjustment sliders in sections (Basic, Color, Tone Curve, HSL,
+/// Detail, Effects, Crop & Rotate), each with an enable checkbox, plus a
+/// hold-to-compare button, undo / redo / reset, and the live render time
+/// of the last frame. The HSL section shows one channel (hue, saturation or
+/// luminance) of the eight bands at a time, like Lightroom's panel.
 struct AdjustmentsPanel: View {
     @Environment(Library.self) private var library
     let photo: Photo
     let preview: PreviewModel
+    @State private var expanded: Set<AdjustmentKind.Section> = [.basic]
+    @State private var hslChannel: AdjustmentKind.HSLChannel = .hue
 
     private var recipe: Binding<Recipe> {
         Binding(
@@ -266,13 +271,35 @@ struct AdjustmentsPanel: View {
         @Bindable var library = library
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(AdjustmentKind.allCases) { kind in
-                        AdjustmentRow(
-                            kind: kind, recipe: recipe,
-                            onEditingChanged: { editing in
-                                if editing { library.beginEdit(photo.id) } else { library.endEdit(photo.id) }
-                            })
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(AdjustmentKind.Section.allCases, id: \.self) { section in
+                        DisclosureGroup(isExpanded: isExpanded(section)) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                if section == .hsl {
+                                    Picker("Channel", selection: $hslChannel) {
+                                        ForEach(AdjustmentKind.HSLChannel.allCases, id: \.self) { Text($0.title).tag($0) }
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .labelsHidden()
+                                    .controlSize(.small)
+                                    ForEach(AdjustmentKind.HSLBand.allCases, id: \.self) { band in
+                                        row(.hsl(hslChannel, band))
+                                    }
+                                } else {
+                                    ForEach(section.kinds) { kind in row(kind) }
+                                }
+                            }
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                        } label: {
+                            HStack {
+                                Text(section.title).font(.callout.weight(.semibold))
+                                if sectionEdited(section) {
+                                    Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                                        .help("Has edits")
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(16)
@@ -307,6 +334,25 @@ struct AdjustmentsPanel: View {
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func row(_ kind: AdjustmentKind) -> some View {
+        AdjustmentRow(
+            kind: kind, recipe: recipe,
+            onEditingChanged: { editing in
+                if editing { library.beginEdit(photo.id) } else { library.endEdit(photo.id) }
+            })
+    }
+
+    private func isExpanded(_ section: AdjustmentKind.Section) -> Binding<Bool> {
+        Binding(
+            get: { expanded.contains(section) },
+            set: { on in if on { expanded.insert(section) } else { expanded.remove(section) } })
+    }
+
+    private func sectionEdited(_ section: AdjustmentKind.Section) -> Bool {
+        let r = recipe.wrappedValue
+        return section.kinds.contains { !r[$0].isNoop }
     }
 
     private var footer: String {

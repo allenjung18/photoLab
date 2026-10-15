@@ -27,12 +27,29 @@ or run locally.
 
 ## Adjustments
 
-The loupe has a panel of six sliders: exposure (EV), contrast, temperature,
-tint, vibrance, saturation. Each has a checkbox that switches it off without
-losing its value; double-click a name to reset it, Reset for the lot.
-The footer prints the Core Image time of the last frame. `⌘Z` / `⇧⌘Z` undo
-and redo (a slider drag is one step), Reset or `⇧⌘R` puts the photo back to
-the original.
+The loupe's panel is in sections, each slider with a checkbox that switches
+it off without losing its value; double-click a name to reset it, Reset for
+the lot. `⌘Z` / `⇧⌘Z` undo and redo (a slider drag is one step), Reset or
+`⇧⌘R` puts the photo back to the original. The footer prints the time of
+the last frame.
+
+- **Basic** — exposure (EV), contrast, highlights, shadows, whites, blacks.
+- **Color** — temperature, tint, vibrance, saturation.
+- **Tone Curve** — five points (blacks, shadows, midtones, highlights,
+  whites), each moved up or down.
+- **HSL** — hue, saturation and luminance for eight bands (red, orange,
+  yellow, green, aqua, blue, purple, magenta); pick the channel, then the
+  band sliders. Grays are never touched.
+- **Detail** — clarity (local contrast), sharpening, grain.
+- **Effects** — vignette (negative darkens the corners).
+- **Crop & Rotate** — rotate (degrees, positive is clockwise; the frame is
+  cropped to the largest same-shape rectangle, so no empty corners) and a
+  crop from each edge in percent of the frame.
+
+Every slider is one entry in the photo's recipe, so the sidecar, undo and
+the presets to come treat them all alike. Spatial effects (clarity,
+sharpening, grain, vignette) are sized relative to the image, so the preview
+and an export look the same.
 
 ## Sidecars
 
@@ -56,6 +73,13 @@ the panel then says the edit could not be saved.
   recipe; the loupe feeds it a 3200 px ImageIO master, the export will feed
   it the full-resolution decode, so the two cannot drift in color. A slider
   step re-renders at the view's pixel size (about 4 ms for a 24 MP JPEG,
-  9 ms for a RAW, on an M4). (Chunk 2.)
+  9 ms for a RAW, on an M4, with the six basic sliders; about 12 ms with
+  every section switched on). (Chunk 2, chunk 4.)
+- **Grouped stages.** The tone sliders and the curve are one per-channel
+  lookup, the 24 HSL sliders one 3D color cube, both built on the CPU with
+  Accelerate and cached by their values; the four crop edges are one crop.
+  Kinds apply in a fixed order (geometry, exposure and white balance, tone,
+  color, HSL, detail, effects) whatever order the sidecar lists them in.
+  (Chunk 4.)
 - **A preset is a named recipe.** Applying it to a selection writes into the
   sidecars, with per-adjustment checkboxes. (Chunks 5 and 6.)

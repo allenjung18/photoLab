@@ -7,11 +7,15 @@ import Metal
 /// The one render path. `apply` builds the Core Image chain for a recipe;
 /// the loupe preview and the export both go through it, so they cannot drift
 /// in color. Only the input differs: a downsampled master for the preview,
-/// the full-resolution decode for an export.
+/// the full-resolution decode for an export. Every spatial parameter (blur
+/// radius, sharpening radius, grain size, vignette radius) is a fraction of
+/// the image's own size, so the preview and the export look the same.
 final class Renderer: @unchecked Sendable {
     static let shared = Renderer()
 
     let context: CIContext
+    private let cubes = CubeCache()
+    private static let cubeSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
     init() {
         if let device = MTLCreateSystemDefaultDevice() {
@@ -40,18 +44,86 @@ final class Renderer: @unchecked Sendable {
 
     // MARK: The chain
 
-    /// Applies `recipe` to `image` in recipe order. Disabled and neutral
-    /// entries are skipped, so the neutral recipe is the identity.
+    /// Applies `recipe` to `image` in `AdjustmentKind.allCases` order (the
+    /// recipe's own order does not matter). Disabled and neutral entries are
+    /// skipped, so the neutral recipe is the identity. Grouped kinds (crop,
+    /// tone, HSL) are one stage each, applied where their first member sits.
     func apply(_ recipe: Recipe, to image: CIImage) -> CIImage {
         var out = image
-        for a in recipe.adjustments where !a.isNoop {
-            out = Self.stage(a, on: out)
+        var done: Set<AdjustmentKind.Group> = []
+        for kind in AdjustmentKind.allCases {
+            if let group = kind.group {
+                guard !done.contains(group) else { continue }
+                done.insert(group)
+                if AdjustmentKind.members(of: group).contains(where: { !recipe[$0].isNoop }) {
+                    out = groupStage(group, recipe, on: out)
+                }
+            } else {
+                let a = recipe[kind]
+                if !a.isNoop { out = Self.stage(a, on: out) }
+            }
         }
         return out
     }
 
+    private func groupStage(_ group: AdjustmentKind.Group, _ recipe: Recipe, on image: CIImage) -> CIImage {
+        let v = { (k: AdjustmentKind) in recipe.effective(k) / 100 }
+        switch group {
+        case .crop:
+            let e = image.extent
+            let rect = CGRect(x: e.minX + e.width * v(.cropLeft),
+                              y: e.minY + e.height * v(.cropBottom),
+                              width: e.width * (1 - v(.cropLeft) - v(.cropRight)),
+                              height: e.height * (1 - v(.cropTop) - v(.cropBottom))).integral
+            guard rect.width >= 1, rect.height >= 1 else { return image }
+            return image.cropped(to: rect)
+        case .tone:
+            let curve = AdjustmentKind.members(of: .tone).filter { $0.curveX != nil }.map(v)
+            let key = [v(.highlights), v(.shadows), v(.whites), v(.blacks)] + curve
+            let data = cubes.cube(for: [0] + key) {
+                ColorCubes.toneCube(ColorCubes.toneLUT(
+                    highlights: key[0], shadows: key[1], whites: key[2], blacks: key[3], curve: curve))
+            }
+            return Self.cube(data, on: image)
+        case .hsl:
+            let bands = AdjustmentKind.HSLBand.allCases
+            let hue = bands.map { v(.hsl(.hue, $0)) }
+            let sat = bands.map { v(.hsl(.saturation, $0)) }
+            let lum = bands.map { v(.hsl(.luminance, $0)) }
+            let data = cubes.cube(for: [1] + hue + sat + lum) {
+                ColorCubes.hslCube(hue: hue, sat: sat, lum: lum)
+            }
+            return Self.cube(data, on: image)
+        }
+    }
+
+    private static func cube(_ data: Data, on image: CIImage) -> CIImage {
+        let f = CIFilter.colorCubeWithColorSpace()
+        f.inputImage = image
+        f.cubeDimension = Float(ColorCubes.dimension)
+        f.cubeData = data
+        f.colorSpace = cubeSpace
+        return f.outputImage ?? image
+    }
+
     private static func stage(_ a: Adjustment, on image: CIImage) -> CIImage {
+        let longest = max(image.extent.width, image.extent.height)
         switch a.kind {
+        case .rotate:
+            // Positive = clockwise on screen; the result is the largest
+            // same-aspect rectangle inside the rotated frame (no empty corners).
+            let theta = a.value * .pi / 180
+            let e = image.extent
+            let c = CGPoint(x: e.midX, y: e.midY)
+            var t = CGAffineTransform(translationX: c.x, y: c.y)
+            t = t.rotated(by: -theta)
+            t = t.translatedBy(x: -c.x, y: -c.y)
+            let rotated = image.transformed(by: t)
+            let cs = abs(cos(theta)), sn = abs(sin(theta))
+            let s = min(e.width / (e.width * cs + e.height * sn), e.height / (e.width * sn + e.height * cs))
+            let w = floor(e.width * s), h = floor(e.height * s)
+            let crop = CGRect(x: (c.x - w / 2).rounded(), y: (c.y - h / 2).rounded(), width: w, height: h)
+            return rotated.cropped(to: crop)
         case .exposure:
             let f = CIFilter.exposureAdjust()
             f.inputImage = image
@@ -94,6 +166,83 @@ final class Renderer: @unchecked Sendable {
             f.contrast = 1
             f.brightness = 0
             return f.outputImage ?? image
+        case .clarity:
+            // Local contrast in gamma space: an unsharp mask with a radius of
+            // 2% of the long side; negative values mix toward the blur (soften).
+            let k = a.value / 100
+            let radius = Float(max(1, longest * 0.02))
+            let gamma = CIFilter.linearToSRGBToneCurve()
+            gamma.inputImage = image
+            guard let g = gamma.outputImage else { return image }
+            let result: CIImage?
+            if k > 0 {
+                let usm = CIFilter.unsharpMask()
+                usm.inputImage = g
+                usm.radius = radius
+                usm.intensity = Float(k * 0.5)
+                result = usm.outputImage
+            } else {
+                let blur = CIFilter.gaussianBlur()
+                blur.inputImage = g.clampedToExtent()
+                blur.radius = radius
+                let mix = CIFilter.mix()
+                mix.inputImage = g
+                mix.backgroundImage = blur.outputImage
+                mix.amount = Float(1 + k * 0.6)
+                result = mix.outputImage
+            }
+            let linear = CIFilter.sRGBToneCurveToLinear()
+            linear.inputImage = result?.cropped(to: image.extent)
+            return linear.outputImage ?? image
+        case .sharpening:
+            let f = CIFilter.sharpenLuminance()
+            f.inputImage = image
+            f.sharpness = Float(a.value / 100 * 1.5)
+            f.radius = Float(max(1, longest * 0.0007))
+            return f.outputImage ?? image
+        case .grain:
+            // Multiplicative monochrome noise, ±20% at 100: the grain cell is
+            // 1/1500 of the long side and the noise is sampled by frame
+            // position, so preview and export show the same grain.
+            guard let raw = CIFilter.randomGenerator().outputImage else { return image }
+            // The generator's RGB is premultiplied by its random alpha (skewed
+            // dark); the alpha itself is uniform on 0…1, so the grain is drawn
+            // from it and the factor averages exactly 1.
+            let amp = CGFloat(a.value / 100 * 0.4)
+            let cell = max(1, longest / 1500)
+            let e = image.extent
+            let mono = CIFilter.colorMatrix()
+            mono.inputImage = raw
+            mono.rVector = CIVector(x: 0, y: 0, z: 0, w: amp)
+            mono.gVector = CIVector(x: 0, y: 0, z: 0, w: amp)
+            mono.bVector = CIVector(x: 0, y: 0, z: 0, w: amp)
+            mono.aVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+            mono.biasVector = CIVector(x: 1 - amp / 2, y: 1 - amp / 2, z: 1 - amp / 2, w: 1)
+            guard let grain = mono.outputImage?.samplingNearest()
+                .transformed(by: CGAffineTransform(translationX: e.minX, y: e.minY).scaledBy(x: cell, y: cell))
+                .cropped(to: e) else { return image }
+            let f = CIFilter.multiplyCompositing()
+            f.inputImage = grain
+            f.backgroundImage = image
+            return f.outputImage ?? image
+        case .vignette:
+            // -100 darkens the corners, +100 brightens them.
+            let f = CIFilter.vignetteEffect()
+            f.inputImage = image
+            let e = image.extent
+            f.center = CGPoint(x: e.midX, y: e.midY)
+            f.radius = Float(hypot(e.width, e.height) * 0.45)
+            f.intensity = Float(-a.value / 100)
+            f.falloff = 0.5
+            return f.outputImage?.cropped(to: e) ?? image
+        case .cropLeft, .cropTop, .cropRight, .cropBottom,
+             .highlights, .shadows, .whites, .blacks,
+             .curveBlacks, .curveShadows, .curveMidtones, .curveHighlights, .curveWhites,
+             .hueRed, .hueOrange, .hueYellow, .hueGreen, .hueAqua, .hueBlue, .huePurple, .hueMagenta,
+             .satRed, .satOrange, .satYellow, .satGreen, .satAqua, .satBlue, .satPurple, .satMagenta,
+             .lumRed, .lumOrange, .lumYellow, .lumGreen, .lumAqua, .lumBlue, .lumPurple, .lumMagenta:
+            // Grouped kinds are rendered by `groupStage`.
+            return image
         }
     }
 
@@ -101,7 +250,8 @@ final class Renderer: @unchecked Sendable {
 
     struct Result {
         let image: CGImage
-        /// Wall time of the Core Image render (filter graph + readback), ms.
+        /// Wall time of the step (building the chain, including any cube,
+        /// plus the Core Image render and readback), ms.
         let milliseconds: Double
     }
 
@@ -109,6 +259,7 @@ final class Renderer: @unchecked Sendable {
     /// upscaled; nil renders at source size), to an 8-bit CGImage in the
     /// source's color space. Synchronous; call off the main thread.
     func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil) -> Result? {
+        let t0 = DispatchTime.now().uptimeNanoseconds
         var image = source
         let extent = source.extent
         if let maxPixelSize {
@@ -122,7 +273,6 @@ final class Renderer: @unchecked Sendable {
         let rect = image.extent.integral
         guard !rect.isEmpty else { return nil }
         let space = source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        let t0 = DispatchTime.now().uptimeNanoseconds
         guard let cg = context.createCGImage(image, from: rect, format: .RGBA8, colorSpace: space) else {
             return nil
         }
