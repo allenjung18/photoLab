@@ -2,7 +2,9 @@
 
 - SwiftPM package, no Xcode project. Build with `swift build`, run with
   `swift run PhotoLab [folder]`, release bundle with `scripts/bundle.sh`.
-  Swift 5 language mode (tools 5.9); macOS 14 minimum.
+  Swift 5 language mode (tools 5.9); macOS 14 minimum. Build with Xcode
+  selected (`xcode-select -p` must show Xcode.app): the Command Line Tools
+  toolchain lacks the SwiftUIMacros plugin on macOS 27 and fails on `@State`.
 - Never write to a photo's original file. Edits live in sidecar JSON;
   exports go to a separate output folder.
 - One render path: Core Image for preview and export alike. Do not add a

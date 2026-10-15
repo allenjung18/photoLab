@@ -10,7 +10,10 @@ Native Swift, SwiftUI and Core Image. Originals are never written to.
     swift run PhotoLab ~/Pictures # open a folder directly
     scripts/bundle.sh --open      # release build as build/PhotoLab.app
 
-Needs macOS 14+ and the Xcode Command Line Tools (Swift 5.9+). Opening
+Needs macOS 14+ and Xcode (free). On macOS 27 the bare Command Line Tools
+cannot build SwiftUI (the SDK needs a macro plugin only Xcode ships), so
+select Xcode once: `sudo xcodebuild -license accept` then
+`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`. Opening
 `Package.swift` in Xcode works too. No developer account is needed to build
 or run locally.
 
