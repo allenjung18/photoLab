@@ -56,7 +56,8 @@ extension Recipe {
 /// into an output folder as the format, quality, size and name
 /// `ExportOptions` asks for, with the source's metadata carried over. The
 /// original is read, never written: an overwrite that would land on the
-/// source itself is refused.
+/// source itself, or on another photo of the open library (`protected`), is
+/// refused.
 enum Exporter {
     enum Failure: LocalizedError {
         case cannotDecode(URL)
@@ -64,6 +65,9 @@ enum Exporter {
         case cannotWrite(URL)
         /// Overwrite would replace the photo's own file.
         case isTheOriginal(URL)
+        /// Overwrite would replace the file of another photo of the open
+        /// library (the URL is that file, the export's target).
+        case isALibraryOriginal(URL)
 
         var errorDescription: String? {
             switch self {
@@ -71,6 +75,8 @@ enum Exporter {
             case .cannotRender(let u): return "Could not render \(u.lastPathComponent)."
             case .cannotWrite(let u): return "Could not write \(u.lastPathComponent)."
             case .isTheOriginal(let u): return "\(u.lastPathComponent) is the original; it is never overwritten."
+            case .isALibraryOriginal(let u):
+                return "\(u.lastPathComponent) is an original in the library; it is never overwritten."
             }
         }
     }
@@ -102,13 +108,32 @@ enum Exporter {
         }
     }
 
+    /// True when `a` and `b` name the same file: the same path once
+    /// standardized and symlinks resolved, or the same file identity
+    /// (`fileResourceIdentifier`), which also catches a case variant on a
+    /// case-insensitive volume and a hard link. False when either is missing.
+    static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        if a.standardizedFileURL.resolvingSymlinksInPath() == b.standardizedFileURL.resolvingSymlinksInPath() { return true }
+        guard let ia = fileIdentity(a), let ib = fileIdentity(b) else { return false }
+        return ia.isEqual(ib)
+    }
+
+    private static func fileIdentity(_ url: URL) -> (any NSObjectProtocol)? {
+        var url = url
+        url.removeAllCachedResourceValues()
+        return try? url.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+    }
+
     /// Renders `recipe` over the full-resolution decode of `source` and
     /// writes it per `options`. Synchronous; call off the main thread.
     /// The file is written beside its final name and moved into place, so a
     /// cancelled or failed export leaves no half file. Returns what happened.
+    /// `protected` is every original of the open library (`Library.exportItems`):
+    /// an Overwrite whose target is one of them, by file identity, is refused
+    /// with `Failure.isALibraryOriginal` and nothing is written.
     @discardableResult
     static func export(_ source: URL, recipe: Recipe, into folder: URL, options: ExportOptions = .default,
-                       renderer: Renderer = .shared) throws -> Outcome {
+                       protected: Set<URL> = [], renderer: Renderer = .shared) throws -> Outcome {
         let fm = FileManager.default
         let out = destination(for: source, in: folder, options: options)
         let exists = fm.fileExists(atPath: out.path)
@@ -118,6 +143,9 @@ enum Exporter {
             case .overwrite:
                 if out.standardizedFileURL.resolvingSymlinksInPath() == source.standardizedFileURL.resolvingSymlinksInPath() {
                     throw Failure.isTheOriginal(source)
+                }
+                if protected.contains(where: { isSameFile(out, $0) }) {
+                    throw Failure.isALibraryOriginal(out)
                 }
             case .number: break
             }
@@ -191,6 +219,9 @@ final class ExportQueue {
         let id = UUID()
         let source: URL
         let recipe: Recipe
+        /// The open library's originals when the export was asked for: an
+        /// Overwrite onto one of them is refused (`Exporter.export`).
+        var protected: Set<URL> = []
     }
 
     struct Failure: Identifiable {
@@ -207,10 +238,10 @@ final class ExportQueue {
 
     enum State: Equatable { case idle, running, finished, cancelled }
 
-    /// Exports one item into the folder per the options; the default is
-    /// `Exporter.export`. Injected so a test can time or count jobs without
-    /// rendering.
-    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions) throws -> Exporter.Outcome
+    /// Exports one item (source, recipe, protected originals) into the
+    /// folder per the options; the default is `Exporter.export`. Injected so
+    /// a test can time or count jobs without rendering.
+    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>) throws -> Exporter.Outcome
 
     private(set) var state: State = .idle
     private(set) var total = 0
@@ -238,7 +269,7 @@ final class ExportQueue {
     private static let optionsKey = "exportOptions"
 
     init(remember: Bool = false,
-         worker: @escaping Worker = { try Exporter.export($0, recipe: $1, into: $2, options: $3) }) {
+         worker: @escaping Worker = { try Exporter.export($0, recipe: $1, into: $2, options: $3, protected: $4) }) {
         self.worker = worker
         self.remember = remember
         guard remember else { return }
@@ -302,7 +333,7 @@ final class ExportQueue {
                 if Task.isCancelled { break }
                 self?.current = item.source
                 let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Exporter.Outcome, Error> in
-                    Result { try worker(item.source, item.recipe, folder, options) }
+                    Result { try worker(item.source, item.recipe, folder, options, item.protected) }
                 }.value
                 guard let self else { return }
                 switch outcome {

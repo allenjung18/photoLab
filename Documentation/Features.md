@@ -418,9 +418,12 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   (`Batch.swift`) one at a time off the main thread: the full-resolution
   decode, the one render chain with the resize last, the format's writer
   with the source's metadata when asked, a hidden `.partial` file moved into
-  place when complete. The collision policy and the one refused write (the
-  photo's own file, `Exporter.Failure.isTheOriginal`) are in
-  `Exporter.destination(for:in:options:)` and `Exporter.export`.
+  place when complete. The collision policy and the refused writes (the
+  photo's own file, `Exporter.Failure.isTheOriginal`; any other original of
+  the open library, `Exporter.Failure.isALibraryOriginal`, matched by
+  `Exporter.isSameFile` against the item's `protected` set) are in
+  `Exporter.destination(for:in:options:)` and `Exporter.export`. A refused
+  photo counts as failed and the bar shows its message.
 - **The bar.** `ExportBar` (`ContentView.swift`) appears at the bottom of
   the window while `ExportQueue.state` is not idle: a progress bar,
   "Exporting i of n", the file in flight (`ExportQueue.current`) and

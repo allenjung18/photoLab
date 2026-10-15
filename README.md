@@ -147,7 +147,8 @@ selection back to the anchor:
   (`DSC06727` + `-edit` → `DSC06727-edit.jpg`), what to do when the file
   exists (**Add a number** `<photo> 2.jpg`, **Skip**, or **Overwrite**;
   the original is never overwritten, even when exporting into its own
-  folder), whether the camera info travels (EXIF, GPS and IPTC are copied
+  folder, and neither is any other photo of the open library: an Overwrite
+  that would land on one fails for that photo and the bar says why), whether the camera info travels (EXIF, GPS and IPTC are copied
   from the original with the orientation reset, since the render is
   already upright), and the output folder. A bar at the bottom of the
   window shows the count done, the file in flight and Cancel, which stops

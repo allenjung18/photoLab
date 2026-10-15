@@ -486,10 +486,12 @@ the `SyncSheet` turns into one `sync` call with the mask the user ticked;
 ### `ExportQueue`
 
 `ExportQueue` (`Batch.swift`) is one per app. `requestExport(_:)` puts up the
-options sheet for a list of `ExportQueue.Item` (a source URL and its recipe,
-from `Library.exportItems(for:)`, which snapshots the recipes at that moment:
-an edit made while the sheet is up or the queue runs does not change what is
-written for a photo already in it); the sheet calls `keep(folder:options:)`
+options sheet for a list of `ExportQueue.Item` (a source URL, its recipe and
+`protected`, the open library's originals, from `Library.exportItems(for:)`,
+which snapshots the recipes at that moment: an edit made while the sheet is
+up or the queue runs does not change what is written for a photo already in
+it; `protected` is every photo's own file plus the files resolved for the
+export, so a Photos original's cached copy is in it too); the sheet calls `keep(folder:options:)`
 and then `ExportQueue.start(_:into:options:)`. `start` runs the items in
 order in one task: each item is handed to the `Worker` on a detached task
 off the main thread, one at a time, and `Task.isCancelled` is checked before
@@ -498,12 +500,13 @@ stays. Progress is `total`, `done` (files written), `skipped` (left alone
 under the Skip policy), `failures` (one `Failure` per item that threw, with
 its source and message), `current` (the photo in flight) and `state`
 (`running`, then `finished` or `cancelled`; `dismiss()` returns it to
-`idle`). The default `Worker` is `Exporter.export`; it is injected so a test
-can count or slow jobs without rendering.
+`idle`). The default `Worker` is `Exporter.export`, handed each item's
+source, recipe and `protected` set; it is injected so a test can count or
+slow jobs without rendering.
 
 ### `Exporter.export`
 
-`Exporter.export(_:recipe:into:options:renderer:)` (`Batch.swift`) writes
+`Exporter.export(_:recipe:into:options:protected:renderer:)` (`Batch.swift`) writes
 one photo:
 
 1. `Exporter.destination(for:in:options:)` names the file:
@@ -515,7 +518,10 @@ one photo:
 2. If the file exists: `.skip` returns the `.skipped` outcome
    (`Exporter.Outcome`) without rendering; `.overwrite` first resolves both paths and throws
    `Exporter.Failure.isTheOriginal` when the destination is the photo's own
-   file, which is the one write the app refuses under every policy.
+   file, then throws `Exporter.Failure.isALibraryOriginal` when it is any
+   file of `protected` (`Exporter.isSameFile`: the same resolved path or the
+   same `fileResourceIdentifier`, so a case variant or a hard link counts).
+   Those are the writes the app refuses; nothing is rendered or written.
 3. `Renderer.fullResolution` decodes the original, and `Renderer.render`
    applies the recipe with `resize` from the options, the resize as the
    chain's last step (section 1).

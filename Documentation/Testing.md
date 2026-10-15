@@ -114,7 +114,9 @@ not only the pass.
   camera EXIF travels with the orientation reset in every format, HEIC and
   TIFF round trip, the collision policy (number, skip, overwrite) and the
   original is never written, not even under a case-variant name on a
-  case-insensitive volume, the queue counts skipped files and passes the
+  case-insensitive volume, an Overwrite onto another library original (by
+  name, case variant or hard link) fails in the queue with the file named
+  and both originals byte-identical, the queue counts skipped files and passes the
   options through, the file name, suffix, extension and options round
   trip, and the preview and the export agree on colour: `Renderer.previewMaster`
   rendered at loupe size and `Renderer.fullResolution` exported as a TIFF,

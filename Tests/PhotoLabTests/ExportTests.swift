@@ -550,4 +550,126 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: own), ownBytes, "untouched")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["X.JPG"], "no partial, no X.jpg")
     }
+
+    /// Overwrite never lands on another photo of the open library: `x.png`
+    /// exported as JPEG with no suffix into its own folder would replace the
+    /// library's `x.jpg`. The queue counts it failed and names the file;
+    /// both originals keep their bytes. The guard is that narrow: Add a
+    /// number writes `x 2.jpg` beside them, and Overwrite into another folder
+    /// still replaces a plain earlier export.
+    @MainActor
+    func testOverwriteOntoAnotherLibraryOriginalIsRefused() async throws {
+        let png = try writeSource("x.png", gray(0.2, width: 24, height: 24))
+        let jpg = try writeSource("x.jpg", gray(0.8, width: 24, height: 24), type: .jpeg)
+        let pngBytes = try Data(contentsOf: png), jpgBytes = try Data(contentsOf: jpg)
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let pngID = try XCTUnwrap(lib.photos.first { $0.fileURL?.lastPathComponent == "x.png" }?.id)
+        XCTAssertEqual(lib.photos.count, 2)
+
+        var overwrite = ExportOptions()
+        overwrite.collision = .overwrite
+        overwrite.format = .jpeg
+        overwrite.suffix = ""
+        let items = try await lib.exportItems(for: [pngID])
+        XCTAssertEqual(Exporter.destination(for: png, in: folder, options: overwrite).lastPathComponent, "x.jpg")
+
+        let queue = ExportQueue()
+        queue.start(items, into: folder, options: overwrite)
+        await queue.wait()
+        XCTAssertEqual(queue.state, .finished)
+        XCTAssertEqual(queue.done, 0)
+        XCTAssertEqual(queue.failures.count, 1)
+        XCTAssertEqual(queue.failures.first?.source.lastPathComponent, "x.png")
+        XCTAssertEqual(queue.failures.first?.message, "x.jpg is an original in the library; it is never overwritten.")
+        XCTAssertEqual(queue.completed, 1)
+        XCTAssertEqual(try Data(contentsOf: png), pngBytes, "the exported photo untouched")
+        XCTAssertEqual(try Data(contentsOf: jpg), jpgBytes, "the other original untouched")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { !$0.hasPrefix(".") }.sorted(), ["x.jpg", "x.png"], "no partial, no new file")
+
+        XCTAssertThrowsError(try Exporter.export(png, recipe: .neutral, into: folder, options: overwrite,
+                                                 protected: items[0].protected)) { error in
+            guard case Exporter.Failure.isALibraryOriginal(let u)? = error as? Exporter.Failure else { return XCTFail("\(error)") }
+            XCTAssertEqual(u.lastPathComponent, "x.jpg")
+        }
+        XCTAssertEqual(try Data(contentsOf: jpg), jpgBytes)
+
+        // Add a number: written beside both originals.
+        var number = overwrite
+        number.collision = .number
+        guard case .written(let numbered) = try Exporter.export(png, recipe: .neutral, into: folder, options: number,
+                                                                 protected: items[0].protected) else { return XCTFail() }
+        XCTAssertEqual(numbered.lastPathComponent, "x 2.jpg")
+        XCTAssertEqual(try Data(contentsOf: jpg), jpgBytes)
+
+        // Overwrite outside the library: an earlier export is replaced.
+        try Exporter.export(png, recipe: .neutral, into: outDir, options: overwrite, protected: items[0].protected)
+        let earlier = try Data(contentsOf: outDir.appendingPathComponent("x.jpg"))
+        var bright = Recipe.neutral
+        bright.set(.exposure, to: 2)
+        XCTAssertEqual(try Exporter.export(png, recipe: bright, into: outDir, options: overwrite, protected: items[0].protected),
+                       .written(outDir.appendingPathComponent("x.jpg")))
+        XCTAssertNotEqual(try Data(contentsOf: outDir.appendingPathComponent("x.jpg")), earlier)
+    }
+
+    /// The library's original is matched as a file, not by spelling:
+    /// `y.png` exported as `y.jpg` onto the library's `Y.JPG` (one file on a
+    /// case-insensitive volume) is refused too. (The resolved path already
+    /// canonicalises the case; the hard-link test below needs the identity.)
+    @MainActor
+    func testOverwriteOntoACaseVariantOfALibraryOriginalIsRefused() async throws {
+        let png = try writeSource("y.png", gray(0.2, width: 24, height: 24))
+        let jpg = try writeSource("Y.JPG", gray(0.8, width: 24, height: 24), type: .jpeg)
+        let jpgBytes = try Data(contentsOf: jpg)
+        var overwrite = ExportOptions()
+        overwrite.collision = .overwrite
+        overwrite.format = .jpeg
+        overwrite.suffix = ""
+        let target = Exporter.destination(for: png, in: folder, options: overwrite)
+        XCTAssertEqual(target.lastPathComponent, "y.jpg")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: target.path),
+                          "case-sensitive volume: y.jpg is a different file here")
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let pngID = try XCTUnwrap(lib.photos.first { $0.fileURL?.lastPathComponent == "y.png" }?.id)
+        let items = try await lib.exportItems(for: [pngID])
+        XCTAssertThrowsError(try Exporter.export(png, recipe: .neutral, into: folder, options: overwrite,
+                                                 protected: items[0].protected)) { error in
+            guard case Exporter.Failure.isALibraryOriginal? = error as? Exporter.Failure else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(try Data(contentsOf: jpg), jpgBytes, "untouched")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { !$0.hasPrefix(".") }.sorted(), ["Y.JPG", "y.png"])
+    }
+
+    /// A second name for a library original (a hard link in the export
+    /// folder) is that original: matched by `fileResourceIdentifier`, the
+    /// Overwrite is refused and the shared bytes stay.
+    @MainActor
+    func testOverwriteOntoAHardLinkOfALibraryOriginalIsRefused() async throws {
+        let png = try writeSource("z.png", gray(0.2, width: 24, height: 24))
+        let jpg = try writeSource("z.jpg", gray(0.8, width: 24, height: 24), type: .jpeg)
+        let jpgBytes = try Data(contentsOf: jpg)
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        let link = outDir.appendingPathComponent("z.jpg")
+        try FileManager.default.linkItem(at: jpg, to: link)
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let pngID = try XCTUnwrap(lib.photos.first { $0.fileURL?.lastPathComponent == "z.png" }?.id)
+        let items = try await lib.exportItems(for: [pngID])
+        var overwrite = ExportOptions()
+        overwrite.collision = .overwrite
+        overwrite.format = .jpeg
+        overwrite.suffix = ""
+        XCTAssertThrowsError(try Exporter.export(png, recipe: .neutral, into: outDir, options: overwrite,
+                                                 protected: items[0].protected)) { error in
+            guard case Exporter.Failure.isALibraryOriginal(let u)? = error as? Exporter.Failure else { return XCTFail("\(error)") }
+            XCTAssertEqual(u.lastPathComponent, "z.jpg")
+        }
+        XCTAssertEqual(try Data(contentsOf: link), jpgBytes, "the link still holds the original")
+        XCTAssertEqual(try Data(contentsOf: jpg), jpgBytes)
+        XCTAssertTrue(Exporter.isSameFile(link, jpg))
+        XCTAssertFalse(Exporter.isSameFile(png, jpg))
+    }
 }

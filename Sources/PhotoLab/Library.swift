@@ -479,12 +479,16 @@ final class Library {
     /// here, when the export sheet opens (`ExportQueue.requestExport` is
     /// called with the result): an edit made while the sheet is up or while
     /// the queue runs does not change what is written for a photo already in it.
+    /// Every item carries the library's originals as `protected`: each
+    /// photo's own file plus the files resolved for this export (a Photos
+    /// original's cached copy), so an Overwrite never lands on one.
     func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
-        var items: [ExportQueue.Item] = []
+        var resolved: [(URL, Recipe)] = []
         for id in ids {
-            items.append(ExportQueue.Item(source: try await originalFile(for: id), recipe: recipe(for: id)))
+            resolved.append((try await originalFile(for: id), recipe(for: id)))
         }
-        return items
+        let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))
+        return resolved.map { ExportQueue.Item(source: $0.0, recipe: $0.1, protected: protected) }
     }
 
     /// Marks the start of a continuous edit (a slider drag) on `id`. At most
