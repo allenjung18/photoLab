@@ -23,6 +23,23 @@
   `Library.apply(_:to:)` -> `setRecipe`, never by writing a sidecar.
   `PresetThumbnails.render` is the strip; `Tests/PhotoLabTests/PresetTests.swift`
   has the round-trip, apply-after-reopen and 50 ms thumbnail gate.
+- Batch (`Batch.swift`, `Library` "Batch" and "Multi-selection" marks):
+  `Library.selection` is the anchor and setting it collapses
+  `selectedIDs` to that one photo; `click(_:extending:toggling:)` is the
+  path that grows a selection, `batchTargets` the folder-ordered list a
+  batch acts on. `SyncMask` (`.look` = all but geometry, `.grade` = look
+  minus exposure) + `Recipe.syncing(_:from:)` is the one batch primitive;
+  `Library.sync(_:mask:to:)` runs it through `setRecipe` per photo with a
+  shared batch tag on the undo steps, and `undo` / `redo` act on every photo
+  whose top step carries the selected photo's tag. Never write a second
+  batch path that bypasses `setRecipe`. Export: `Exporter.export` is
+  `Renderer.fullResolution` -> `Renderer.render` (no `maxPixelSize`) ->
+  `CGImageDestination` JPEG, names never overwrite (`destination(for:in:)`);
+  `ExportQueue` runs items one at a time off the main thread and checks
+  cancellation between items; its `Worker` is injected so a test can count
+  or slow jobs. `Tests/PhotoLabTests/BatchTests.swift` has the 20-photo
+  apply-and-undo proof, the mask, copy settings, the selection rules, and
+  the queue's completion and cancel; its exports go to a temp directory.
 - Photo ids are the URLs `Library.scan` returns, which resolve symlinks
   (`/var/...` comes back as `/private/var/...`); key recipes by those ids,
   never by a URL you built yourself. `Tests/PhotoLabTests/SidecarTests.swift`

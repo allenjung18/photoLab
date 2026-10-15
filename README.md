@@ -21,9 +21,11 @@ or run locally.
 
 ## Keys
 
-`⌘O` open folder · `G` grid · `E` or `Return` loupe · `Esc` back ·
-`←` `→` previous / next photo · double-click a thumbnail to open it ·
-`\` before / after (or hold the Before button) · `⇧⌘P` save preset.
+`⌘O` open folder · `G` grid · `E` or `Return` loupe · `Esc` back (in the
+grid: back to one selected photo) · `←` `→` previous / next photo ·
+double-click a thumbnail to open it · click, `⇧`-click and `⌘`-click to
+select several, `⌘A` all · `\` before / after (or hold the Before button) ·
+`⇧⌘P` save preset · `⇧⌘C` / `⇧⌘V` copy / paste settings · `⇧⌘E` export.
 
 ## Adjustments
 
@@ -80,6 +82,37 @@ install starts with six looks (Neutral, Warm Film, Cool Matte, High-Contrast
 B&W, Faded, Punchy); delete or change them freely, and the strip's `…` menu
 has Restore Starter Presets and Show Presets Folder in Finder.
 
+## Batch
+
+Select several photos in the grid (`⇧`-click a range, `⌘`-click to add or
+remove, `⌘A` for all; the heavier frame is the anchor, the photo the loupe
+shows). A bar appears under the grid:
+
+- **Sync Settings…** copies the anchor's settings onto the other selected
+  photos. The sheet has a checkbox per adjustment (sections fold open; HSL
+  is three checkboxes, one per channel) and four shortcuts: **All**,
+  **None**, **Look** (everything but rotate and crop, the default) and
+  **Grade** (the look without exposure, so each photo keeps its own
+  brightness and framing). An unchecked adjustment keeps each photo's own
+  value; a checked one takes the anchor's, zero included.
+- **Apply Preset** applies a preset to every selected photo (its look over
+  each photo's own crop and rotation). The Presets menu does the same for
+  the selection.
+- **Export…** renders every selected photo to a full-size JPEG in a folder
+  you choose (`⇧⌘E` from anywhere exports the selection, or the loupe's
+  photo). A bar at the bottom of the window shows the count done, the file
+  in flight and Cancel, which stops after that file; what is written stays.
+  Names are `<photo>.jpg`, never overwriting: a second export of the same
+  photo into the same folder is `<photo> 2.jpg`. Quality, resize and
+  metadata come in chunk 7 (default quality, no resize for now).
+
+Copy Settings (`⇧⌘C`) remembers one photo's settings; Paste Settings…
+(`⇧⌘V`) opens the same sheet onto whatever is selected, so a look can be
+carried between folders. Every batch write goes through the same path as a
+slider move: one sidecar per photo, written at once, and the whole batch is
+**one undo step**: `⌘Z` on any photo of the batch takes them all back
+(a photo you edited again since keeps its later edit; undo that first).
+
 ## Design
 
 - **Edits are data.** Each photo gets a sidecar JSON: an ordered list of
@@ -102,4 +135,11 @@ has Restore Starter Presets and Show Presets Folder in Finder.
   folder, carrying every kind but geometry; applying one writes the photo's
   sidecar through the same `setRecipe` path as a slider, so it undoes like
   one. The strip's thumbnails are the same chain at 160 px. (Chunk 5.)
-  Batch apply to a selection, with per-adjustment checkboxes, is chunk 6.
+- **A batch is a sync mask over a selection.** Sync, Paste and Apply Preset
+  are one operation: for each selected photo, the kinds in the mask are
+  taken from the source recipe and the rest kept, written through
+  `setRecipe` per photo. The undo steps of one batch share a tag, so undo
+  from any photo of the batch takes back every photo whose latest step is
+  that batch. The export queue feeds the full-resolution decode into the
+  same `Renderer.apply` as the loupe, one photo at a time, cancellable
+  between files. (Chunk 6.)

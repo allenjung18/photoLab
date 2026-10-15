@@ -2,8 +2,10 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(Library.self) private var library
+    @Environment(ExportQueue.self) private var exports
 
     var body: some View {
+        @Bindable var library = library
         Group {
             if library.folder == nil {
                 WelcomeView()
@@ -33,6 +35,12 @@ struct ContentView: View {
             }
         }
         .background(HiddenShortcuts())
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if exports.state != .idle { ExportBar() }
+        }
+        .sheet(item: $library.syncRequest) { request in
+            SyncSheet(request: request)
+        }
     }
 
     private var viewBinding: Binding<Bool> {
@@ -51,7 +59,8 @@ struct ContentView: View {
         if library.loupe, let i = library.selectedIndex {
             return "\(i + 1) of \(library.photos.count)"
         }
-        return "\(library.photos.count) photos"
+        let n = library.selectedIDs.count
+        return n > 1 ? "\(library.photos.count) photos · \(n) selected" : "\(library.photos.count) photos"
     }
 }
 
@@ -66,7 +75,9 @@ private struct HiddenShortcuts: View {
             Button("") { library.loupe = false }.keyboardShortcut("g", modifiers: [])
             Button("") { enterLoupe() }.keyboardShortcut("e", modifiers: [])
             Button("") { enterLoupe() }.keyboardShortcut(.return, modifiers: [])
-            Button("") { library.loupe = false }.keyboardShortcut(.escape, modifiers: [])
+            Button("") {
+                if library.loupe { library.loupe = false } else { library.collapseSelection() }
+            }.keyboardShortcut(.escape, modifiers: [])
             Button("") { library.select(offset: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
             Button("") { library.select(offset: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
             Button("") { library.showBefore.toggle() }.keyboardShortcut("\\", modifiers: [])
@@ -112,14 +123,20 @@ struct GridView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(library.photos) { photo in
-                            ThumbnailCell(photo: photo, selected: photo.id == library.selection,
+                            ThumbnailCell(photo: photo, selected: library.selectedIDs.contains(photo.id),
+                                          anchor: photo.id == library.selection,
                                           edited: library.isEdited(photo.id))
                                 .id(photo.id)
                                 .onTapGesture(count: 2) {
                                     library.selection = photo.id
                                     library.loupe = true
                                 }
-                                .onTapGesture { library.selection = photo.id }
+                                .onTapGesture {
+                                    // ⌘ toggles, ⇧ extends from the anchor (Finder's rules).
+                                    let flags = NSEvent.modifierFlags
+                                    library.click(photo.id, extending: flags.contains(.shift),
+                                                  toggling: flags.contains(.command))
+                                }
                         }
                     }
                     .padding(12)
@@ -130,12 +147,236 @@ struct GridView: View {
             }
         }
         .background(Color(nsColor: .underPageBackgroundColor))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if library.selectedIDs.count > 1 { BatchBar() }
+        }
+    }
+}
+
+/// The bar under the grid while more than one photo is selected: sync the
+/// anchor's settings onto the rest, apply a preset to all, export all.
+private struct BatchBar: View {
+    @Environment(Library.self) private var library
+    @Environment(PresetLibrary.self) private var presets
+    @Environment(ExportQueue.self) private var exports
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("\(library.selectedIDs.count) selected")
+                .font(.callout.weight(.semibold))
+            if let anchor = library.selectedPhoto {
+                Text("· anchor \(anchor.name)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Button("Sync Settings…") { library.requestSync() }
+                .help("Copy the anchor's settings onto the other selected photos, with checkboxes for what to sync")
+            Menu("Apply Preset") {
+                ForEach(presets.presets) { preset in
+                    Button(preset.name) { library.apply(preset, to: library.batchTargets) }
+                }
+            }
+            .fixedSize()
+            .disabled(presets.presets.isEmpty)
+            .help("Apply a preset to every selected photo (one undo step)")
+            Button("Export…") { exportSelection() }
+                .disabled(exports.isRunning)
+                .help("Render every selected photo to a full-size JPEG in a folder (⇧⌘E)")
+            Button("Deselect") { library.collapseSelection() }
+                .help("Back to the anchor alone (Esc)")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func exportSelection() {
+        let ids = library.batchTargets
+        guard !ids.isEmpty, let folder = ExportPanel.chooseFolder(count: ids.count) else { return }
+        exports.start(library.exportItems(for: ids), into: folder)
+    }
+}
+
+/// Sync Settings / Paste Settings: the source recipe goes onto the targets
+/// for the checked adjustments only; each photo keeps its own value for the
+/// rest. The whole sync is one undo step.
+struct SyncSheet: View {
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    let request: SyncRequest
+    @State private var mask: SyncMask
+    @State private var expanded: Set<AdjustmentKind.Section> = []
+
+    init(request: SyncRequest) {
+        self.request = request
+        _mask = State(initialValue: request.mask)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sync Settings").font(.title3.weight(.semibold))
+            Text("From \(request.sourceName) onto \(request.targets.count) photo\(request.targets.count == 1 ? "" : "s"). Checked adjustments are copied; the rest keep each photo's own value.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Text("Check:").foregroundStyle(.secondary)
+                Button("All") { mask = .everything }
+                Button("None") { mask = .nothing }
+                Button("Look") { mask = .look }
+                    .help("Everything but rotate and crop")
+                Button("Grade") { mask = .grade }
+                    .help("The look without exposure: each photo keeps its own brightness and framing")
+            }
+            .controlSize(.small)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(AdjustmentKind.Section.allCases, id: \.self) { section in
+                        sectionRows(section)
+                    }
+                }
+                .padding(.trailing, 8)
+            }
+            .frame(minHeight: 260, maxHeight: 360)
+            HStack {
+                Text(summary).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Sync \(request.targets.count) Photo\(request.targets.count == 1 ? "" : "s")") {
+                    library.lastSyncMask = mask
+                    library.sync(request.source, mask: mask, to: request.targets)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(mask.kinds.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+    }
+
+    /// One section: a checkbox for the whole section, then (opened) one per
+    /// adjustment; HSL shows its three channels rather than 24 bands.
+    @ViewBuilder
+    private func sectionRows(_ section: AdjustmentKind.Section) -> some View {
+        let kinds = section.kinds
+        DisclosureGroup(isExpanded: isExpanded(section)) {
+            VStack(alignment: .leading, spacing: 2) {
+                if section == .hsl {
+                    ForEach(AdjustmentKind.HSLChannel.allCases, id: \.self) { channel in
+                        let members = AdjustmentKind.HSLBand.allCases.map { AdjustmentKind.hsl(channel, $0) }
+                        checkbox(channel.title, members)
+                    }
+                } else {
+                    ForEach(kinds) { kind in checkbox(kind.label, [kind]) }
+                }
+            }
+            .padding(.leading, 20)
+            .padding(.bottom, 4)
+        } label: {
+            checkbox(section.title, kinds)
+                .font(.callout.weight(.semibold))
+        }
+    }
+
+    /// A checkbox over a list of kinds: on when all are in the mask; a mixed
+    /// list shows as on with a dash.
+    private func checkbox(_ title: String, _ kinds: [AdjustmentKind]) -> some View {
+        let state = mask.state(of: kinds)
+        return Toggle(isOn: Binding(get: { state != false }, set: { mask.set(kinds, $0) })) {
+            HStack(spacing: 4) {
+                Text(title)
+                if state == nil {
+                    Text("(some)").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .toggleStyle(.checkbox)
+    }
+
+    private func isExpanded(_ section: AdjustmentKind.Section) -> Binding<Bool> {
+        Binding(
+            get: { expanded.contains(section) },
+            set: { on in if on { expanded.insert(section) } else { expanded.remove(section) } })
+    }
+
+    private var summary: String {
+        let n = mask.kinds.count
+        if mask == .look { return "Look: everything but rotate and crop" }
+        if mask == .grade { return "Grade: the look without exposure" }
+        if mask == .everything { return "Everything, framing included" }
+        return "\(n) of \(AdjustmentKind.allCases.count) adjustments"
+    }
+}
+
+/// The export progress at the bottom of the window: count done of total,
+/// the file in flight, Cancel; then the result with Show in Finder.
+private struct ExportBar: View {
+    @Environment(ExportQueue.self) private var exports
+
+    var body: some View {
+        HStack(spacing: 12) {
+            switch exports.state {
+            case .running:
+                ProgressView(value: Double(exports.completed), total: Double(max(1, exports.total)))
+                    .frame(width: 160)
+                Text("Exporting \(exports.completed + 1) of \(exports.total)")
+                    .font(.callout.monospacedDigit())
+                if let current = exports.current {
+                    Text(current.lastPathComponent)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Spacer()
+                Button("Cancel") { exports.cancel() }
+                    .help("Stop after the file being written; what is written stays")
+            case .finished, .cancelled:
+                Image(systemName: exports.failures.isEmpty && exports.state == .finished
+                      ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(exports.failures.isEmpty && exports.state == .finished ? .green : .orange)
+                Text(result)
+                    .font(.callout)
+                    .lineLimit(2)
+                if let first = exports.failures.first {
+                    Text(first.message).font(.caption).foregroundStyle(.red).lineLimit(1)
+                }
+                Spacer()
+                if let folder = exports.folder {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting(exports.exported.isEmpty ? [folder] : exports.exported)
+                    }
+                }
+                Button("Done") { exports.dismiss() }
+            case .idle:
+                EmptyView()
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private var result: String {
+        let folder = exports.folder?.lastPathComponent ?? ""
+        var s = exports.state == .cancelled
+            ? "Cancelled: \(exports.done) of \(exports.total) exported to \(folder)"
+            : "Exported \(exports.done) of \(exports.total) to \(folder)"
+        if !exports.failures.isEmpty { s += " · \(exports.failures.count) failed" }
+        return s
     }
 }
 
 struct ThumbnailCell: View {
     let photo: Photo
     let selected: Bool
+    /// The selection's anchor (the loupe photo), drawn heavier than the rest.
+    var anchor = false
     /// Shows a small badge when the photo has a saved edit.
     var edited = false
     @State private var image: NSImage?
@@ -154,7 +395,7 @@ struct ThumbnailCell: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(selected ? Color.accentColor : .clear, lineWidth: 3))
+                    .stroke(selected ? Color.accentColor.opacity(anchor ? 1 : 0.6) : .clear, lineWidth: 3))
             .overlay(alignment: .topTrailing) {
                 if edited {
                     Image(systemName: "slider.horizontal.3")

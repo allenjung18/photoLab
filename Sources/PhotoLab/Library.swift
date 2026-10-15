@@ -9,6 +9,17 @@ struct Photo: Identifiable, Hashable {
     var name: String { url.lastPathComponent }
 }
 
+/// What the Sync / Paste Settings sheet shows: a source recipe, where it
+/// came from, and the photos it goes onto.
+struct SyncRequest: Identifiable {
+    let id = UUID()
+    let source: Recipe
+    let sourceName: String
+    let targets: [Photo.ID]
+    /// The mask the sheet opens with (the last one used).
+    let mask: SyncMask
+}
+
 /// The library is a folder. Originals are never written to: every edit is a
 /// recipe, held in memory for the open folder and persisted as a sidecar
 /// (`SidecarStore`) the moment it changes.
@@ -16,9 +27,23 @@ struct Photo: Identifiable, Hashable {
 final class Library {
     var folder: URL?
     var photos: [Photo] = []
-    var selection: Photo.ID?
+    /// The anchor of the selection: the photo the loupe shows, the one a
+    /// shift-click extends from, the source of Sync Settings. Setting it
+    /// collapses a multi-selection to that one photo; `click` is the path
+    /// that grows the selection.
+    var selection: Photo.ID? {
+        didSet { if selection != oldValue { selectedIDs = selection.map { [$0] } ?? [] } }
+    }
+    /// Every selected photo (the grid's multi-selection), anchor included.
+    private(set) var selectedIDs: Set<Photo.ID> = []
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false
+    /// Copy Settings: the recipe and the name of the photo it came from.
+    private(set) var copiedSettings: (recipe: Recipe, name: String)?
+    /// A Sync / Paste Settings sheet the window should show.
+    var syncRequest: SyncRequest?
+    /// The mask of the last sync, so the next sheet opens the same way.
+    var lastSyncMask = SyncMask.look
     /// Edits per photo for the open folder, mirrored to sidecars.
     private(set) var recipes: [Photo.ID: Recipe] = [:]
     /// Before/after: true shows the unadjusted photo in the loupe.
@@ -105,6 +130,54 @@ final class Library {
         selection = photos[j].id
     }
 
+    // MARK: Multi-selection
+
+    /// A click in the grid. Plain: that photo alone. `toggling` (⌘): add or
+    /// remove it, the anchor moving to it when added. `extending` (⇧): every
+    /// photo between the anchor and it, the anchor kept.
+    func click(_ id: Photo.ID, extending: Bool = false, toggling: Bool = false) {
+        guard let i = photos.firstIndex(where: { $0.id == id }) else { return }
+        if extending, let a = selectedIndex {
+            let range = min(a, i)...max(a, i)
+            selectedIDs = Set(photos[range].map(\.id))
+        } else if toggling {
+            if selectedIDs.contains(id) {
+                var rest = selectedIDs
+                rest.remove(id)
+                // Setting the anchor collapses the set, so move it first.
+                if selection == id { selection = photos.first { rest.contains($0.id) }?.id }
+                selectedIDs = rest
+            } else {
+                let keep = selectedIDs
+                selection = id
+                selectedIDs = keep.union([id])
+            }
+        } else {
+            selection = id
+            selectedIDs = [id]
+        }
+    }
+
+    /// Every photo of the folder, the anchor kept (or the first photo).
+    func selectAll() {
+        guard !photos.isEmpty else { return }
+        if selection == nil { selection = photos.first?.id }
+        selectedIDs = Set(photos.map(\.id))
+    }
+
+    /// Back to the anchor alone.
+    func collapseSelection() {
+        selectedIDs = selection.map { [$0] } ?? []
+    }
+
+    /// The photos a batch action targets, in folder order: the multi-selection
+    /// when there is one, else the anchor.
+    var batchTargets: [Photo.ID] {
+        let ids = photos.map(\.id).filter { selectedIDs.contains($0) }
+        if ids.isEmpty, let selection { return [selection] }
+        return ids
+    }
+
     // MARK: Recipes, undo and sidecars
 
     func recipe(for id: Photo.ID) -> Recipe { recipes[id] ?? .neutral }
@@ -117,13 +190,19 @@ final class Library {
     /// (`beginEdit` … `endEdit`) only the in-memory recipe moves and the
     /// drag as a whole becomes the undo step when it ends.
     func setRecipe(_ recipe: Recipe, for id: Photo.ID) {
+        setRecipe(recipe, for: id, batch: nil)
+    }
+
+    /// `setRecipe` with the step tagged as part of `batch`: steps that share
+    /// a tag undo and redo together (see `undo`).
+    private func setRecipe(_ recipe: Recipe, for id: Photo.ID, batch: UUID?) {
         let current = self.recipe(for: id)
         guard recipe != current else { return }
         if let openEdit, openEdit.id == id {
             apply(recipe, to: id)
             return
         }
-        history[id, default: EditHistory()].push(current)
+        history[id, default: EditHistory()].push(current, batch: batch)
         apply(recipe, to: id)
         persist(id)
     }
@@ -135,6 +214,64 @@ final class Library {
     /// and crop, through `setRecipe` (one undo step, the sidecar written).
     func apply(_ preset: Preset, to id: Photo.ID) {
         setRecipe(preset.apply(to: recipe(for: id)), for: id)
+    }
+
+    // MARK: Batch
+
+    /// Copies the kinds in `mask` from `source` onto every photo in `ids`,
+    /// each through `setRecipe` (its own sidecar, written at once). The
+    /// whole batch is ONE undo step: ⌘Z on any photo of it takes them all
+    /// back. A photo the sync would not change is skipped. Returns how many
+    /// photos changed.
+    @discardableResult
+    func sync(_ source: Recipe, mask: SyncMask, to ids: [Photo.ID]) -> Int {
+        let batch = UUID()
+        var changed = 0
+        for id in ids {
+            let current = recipe(for: id)
+            let next = current.syncing(mask, from: source)
+            guard next != current.normalized else { continue }
+            setRecipe(next, for: id, batch: batch)
+            changed += 1
+        }
+        return changed
+    }
+
+    /// Applies a preset to many photos as one batch: the preset's look (the
+    /// kinds in `mask`, never geometry, which a preset does not carry) over
+    /// each photo's own values.
+    @discardableResult
+    func apply(_ preset: Preset, mask: SyncMask = .look, to ids: [Photo.ID]) -> Int {
+        let kinds = mask.kinds.subtracting(AdjustmentKind.geometryKinds)
+        return sync(preset.recipe, mask: SyncMask(kinds: kinds), to: ids)
+    }
+
+    /// Copy Settings: remembers the photo's recipe for Paste Settings.
+    func copySettings(from id: Photo.ID) {
+        copiedSettings = (recipe(for: id), id.lastPathComponent)
+    }
+
+    /// Asks the window for the Sync Settings sheet: the anchor's recipe onto
+    /// the other selected photos.
+    func requestSync() {
+        guard let anchor = selection else { return }
+        let targets = batchTargets.filter { $0 != anchor }
+        guard !targets.isEmpty else { return }
+        syncRequest = SyncRequest(source: recipe(for: anchor), sourceName: anchor.lastPathComponent,
+                                  targets: targets, mask: lastSyncMask)
+    }
+
+    /// Asks the window for the Paste Settings sheet: the copied recipe onto
+    /// the selection.
+    func requestPaste() {
+        guard let copied = copiedSettings, !batchTargets.isEmpty else { return }
+        syncRequest = SyncRequest(source: copied.recipe, sourceName: copied.name,
+                                  targets: batchTargets, mask: lastSyncMask)
+    }
+
+    /// The (photo, recipe) pairs an export of `ids` writes.
+    func exportItems(for ids: [Photo.ID]) -> [ExportQueue.Item] {
+        ids.map { ExportQueue.Item(source: $0, recipe: recipe(for: $0)) }
     }
 
     /// Marks the start of a continuous edit (a slider drag) on `id`.
@@ -157,24 +294,41 @@ final class Library {
     var canUndo: Bool { selection.map { history[$0]?.undo.isEmpty == false } ?? false }
     var canRedo: Bool { selection.map { history[$0]?.redo.isEmpty == false } ?? false }
 
-    /// Undoes the last edit of the selected photo.
+    /// Undoes the last edit of the selected photo. When that edit was part of
+    /// a batch, every photo whose latest edit is the same batch goes back
+    /// with it (a photo edited again since keeps its later edit).
     func undo() {
-        guard let id = selection, var h = history[id], let previous = h.undo.popLast() else { return }
+        guard let id = selection, let top = history[id]?.undo.last else { return }
         openEdit = nil
-        h.redo.append(recipe(for: id))
-        history[id] = h
-        apply(previous, to: id)
-        persist(id)
+        for pid in members(of: top.batch, anchor: id, top: { $0.undo.last }) {
+            guard var h = history[pid], let step = h.undo.popLast() else { continue }
+            h.redo.append(EditHistory.Step(recipe: recipe(for: pid), batch: step.batch))
+            history[pid] = h
+            apply(step.recipe, to: pid)
+            persist(pid)
+        }
     }
 
-    /// Redoes the last undone edit of the selected photo.
+    /// Redoes the last undone edit of the selected photo, and of every other
+    /// photo whose latest undone edit is the same batch.
     func redo() {
-        guard let id = selection, var h = history[id], let next = h.redo.popLast() else { return }
+        guard let id = selection, let top = history[id]?.redo.last else { return }
         openEdit = nil
-        h.undo.append(recipe(for: id))
-        history[id] = h
-        apply(next, to: id)
-        persist(id)
+        for pid in members(of: top.batch, anchor: id, top: { $0.redo.last }) {
+            guard var h = history[pid], let step = h.redo.popLast() else { continue }
+            h.undo.append(EditHistory.Step(recipe: recipe(for: pid), batch: step.batch))
+            history[pid] = h
+            apply(step.recipe, to: pid)
+            persist(pid)
+        }
+    }
+
+    /// The photos a step acts on: the anchor alone for a single edit, else
+    /// every photo whose `top` step carries the same batch tag.
+    private func members(of batch: UUID?, anchor: Photo.ID,
+                         top: (EditHistory) -> EditHistory.Step?) -> [Photo.ID] {
+        guard let batch else { return [anchor] }
+        return photos.map(\.id).filter { history[$0].flatMap(top)?.batch == batch }
     }
 
     private func apply(_ recipe: Recipe, to id: Photo.ID) {
@@ -195,11 +349,18 @@ final class Library {
     /// Per-photo undo and redo stacks of whole recipes (a recipe is a few
     /// hundred bytes, so whole snapshots are simpler than deltas).
     private struct EditHistory {
-        var undo: [Recipe] = []
-        var redo: [Recipe] = []
+        /// One step: the recipe to go back to, and the batch it belongs to
+        /// (nil for a single edit).
+        struct Step {
+            var recipe: Recipe
+            var batch: UUID?
+        }
 
-        mutating func push(_ recipe: Recipe) {
-            undo.append(recipe)
+        var undo: [Step] = []
+        var redo: [Step] = []
+
+        mutating func push(_ recipe: Recipe, batch: UUID? = nil) {
+            undo.append(Step(recipe: recipe, batch: batch))
             if undo.count > Library.maxUndoDepth { undo.removeFirst(undo.count - Library.maxUndoDepth) }
             redo.removeAll()
         }
