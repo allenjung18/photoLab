@@ -91,6 +91,9 @@ final class Library {
     private(set) var marks: [Photo.ID: Marks] = [:]
     /// Before/after: true shows the unadjusted photo in the loupe.
     var showBefore = false
+    /// Clipping warning: true paints the loupe's blown pixels red and its
+    /// crushed pixels blue (J, or a histogram triangle).
+    var showClipping = false
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
     /// Why the last `open` was refused (a missing path); nil after one succeeds.

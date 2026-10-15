@@ -96,6 +96,7 @@ private struct HiddenShortcuts: View {
             Button("") { library.select(offset: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
             Button("") { library.select(offset: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
             Button("") { library.showBefore.toggle() }.keyboardShortcut("\\", modifiers: [])
+            Button("") { library.showClipping.toggle() }.keyboardShortcut("j", modifiers: [])
             Button("") { library.setFlag(.pick, for: library.batchTargets) }.keyboardShortcut("p", modifiers: [])
             Button("") { library.setFlag(.reject, for: library.batchTargets) }.keyboardShortcut("x", modifiers: [])
             Button("") { library.setFlag(nil, for: library.batchTargets) }.keyboardShortcut("u", modifiers: [])
@@ -584,6 +585,7 @@ private struct PreviewCanvas: View {
         }
         .onChange(of: recipe) { request() }
         .onChange(of: pixelSize) { request() }
+        .onChange(of: library.showClipping, initial: true) { _, on in preview.setClipping(on) }
     }
 
     private func longestSide(_ size: CGSize) -> Int {
@@ -595,7 +597,7 @@ private struct PreviewCanvas: View {
     }
 }
 
-/// The preset strip, then the adjustment sliders in sections (Basic, Color,
+/// The histogram, the preset strip, then the adjustment sliders in sections (Basic, Color,
 /// Tone Curve, HSL, Detail, Effects, Crop & Rotate), each with an enable checkbox, plus a
 /// hold-to-compare button, undo / redo / reset, and the live render time
 /// of the last frame. The HSL section shows one channel (hue, saturation or
@@ -619,6 +621,9 @@ struct AdjustmentsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
+                    HistogramView(histogram: preview.imageURL == photo.url ? preview.histogram : nil,
+                                  showClipping: $library.showClipping)
+                        .padding(.bottom, 6)
                     DisclosureGroup(isExpanded: $presetsExpanded) {
                         PresetStrip(photo: photo)
                             .padding(.top, 8)
