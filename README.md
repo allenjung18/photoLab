@@ -31,6 +31,8 @@ in Xcode works too.
 | `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
+| `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
+| `0` … `5` | Rate the selection that many stars (`0` clears) |
 | `⌘A` | Select All Photos (grid only) |
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
 | `⇧⌘R` | Reset Photo (back to the original) |
@@ -146,8 +148,11 @@ slider move: one sidecar per photo, written at once, and the whole batch is
 
 Everything the app writes, and nothing else:
 
-- **Sidecars** — `<folder>/.photolab/<file>.json`, one per edited photo,
-  next to the photos. Removed when the photo is reset to the original.
+- **Sidecars** — `<folder>/.photolab/<file>.json`, one per edited, flagged
+  or rated photo, next to the photos. Removed when the photo is reset to the
+  original and carries no flag or rating. A sidecar this version cannot
+  read is kept beside the new one as `<file>.json.unreadable-<stamp>`,
+  never deleted.
 - **Presets** — `~/Library/Application Support/PhotoLab/presets/<name>.json`,
   one per preset; the six starter looks are written there when that folder
   does not exist yet.

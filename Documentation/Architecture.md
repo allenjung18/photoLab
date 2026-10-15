@@ -135,17 +135,28 @@ The whole edit of one photo: `adjustments`, an array of `Adjustment`.
 `Recipe.neutral` is every kind at its neutral value, enabled. The subscript
 by kind reads the entry for that kind, or a neutral one when the kind is
 missing (an older sidecar), and writes in place or appends; `effective(_:)`
-is the value the renderer uses (neutral when disabled). `isNeutral` is true
-when every entry is a no-op. `normalized` is the canonical form: every kind
-present exactly once, in chain order, so two recipes that render the same
-compare equal whatever a sidecar listed; presets and batch results are built
-in that form.
+is the value the renderer uses (neutral when disabled). `normalized` is the
+canonical form: every kind present exactly once, in chain order, so two
+recipes that render the same compare equal whatever a sidecar listed;
+presets and batch results are built in that form.
+
+Two questions about a recipe have two answers. `isNeutral` is the render
+side: true when every entry is a no-op, so applying the recipe changes
+nothing. `isDefault` is the edit side: true when `normalized` equals
+`Recipe.neutral`, every kind at its neutral value and enabled. They differ
+on a disabled-only edit, a value kept but switched off: it renders as the
+identity, so it is neutral, but it is not the default, so it stays in
+memory, keeps its sidecar, counts as edited and comes back when the checkbox
+is ticked again. Everything below that asks "is there an edit" asks
+`isDefault`.
 
 ### `Sidecar` and `SidecarStore`
 
 A `Sidecar` is the on-disk form of one photo's edit: `version`
 (`Sidecar.currentVersion`), `original` (the photo's file name, for a human
-reading the directory), `updated` and `recipe`. `SidecarStore` reads and
+reading the directory), `updated` and `recipe`, plus two optional keys,
+`flag` and `rating`, the culling marks (`Marks`, below), absent when unset
+so a file written before they existed decodes unchanged. `SidecarStore` reads and
 writes the sidecars of one folder at `<folder>/.photolab/<file>.json`
 (`SidecarStore.directoryName`, `SidecarStore.fileExtension`); the file name
 keeps the original's extension, so `IMG_0001.JPG` and `IMG_0001.HEIC` never
@@ -153,14 +164,30 @@ share one, and a photo in a subfolder keeps its relative path under
 `.photolab/`. The directory is hidden, so `Library.scan` (which skips hidden
 entries) never lists it, and deleting it wipes every edit in the folder.
 
-- `SidecarStore.save(_:for:now:)` writes atomically (temp file and rename). A
-  neutral recipe removes the file instead, so a reset leaves no trace.
-- `SidecarStore.load(for:)` returns nil when there is no sidecar and throws
-  when the file cannot be decoded, so the caller can tell "no edit" from "an
-  edit this build cannot read"; `loadAll(for:)` returns the readable recipes
-  and the list of unreadable photos. `Library` shows those as neutral, reports
-  the first in `sidecarError`, and leaves the file alone until the user edits
-  that photo.
+- `SidecarStore.save(_:marks:for:now:)` writes the recipe and the marks
+  atomically (temp file and rename). The file is removed instead when there
+  is nothing to keep, the default recipe (`Recipe.isDefault`) and no marks,
+  so a reset of an unmarked photo leaves no trace while a flag or rating on
+  a default recipe keeps its file; a recipe that only differs by a disabled
+  entry is still written. `SidecarStore.save(_:for:now:)` is the
+  recipe-only form: it keeps whatever marks the file already holds.
+- `SidecarStore.read(for:)` returns the whole sidecar, nil when there is
+  none, and throws when the file cannot be decoded, so the caller can tell
+  "no edit" from "an edit this build cannot read"; `SidecarStore.load(for:)`
+  is its recipe. `SidecarStore.decode` also refuses a `version` above
+  `Sidecar.currentVersion` (`SidecarError.unsupportedVersion`): a file a
+  newer build wrote reads as unreadable rather than losing the fields this
+  build does not know. `loadAll(for:)` returns the non-default recipes, the
+  non-empty marks and the list of unreadable photos. `Library` shows those
+  as neutral, reports the first in `sidecarError`, and leaves the file alone
+  until the user edits that photo.
+- An unreadable file is never overwritten. Before the first write or
+  removal at its path, `save` calls `SidecarStore.backUpIfUnreadable`, which
+  moves it to `<file>.unreadable-<yyyymmdd-hhmmss>` beside the new sidecar
+  (`UnreadableBackup.moveAside`, `Sidecar.swift`; a suffix when that second
+  is taken). The backup keeps the original bytes, is never deleted by the
+  app, and is listed by neither store (its extension is not `json`) nor the
+  folder scan (`.photolab` is hidden).
 
 The shape of a sidecar, with the field names from the structs above and the
 encoder settings in `SidecarStore.save` (pretty-printed, keys sorted, dates
@@ -168,7 +195,9 @@ ISO 8601, slashes unescaped); the real file lists every kind:
 
 ```json
 {
+  "flag" : "pick",
   "original" : "IMG_0001.JPG",
+  "rating" : 3,
   "recipe" : {
     "adjustments" : [
       { "enabled" : true,  "kind" : "exposure",   "value" : 0.3 },
@@ -181,6 +210,19 @@ ISO 8601, slashes unescaped); the real file lists every kind:
   "version" : 1
 }
 ```
+
+### `Marks`
+
+What culling leaves on a photo (`Sidecar.swift`): a `Marks.Flag`, `pick` or
+`reject` or none, and a `rating` clamped to 0…`Marks.maxRating`;
+`Marks.isEmpty` is neither. Marks sit beside the recipe in the sidecar and
+never inside it: they are not an edit, so they are not undo steps and never
+enter a `Recipe`, a `Preset` or a `SyncMask` (the types do not meet).
+`Library.marks` holds the non-empty ones for the open folder;
+`Library.setFlag(_:for:)` and `Library.setRating(_:for:)` change them for a
+list of photos and write each sidecar at once through the same `persist`
+that writes a recipe, so a reset keeps the flag and a flag keeps a default
+recipe's file. `PhotoFilter` (`Library.swift`) reads them for the grid.
 
 ### `Preset` and `PresetStore`
 
@@ -201,9 +243,14 @@ under the user's Application Support), so tests never touch the user's
 folder. `save(_:)` validates the name (`PresetStore.validated`), writes
 atomically and replaces a preset of the same name, but refuses a different
 name that would map onto the same file (`PresetError.fileNameCollision`).
-`rename(_:to:)` never silently replaces another preset. `loadAll()` returns
-the readable presets sorted by name plus the files it could not decode,
-which are left alone. `seedStartersIfMissing()` writes `Preset.starters` only
+`rename(_:to:)` never silently replaces another preset. `PresetStore.decode`
+refuses a `version` above `Preset.currentVersion`
+(`PresetError.unsupportedVersion`), so `loadAll()` returns the readable
+presets sorted by name plus the files it could not decode, which are left
+alone; `PresetStore.exists` is "a file is stored under this name" whether or
+not this build can read it, so an undecodable preset is the user's, never
+an empty slot. `save` over such a file moves it aside first, the same
+`UnreadableBackup` as a sidecar's, and never replaces it. `seedStartersIfMissing()` writes `Preset.starters` only
 when the directory does not exist yet, so a starter the user deleted stays
 deleted; `writeStarters()` is the strip's Restore Starter Presets.
 `PresetLibrary` is the store read into memory for the views, re-read after
@@ -232,14 +279,21 @@ passes true; tests never do).
 
 `Library` (`Library.swift`) holds the open folder: its photos, the selection,
 and `recipes`, the edits of the folder keyed by photo id, mirrored to
-sidecars. Every change to an edit goes through one method.
+sidecars. `Library.open(_:)` fills it: a folder, or a file's folder with
+that file in the loupe; the folder is scanned and every sidecar read
+(`SidecarStore.loadAll`) before the first frame, and the selection, the
+open drag and the undo history are reset. A path that does not exist is
+refused: the current folder and selection stay and `openError` says why, so
+a mistyped launch argument never opens its parent or the working directory.
+Every change to an edit goes through one method.
 
 ### `Library.setRecipe(_:for:)`
 
 The only writer. Given a recipe that differs from the photo's current one, it
 pushes the current recipe onto that photo's `EditHistory` as the undo step,
-replaces the recipe in memory (a neutral recipe is removed from `recipes`,
-which is what `isEdited(_:)` reads) and writes the sidecar at once through
+replaces the recipe in memory (only the default recipe, `Recipe.isDefault`,
+is dropped from `recipes`, which is what `isEdited(_:)` reads; a
+disabled-only recipe keeps its values there) and writes the sidecar at once through
 `SidecarStore.save`; a write that fails lands in `sidecarError` for the
 panel. `resetRecipe(for:)` is `setRecipe` with `Recipe.neutral`, so a reset
 is one undo step and removes the sidecar. Applying a preset to one photo,
@@ -254,7 +308,11 @@ A slider drag wraps its changes in `Library.beginEdit(_:)` and
 `Library.endEdit(_:)`. While an edit is open on a photo, `setRecipe` only
 moves the in-memory recipe (the loupe follows live) and records nothing; on
 `endEdit`, if the recipe moved, the value at `beginEdit` becomes the one undo
-step and the sidecar is written once.
+step and the sidecar is written once. At most one edit is open at a time:
+`beginEdit` on another photo closes the open one first (its drag persisted
+and made a step), and `endEdit` closes whatever edit is open regardless of
+the id it is handed, so a loupe photo that changes mid-drag cannot leave an
+edit on the unsaved path. `undo` and `redo` drop an open edit too.
 
 ### Undo and redo
 
@@ -370,7 +428,8 @@ one photo:
              ..endEdit)
                  |
                  v
-        SidecarStore  <folder>/.photolab/<file>.json   (atomic; neutral = deleted)
+        SidecarStore  <folder>/.photolab/<file>.json   (atomic; recipe + marks;
+                                                        default and unmarked = deleted)
         PresetStore   <presets dir>/<name>.json        (reads feed Preset.apply)
 ```
 

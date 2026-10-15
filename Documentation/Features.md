@@ -1,0 +1,407 @@
+# PhotoLab — features
+
+Each thing the user sees, mapped to the types that implement it, the file
+they live in, and what it writes to disk. The README says what each feature
+does for the user; `Documentation/Architecture.md` says how the render path,
+the data model, the edit path and the export pipeline work underneath. This
+document is the layer between: screen to type. Every name in backticks is in
+`Sources/PhotoLab/`.
+
+The window is `ContentView` (`ContentView.swift`): the welcome screen while
+no folder is open (`Library.folder` is nil), the loupe while `Library.loupe`
+is on and a photo is selected, the grid otherwise; a toolbar with Open Folder
+and a Grid / Loupe picker; the hidden keyboard shortcuts; the export bar at
+the bottom when a run is going; and the two sheets, Sync and Export. The
+title is the folder's name, the subtitle "n of N" in the loupe (with the
+photo's flag and stars when it has them) and "N photos · n selected" in the
+grid; under a filter both count the photos shown, "n of N shown".
+
+## Welcome
+
+`WelcomeView` (`ContentView.swift`): an icon, "Open a folder of photos to
+begin", the last open error in red if there is one, and **Open Folder…**
+(also **Return**).
+
+- **Open Folder…** is `Library.chooseFolder` (`Library.swift`): an
+  `NSOpenPanel` for directories only, then `Library.open` with the choice.
+  The toolbar button and **⌘O** call the same method from any screen.
+- `Library.open(_:)` takes a folder, or a file, in which case it opens the
+  file's folder with that photo in the loupe. It scans the folder
+  (`Library.scan`, below), reads every sidecar through
+  `SidecarStore.loadAll` so each photo opens with its edit, resets the
+  selection, the loupe, the before/after state and the undo history, and
+  remembers the folder. A path that does not exist is refused: the current
+  folder and selection stay, and `openError` carries the message the welcome
+  screen shows, so a mistyped launch argument never opens its parent or the
+  working directory. Sidecars that exist but cannot be decoded (damaged, or
+  a `version` from a newer build) are listed in `unreadableSidecars`, shown
+  as neutral, reported in `sidecarError` and left alone until the user edits
+  that photo; the first write then moves the old file to a
+  `.unreadable-<stamp>` backup beside the new sidecar (`UnreadableBackup`)
+  and never over it.
+- **The remembered last folder.** `Library.open` stores the folder's path in
+  `UserDefaults` under `lastFolder` (`Library.lastFolderKey`) when the
+  library was made with `rememberFolder` on, which the app's is and a test's
+  (`Library(rememberFolder: false)`) is not. At launch `PhotoLabApp` opens
+  the first non-flag command-line argument, else calls
+  `Library.restoreLastFolder`, which opens the stored path if it still
+  exists; this runs once per process (`launched`), so a window re-created
+  from the Dock does not reopen the argument and wipe the selection.
+
+Writes: the last folder in UserDefaults. Nothing else.
+
+## Grid
+
+`GridView` (`ContentView.swift`): the filter bar above, a `LazyVGrid` of
+`ThumbnailCell` over `Library.visiblePhotos`, "No photos in this folder"
+when the scan found none and "No photos match the filter" when the filter
+hides them all, and the batch bar under it while more than one photo is
+selected. Selecting a photo scrolls it into view.
+
+- **What is listed.** `Library.scan` (`Library.swift`) enumerates the folder
+  and its subfolders with `.skipsHiddenFiles` and `.skipsPackageDescendants`
+  and keeps every regular file whose content type conforms to `public.image`
+  (JPEG, HEIC, PNG, TIFF and every RAW format ImageIO knows), sorted by path
+  with `localizedStandardCompare`. Skipping hidden entries is what keeps the
+  `.photolab/` sidecar directory out of the grid. The URLs the enumerator
+  returns have symlinks resolved (a folder under `/var` comes back under
+  `/private/var`); they are the photo ids (`Photo.id`), and every recipe,
+  sidecar and selection is keyed by them, never by a URL built elsewhere.
+- **The filter bar.** `FilterBar` (`ContentView.swift`) is a segmented
+  picker over `PhotoFilter` (`Library.swift`: All, Picks, Unflagged,
+  Rejected, and at least one to five stars, `PhotoFilter.stars`) bound to
+  `Library.filter`, with the shown count beside it. `Library.visiblePhotos`
+  is the folder's photos the filter admits (`PhotoFilter.admits(_:)` over
+  each photo's marks), in folder order, and `Library.isVisible` the test for
+  one photo; under All it is `Library.photos`. Opening a folder resets the
+  filter to All. Changing the filter, or a mark that moves a photo out of
+  it, drops hidden photos from the selection and moves a hidden anchor to
+  the next visible photo in folder order (else the previous one, else none,
+  which also leaves the loupe), so rejecting under Picks shows the next
+  candidate.
+- **A cell.** `ThumbnailCell` (photo, selected, anchor, edited, marks) draws
+  the thumbnail (a spinner until it arrives), a ring when selected, heavier
+  for the anchor, a sliders badge when `Library.isEdited` says the photo has
+  a saved edit, a flag in the top corner (a filled flag for a pick, a cross
+  for a reject, which also dims the cell), the stars along the bottom when
+  the photo is rated, and the file name. It asks `Thumbnails.shared` from a
+  `.task(id:)`: `Thumbnails.cached(_:)` first, else
+  `Thumbnails.thumbnail(for:)`.
+- **Thumbnails.** `Thumbnails` (`ImageLoading.swift`) is an `NSCache` of
+  `NSImage` at `Thumbnails.pixelSize` on the long side. `thumbnail(for:)`
+  runs the decode on a detached task and forwards the cell's cancellation
+  into it (`withTaskCancellationHandler`), checking it before and inside the
+  decode, so a cell scrolled past before its turn costs nothing and a result
+  for a cancelled request is never cached. The decoder is injected
+  (`Thumbnails.Decoder`, `init(decode:)`); the app's is
+  `ImageLoading.downsampled`.
+- **The decode.** `ImageLoading.thumbnail(from:maxPixelSize:)` asks the
+  container for its embedded preview first
+  (`ImageLoading.embeddedPreview(from:maxPixelSize:)`,
+  `kCGImageSourceCreateThumbnailFromImageIfAbsent`) and accepts it only when
+  its long side is at least the requested size: a camera RAW's large
+  preview serves a grid cell in a fraction of the full decode's time, while
+  an iPhone JPEG's small embedded thumbnail is refused and the image decoded
+  (`kCGImageSourceCreateThumbnailFromImageAlways`). `ImageLoading.Source`
+  says which happened. The same ImageIO path, at a larger size, is the
+  loupe's master (`Renderer.previewMaster`).
+- **Selection.** `Library.selection` is the anchor: the photo the loupe
+  shows, the one a shift-click extends from, the source of Sync Settings.
+  Setting it collapses `Library.selectedIDs` to that one photo;
+  `Library.click(_:extending:toggling:)` is the only path that grows the set.
+  A cell's single tap reads `NSEvent.modifierFlags` and calls `click` with
+  `extending` for **⇧** (every photo between the anchor and it, the anchor
+  kept) and `toggling` for **⌘** (add or remove one; the anchor moves to a
+  photo added, and off a photo removed); a double tap sets the selection and
+  enters the loupe. `Library.selectAll` (**⌘A**) selects every visible photo
+  and keeps the anchor, or makes the first visible photo the anchor.
+  `Library.collapseSelection` (**Esc** in the grid, **Deselect** in the bar)
+  goes back to the anchor alone. `Library.batchTargets` is what a batch acts
+  on: the multi-selection in folder order, or the anchor alone when there is
+  no multi-selection; the Presets menu, Export, Paste Settings and the flag
+  and rating keys all read it. `Library.select(offset:)` moves the anchor by
+  one for the arrow keys. Every one of these walks `visiblePhotos`: a click
+  on a hidden photo is ignored, a shift-click range spans only visible
+  photos, and a photo the filter hides is never a batch target whatever the
+  selection set still holds.
+
+Writes: nothing. The thumbnail cache is in memory only.
+
+## Flags and ratings
+
+Culling marks: a flag (pick or reject) and a rating of up to five stars on
+each photo, set from the keyboard on whatever is targeted (every selected
+photo in the grid, the one photo in the loupe) and read by the filter bar.
+
+- **The keys.** **P** flags a pick, **X** a reject, **U** clears the flag;
+  **0** to **5** rate (0 clears). They are `HiddenShortcuts` entries that
+  call `Library.setFlag(_:for:)` and `Library.setRating(_:for:)` with
+  `Library.batchTargets`.
+- **The model.** `Marks` (`Sidecar.swift`) is a `Marks.Flag` (`pick` or
+  `reject`, or none) and a rating clamped to 0…`Marks.maxRating`;
+  `Marks.isEmpty` is no flag and no stars. `Library.marks(for:)` reads a
+  photo's marks (`Library.marks` holds only the non-empty ones; `flag(for:)`
+  and `rating(for:)` are the parts). A mark is not an edit: it is not an
+  undo step, it never enters a `Recipe`, a `Preset`, Copy Settings or a sync
+  mask, and Reset leaves it alone. After a flag or rating changes the
+  selection is reconciled against the filter as above.
+- **Where it shows.** The cell's flag corner and stars, the loupe subtitle
+  ("· Pick", "· Rejected", the stars), and the filter bar's counts.
+
+Writes: the photo's sidecar. Marks ride beside the recipe as two optional
+keys, `flag` and `rating`, written only when set, so a file written before
+them decodes unchanged; the file is removed only when the recipe is the
+default and the photo is unmarked, so a flag on an unedited photo keeps its
+sidecar (`SidecarStore.save(_:marks:for:now:)`), and a recipe-only write
+keeps whatever marks the file already held.
+
+## Batch bar
+
+`BatchBar` (`ContentView.swift`) sits under the grid while
+`Library.selectedIDs` holds more than one photo: "n selected · anchor
+<name>", then four controls.
+
+- **Sync Settings…** is `Library.requestSync`: the anchor's recipe onto the
+  other selected photos. It builds a `SyncRequest` (`Library.swift`: the
+  source recipe, its photo's name, the target ids and the mask to open with,
+  `Library.lastSyncMask`) and sets `Library.syncRequest`, which
+  `ContentView` presents as a `SyncSheet`.
+- **Apply Preset** is a menu of `PresetLibrary.presets`; a choice calls
+  `Library.apply(_:mask:to:)` with `batchTargets` (the preset's look over
+  each photo's own crop and rotation, one batch).
+- **Export…** is `ExportQueue.requestExport(_:)` with
+  `Library.exportItems(for:)` over `batchTargets` (see Export).
+- **Deselect** is `Library.collapseSelection`.
+
+`SyncSheet(request:)` (`ContentView.swift`) is the Sync Settings and Paste
+Settings sheet: "From <source> onto n photos", the shortcuts **All**,
+**None**, **Look** and **Grade** (`SyncMask.everything`, `SyncMask.nothing`,
+`SyncMask.look`, `SyncMask.grade` in `Batch.swift`), then one
+`DisclosureGroup` per `AdjustmentKind.Section` with a checkbox for the
+section and, opened, one per adjustment; the HSL section shows its three
+channels (`AdjustmentKind.HSLChannel`) rather than twenty-four bands. A
+checkbox over a list of kinds reads `SyncMask.state(of:)`: on when all are in
+the mask, off when none, "(some)" when mixed. The summary line names the
+mask. **Sync n Photos** (also **Return**) stores the mask in
+`Library.lastSyncMask` and calls `Library.sync(_:mask:to:)`, which runs
+`Recipe.syncing(_:from:)` per target through `Library.setRecipe` with one
+batch tag, so the whole sync is one undo step. The same menu item exists in
+the Edit menu, enabled from two selected photos.
+
+**Copy Settings / Paste Settings…** (**⇧⌘C** / **⇧⌘V**, Edit menu, in
+`PhotoLabApp.swift`): `Library.copySettings(from:)` remembers the selected
+photo's recipe and name in `Library.copiedSettings`; `Library.requestPaste`
+puts up the same `SyncSheet` with that recipe as the source and
+`batchTargets` as the targets, so a look carries between folders.
+
+Writes: one sidecar per photo the sync changed, each through `setRecipe`.
+Nothing else; the copied settings live in memory.
+
+## Loupe
+
+`LoupeView(photo:)` (`ContentView.swift`): the rendered photo on the left,
+`AdjustmentsPanel` on the right, one `PreviewModel` shared between them.
+
+- **The frame.** `PreviewCanvas` (`ContentView.swift`) measures its view and
+  asks for a frame at the view's long side in pixels (minus the padding,
+  times the display scale). When the photo changes it calls
+  `PreviewModel.load(_:)`; when the recipe or its own pixel size changes it
+  calls `PreviewModel.request(url:recipe:maxPixelSize:)`. Until the first
+  frame of a photo arrives it shows the grid's cached thumbnail under a
+  spinner. `PreviewModel` (`Preview.swift`) decodes the master once at
+  `PreviewModel.masterPixelSize` through `Renderer.previewMaster`, renders
+  through `Renderer.render` off the main thread, and coalesces requests
+  (latest wins, at most one render in flight). Double-click the photo to go
+  back to the grid.
+- **Before.** `BeforeButton(isPressed:)` (`ContentView.swift`) is a
+  press-and-hold bound to `Library.showBefore`; `\` toggles the same flag.
+  While it is on, `PreviewCanvas` substitutes `Recipe.neutral` for the
+  photo's recipe and shows a "Before" badge; nothing else changes, and the
+  recipe on disk is untouched.
+- **Moving through the folder.** **←** and **→** are `Library.select(offset:)`,
+  which walks the filtered list (`Library.visiblePhotos`), so the loupe
+  never lands on a hidden photo and "n of N" counts the visible ones;
+  **Esc** leaves the loupe; **Return** and **E** enter it; **G** goes to the grid
+  (see Menus and shortcuts).
+
+Writes: nothing. The loupe only reads the recipe.
+
+## Adjustments panel
+
+`AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the Presets strip,
+one `DisclosureGroup` per `AdjustmentKind.Section` in declaration order
+(Basic open by default), each with a dot when any of its kinds is not a
+no-op (`Adjustment.isNoop`), then a footer with Before, undo, redo, Reset,
+the render time and any sidecar error.
+
+- **A row.** `AdjustmentRow(kind:recipe:onEditingChanged:)` is one
+  adjustment: a checkbox bound to `Recipe.setEnabled(_:_:)` (off dims the
+  row and disables the slider; the value is kept), the label
+  (`AdjustmentKind.label`; double-click calls `Recipe.reset(_:)`), the
+  formatted value (`AdjustmentKind.format`), and a slider over
+  `AdjustmentKind.range` bound to `Recipe.set(_:to:)`. The panel's recipe
+  binding reads `Library.recipe(for:)` and writes `Library.setRecipe(_:for:)`,
+  so every checkbox and slider change is the one writer. The slider's
+  editing-changed callback calls `Library.beginEdit(_:)` on mouse-down and
+  `Library.endEdit(_:)` on mouse-up, so a drag is one undo step and one
+  sidecar write.
+- **Sections.** `AdjustmentKind.Section` (`Adjustments.swift`) gives each
+  kind its section (`section`) and each section its `title` and `kinds`.
+  The HSL section is different: a segmented `AdjustmentKind.HSLChannel`
+  picker (hue, saturation, luminance), then one row per
+  `AdjustmentKind.HSLBand` for that channel, the kind looked up with
+  `AdjustmentKind.hsl(_:_:)`, so eight rows stand in for twenty-four.
+- **Footer.** Undo and redo call `Library.undo()` and `Library.redo()`,
+  enabled by `Library.canUndo` / `Library.canRedo`. **Reset** is
+  `Library.resetRecipe(for:)` (one undo step; the sidecar is removed unless
+  the photo carries a flag or rating, which stay), disabled while the recipe
+  `isDefault`. The render line is
+  `PreviewModel.renderMilliseconds` with the frame's pixel size and
+  `PreviewModel.masterSize`. `Library.sidecarError`, when set, is the last
+  sidecar write or read that failed (a read-only folder, an unreadable
+  file).
+
+Writes: the photo's sidecar, through `setRecipe`, once per change and once
+per drag; the default recipe removes it.
+
+## Presets strip and menu
+
+`PresetStrip(photo:)` (`PresetBrowser.swift`) is the strip at the top of the
+panel: a horizontal row of live thumbnails, **Save…**, a `…` menu and the
+last preset error.
+
+- **Thumbnails.** `PresetThumbnails` (`PresetBrowser.swift`) decodes the
+  current photo once at `PresetThumbnails.masterPixelSize` and renders every
+  preset over it at `PresetThumbnails.cellPixelSize` through the one
+  renderer (`PresetThumbnails.render(master:presets:base:pixelSize:renderer:)`,
+  each cell `Preset.apply(to:)` over the photo's current recipe). Requests
+  coalesce like the loupe's. The strip re-requests when the photo changes,
+  when the preset list changes, and when the photo's geometry changes
+  (`geometryKey`: rotate and the crop edges are the only kinds an apply
+  keeps, so they are the only ones that change a preset's thumbnail).
+- **A cell.** Click applies: `Library.apply(_:to:)`, one undo step, the
+  sidecar written. The ring is heavier on the preset the photo already
+  shows (`Preset.matches(_:)`). The context menu has **Apply**, **Update
+  with Current Settings** (`PresetLibrary.save(_:as:)` under the same
+  name), **Rename…** (`PresetLibrary.rename(_:to:)`) and **Delete…**
+  (`PresetLibrary.delete(_:)`, after a confirmation).
+- **Save…** sets `PresetLibrary.saveRequested`, as do **⇧⌘P** and Presets ›
+  Save Preset…; the alert takes a name and calls `PresetLibrary.save(_:as:)`
+  with the photo's recipe. A preset of the same name is replaced.
+- **The `…` menu.** **Restore Starter Presets** is
+  `PresetLibrary.restoreStarters` (`PresetStore.writeStarters`, which
+  rewrites every entry of `Preset.starters`); **Show Presets Folder in
+  Finder** reveals `PresetStore.directory`.
+- **The library and the store.** `PresetLibrary` (`Presets.swift`) is the
+  store read into memory, re-read (`PresetLibrary.reload`) after every save,
+  rename, delete or restore, with the last failure in `PresetLibrary.error`
+  for the strip to show. `PresetStore(directory:)` is one JSON per preset at
+  `<directory>/<name>.json` (`PresetStore.url(for:)` replaces the two
+  characters a file name cannot carry); the default directory is
+  `PresetStore.defaultDirectory`, `~/Library/Application Support/PhotoLab/presets/`.
+  `PresetStore.validated` trims the name and refuses an empty one, a leading
+  dot, one over `PresetStore.maxNameLength` or one holding a control
+  character (`PresetError.emptyName`, `PresetError.invalidName`); `save`
+  refuses a different name that maps onto an existing file
+  (`PresetError.fileNameCollision`); `rename` refuses a taken name
+  (`PresetError.nameExists`) and `remove` a missing one
+  (`PresetError.notFound`). `PresetStore.seedStartersIfMissing` writes the
+  starter set only when the directory does not exist yet, so a deleted
+  starter stays deleted. A file that cannot be decoded (damaged, or a
+  `version` from a newer build, `PresetError.unsupportedVersion`) is listed
+  as unreadable and still counts as stored (`PresetStore.exists`); a save
+  under its name moves it to a `.unreadable-<stamp>` backup
+  (`UnreadableBackup`) and never writes over it.
+- **The Presets menu** (`PhotoLabApp.swift`): **Save Preset…** (loupe only),
+  then every preset by name; a choice applies it to `Library.batchTargets`
+  through `Library.apply(_:mask:to:)`, so in the grid it is a batch and in
+  the loupe it is the one photo.
+
+Writes: the preset files under `PresetStore.defaultDirectory` (save, update,
+rename, delete, restore). Applying a preset writes the photo's sidecar
+through `setRecipe`, never a preset file.
+
+## Export
+
+**Export…** comes from the batch bar, from **⇧⌘E** or the File menu (the item
+reads **Export n Photos…** when more than one photo is targeted), always
+over `Library.batchTargets`: the grid's selection, or the loupe's photo.
+
+- **The request.** `ExportQueue.requestExport(_:)` (`Batch.swift`) takes
+  the `ExportQueue.Item` list from `Library.exportItems(for:)` (each a
+  source URL and its recipe) and sets `ExportQueue.request`; `ContentView`
+  presents `ExportSheet(request:options:folder:)` for it with the last
+  options and folder. Ignored while a run is going.
+- **The sheet.** `ExportSheet` (`ExportSheet.swift`) edits one
+  `ExportOptions`: **Format** (`ExportOptions.Format`: JPEG, HEIC, TIFF)
+  with a quality slider for the lossy two; **Size** as edited, an exact
+  long side or a percentage (`OutputSize.longSide`, `OutputSize.percent`,
+  nil for as edited; never upscaled); **File**: a name suffix with a live
+  preview from `ExportOptions.fileName(for:)`, what to do when the file
+  exists (`ExportOptions.Collision`: add a number, skip, overwrite) and
+  **Keep camera info** (`keepMetadata`); **Folder**: **Choose…** is
+  `ExportPanel.chooseFolder(count:format:from:)`, an `NSOpenPanel` that can
+  create directories. **Export n Photos** (also **Return**) is enabled once a
+  folder is chosen; it calls `ExportQueue.keep(folder:options:)` and then
+  `ExportQueue.start(_:into:options:)`.
+- **The run.** `ExportQueue.start` hands each item to `Exporter.export`
+  (`Batch.swift`) one at a time off the main thread: the full-resolution
+  decode, the one render chain with the resize last, the format's writer
+  with the source's metadata when asked, a hidden `.partial` file moved into
+  place when complete. The collision policy and the one refused write (the
+  photo's own file, `Exporter.Failure.isTheOriginal`) are in
+  `Exporter.destination(for:in:options:)` and `Exporter.export`.
+- **The bar.** `ExportBar` (`ContentView.swift`) appears at the bottom of
+  the window while `ExportQueue.state` is not idle: a progress bar,
+  "Exporting i of n", the file in flight (`ExportQueue.current`) and
+  **Cancel** (`ExportQueue.cancel()`, which stops after that file; what is
+  written stays). When the run finishes or is cancelled it shows the count
+  written (`done`), skipped (`skipped`) and failed (`failures`, the first
+  message under it), **Show in Finder** on the written files
+  (`ExportQueue.exported`) or the folder, and **Done** (`ExportQueue.dismiss()`).
+
+Writes: the output files in the chosen folder, through `Exporter.export`;
+and, because `PhotoLabApp` makes its queue with `ExportQueue(remember: true)`,
+the last folder and options in `UserDefaults` under `exportFolder` and
+`exportOptions`, read back at launch so the next sheet opens the same way.
+A queue made without `remember:` (every test) keeps them in memory only.
+
+## Menus and shortcuts
+
+Two places define keys; the README's Keys table is the user's list.
+
+- **Menus** are the `.commands` of `PhotoLabApp` (`PhotoLabApp.swift`),
+  each a `CommandGroup` or `CommandMenu`:
+  - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) replaces
+    `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
+    `batchTargets`, disabled with nothing targeted or a run going) replaces
+    `.importExport`.
+  - Edit, after `.pasteboard`: **Copy Settings** **⇧⌘C**
+    (`Library.copySettings(from:)`), **Paste Settings…** **⇧⌘V**
+    (`Library.requestPaste`), **Sync Settings…** (`Library.requestSync`,
+    from two selected), **Select All Photos** **⌘A** (`Library.selectAll`,
+    grid only).
+  - Edit, replacing `.undoRedo`: **Undo** **⌘Z** and **Redo** **⇧⌘Z**
+    (`Library.undo()`, `Library.redo()`; the window's own undo manager is
+    unused, there are no text fields); after it, **Reset Photo** **⇧⌘R**
+    (`Library.resetRecipe(for:)`, enabled when the photo is edited).
+  - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
+- **Keys without a menu** are `HiddenShortcuts` (`ContentView.swift`): a
+  group of invisible zero-size buttons in the window's background, so they
+  work whatever has focus. **G** leaves the loupe; **E** and **Return** enter it
+  (selecting the first photo when none is); **Esc** leaves the loupe or, in
+  the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
+  `\` toggles `Library.showBefore`; **P** / **X** / **U** flag and **0**–**5**
+  rate the batch targets (`Library.setFlag(_:for:)`,
+  `Library.setRating(_:for:)`). Add a new focus-free key there, and a
+  menu key in `PhotoLabApp`.
+- **Toolbar**: **Open Folder** and the **Grid / Loupe** segmented picker
+  (which selects the first photo when entering the loupe with none
+  selected).
+- **Launch**: `PhotoLabApp` opens the first command-line argument that does
+  not start with `-` (a folder, or a file to open in the loupe), else the
+  remembered folder; the process is made a regular foreground app so a
+  `swift run` without a bundle still gets a window and a menu bar.
+
+Writes: nothing directly; each command's target is listed in its own
+section above.

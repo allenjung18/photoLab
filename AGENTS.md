@@ -1,106 +1,84 @@
 # PhotoLab — notes for agents
 
-- SwiftPM package, no Xcode project. Build with `swift build`, run with
-  `swift run PhotoLab [folder]`, release bundle with `scripts/bundle.sh`.
-  Swift 5 language mode (tools 5.9); macOS 14 minimum. Build with Xcode
-  selected (`xcode-select -p` must show Xcode.app): the Command Line Tools
-  toolchain lacks the SwiftUIMacros plugin on macOS 27 and fails on `@State`.
-- Never write to a photo's original file. Edits live in sidecar JSON
-  (`SidecarStore` in `Sidecar.swift`: `<folder>/.photolab/<file>.json`,
-  atomic write, a neutral recipe deletes the file); exports go to a separate
-  output folder. `Library.setRecipe` is the only path that changes an edit:
-  it records the undo step and writes the sidecar. A slider drag wraps its
-  changes in `beginEdit` / `endEdit` so the drag is one step and one write.
-- Presets (`Presets.swift`): `Preset` is a named recipe with the geometry
-  kinds (`AdjustmentKind.geometryKinds`) neutral; `Preset.apply(to:)` keeps
-  the target photo's own rotate and crop. `PresetStore(directory:)` is one
-  JSON per preset under `PresetStore.defaultDirectory`
-  (`~/Library/Application Support/PhotoLab/presets/`); the directory is
-  injected, so every test points it at a temp directory and never at the
-  user's folder. The starter set is `Preset.starters` (a data table in
-  Swift, not a resource bundle: `scripts/bundle.sh` copies only the binary),
-  seeded only when the directory does not exist. Applying goes through
-  `Library.apply(_:to:)` -> `setRecipe`, never by writing a sidecar.
-  `PresetThumbnails.render` is the strip; `Tests/PhotoLabTests/PresetTests.swift`
-  has the round-trip, apply-after-reopen and 50 ms thumbnail gate.
-- Batch (`Batch.swift`, `Library` "Batch" and "Multi-selection" marks):
-  `Library.selection` is the anchor and setting it collapses
-  `selectedIDs` to that one photo; `click(_:extending:toggling:)` is the
-  path that grows a selection, `batchTargets` the folder-ordered list a
-  batch acts on. `SyncMask` (`.look` = all but geometry, `.grade` = look
-  minus exposure) + `Recipe.syncing(_:from:)` is the one batch primitive;
-  `Library.sync(_:mask:to:)` runs it through `setRecipe` per photo with a
-  shared batch tag on the undo steps, and `undo` / `redo` act on every photo
-  whose top step carries the selected photo's tag. Never write a second
-  batch path that bypasses `setRecipe`. Export: `Exporter.export` is the
-  one path: `Renderer.fullResolution` -> `Renderer.render(resize:)` (the
-  export resize is the chain's last step, `OutputSize` = exact long side
-  or percent, never up) -> `CGImageDestination` in the format
-  `ExportOptions` names (JPEG / HEIC with `quality`, TIFF LZW), with the
-  source's properties from `ExportMetadata.properties` (orientation 1,
-  output pixel dimensions, the source container's own tags dropped) when
-  `keepMetadata` is on, written to a `.partial` beside the final name and
-  moved into place. `destination(for:in:options:)` is `<stem><suffix>.<ext>`
-  and the collision policy: `.number` (the default, `<stem> 2.jpg`),
-  `.skip` (returns `.skipped`), `.overwrite` (throws `isTheOriginal`
-  rather than replace the photo's own file). `ExportQueue` runs items one
-  at a time off the main thread, checks cancellation between items, counts
-  `done` / `skipped` / `failures`, and keeps the last folder and options
-  (`keep(folder:options:)`, UserDefaults only when `remember:` is on; the
-  app passes true, tests never do); `requestExport` puts up `ExportSheet`
-  (`ExportSheet.swift`), which calls `start` with the resolved options. Its
-  `Worker` is injected so a test can count or slow jobs.
-  `Tests/PhotoLabTests/BatchTests.swift` has the 20-photo apply-and-undo
-  proof, the mask, copy settings, the selection rules, and the queue's
-  completion and cancel; `ExportTests.swift` has quality vs. file size,
-  the exact resize (after the crop, never up), the EXIF carry-over with
-  orientation reset in all three formats, HEIC / TIFF round trips, the
-  collision policy and the untouched original. Every export in a test goes
-  to a temp directory; never point one at a real folder.
-- Photo ids are the URLs `Library.scan` returns, which resolve symlinks
-  (`/var/...` comes back as `/private/var/...`); key recipes by those ids,
-  never by a URL you built yourself. `Tests/PhotoLabTests/SidecarTests.swift`
-  covers save/reload, reset, undo/redo and the untouched original.
-- One render path: `Renderer.apply(_:to:)` in `Renderer.swift` is the Core
-  Image chain for preview and export alike. Do not add a second renderer; a
-  new adjustment is a new `AdjustmentKind` case (in chain position, with a
-  `section` for the panel) plus one `stage` branch plus a direction test in
-  `Tests/PhotoLabTests/ToneSetTests.swift`. Kinds apply in `allCases` order,
-  not recipe order. Grouped kinds (`AdjustmentKind.Group`: crop, tone, HSL)
-  render as one stage in `groupStage`; the tone and HSL lookups are built in
-  `ColorCubes.swift` with Accelerate on a reusable workspace (a debug build
-  pays ~50 µs per fresh 128 KB array, so no allocations in a build) and
-  cached by value in `CubeCache`.
-- Core Image gotchas met here: a layer with alpha 0 is dropped by the
+The rules, with a pointer to where each mechanism is documented once:
+`README.md` (what the app does, keys, on disk),
+`Documentation/Architecture.md` (the render path, data model, edit path and
+export pipeline), `Documentation/Features.md` (each screen to its types and
+what it writes) and `Documentation/Testing.md` (what the suite proves, how
+to run it, the timing tests, adding an adjustment).
+
+## Build
+
+- SwiftPM package, no Xcode project. `swift build`, `swift run PhotoLab
+  [folder]`, `swift test`, `scripts/bundle.sh` for the release bundle. Swift 5
+  language mode (tools 5.9); macOS 14 minimum. Build with Xcode selected
+  (xcode-select -p must print a path inside Xcode.app): the Command Line Tools toolchain
+  lacks the SwiftUIMacros plugin on macOS 27 and fails on `@State`. (README,
+  Run.)
+
+## Rules
+
+- **Never write to a photo's original file.** Edits live in sidecar JSON
+  (`SidecarStore`, `<folder>/.photolab/<file>.json`, atomic; the file goes
+  only when the recipe is the default and the photo has no flag or rating,
+  a disabled-only edit keeps it); exports go to a separate output folder,
+  and an export that would land on the original throws
+  (`Exporter.Failure.isTheOriginal`). A sidecar or preset file this build
+  cannot decode (damaged, or a `version` too new) is never overwritten: the
+  store moves it to `<file>.unreadable-<stamp>` first (`UnreadableBackup`)
+  and never deletes a backup. (Architecture 2 and 4.)
+- **Marks are not edits.** A flag or rating (`Marks`) rides in the sidecar
+  beside the recipe through `Library.setFlag(_:for:)` /
+  `Library.setRating(_:for:)`: never an undo step, never inside a recipe, a
+  preset, copied settings or a sync mask. Every selection path walks
+  `Library.visiblePhotos`; a photo the filter hides is never in
+  `batchTargets`. (Architecture 2, Marks; Features, Flags and ratings.)
+- **`Library.setRecipe` is the only writer.** It records the undo step and
+  writes the sidecar; a slider drag wraps its changes in `beginEdit` /
+  `endEdit` so the drag is one step and one write. Presets apply through
+  `Library.apply(_:to:)` -> `setRecipe`, never by writing a sidecar; there is
+  no path that writes a recipe or a sidecar around it. (Architecture 3.)
+- **One render path.** `Renderer.apply(_:to:)` is the Core Image chain for
+  the loupe, the preset strip and the export alike; do not add a second
+  renderer. A new adjustment is a new `AdjustmentKind` case in chain
+  position with a `section`, one `stage` branch, and one direction test in
+  `Tests/PhotoLabTests/ToneSetTests.swift`, shown to bite with a local
+  mutant. (Architecture 1; Testing, Adding an adjustment.)
+- **No second batch path.** `SyncMask` + `Recipe.syncing(_:from:)` through
+  `Library.sync(_:mask:to:)` is the one batch primitive (one shared batch
+  tag, so undo takes the batch back); applying a preset to many photos is
+  the same call. (Architecture 3, Batch.)
+- **Injected directories.** `PresetStore(directory:)`,
+  `SidecarStore(folder:)`, `Library(rememberFolder:)`, `ExportQueue`'s
+  `Worker` and `remember:`, `Thumbnails`' decoder. Every test points them at
+  a temporary directory and never at a user folder or UserDefaults; the app
+  alone passes the real ones. (Testing, Injected directories.)
+- **Photo ids are the URLs `Library.scan` returns** (symlinks resolved:
+  `/var/...` comes back as `/private/var/...`). Key recipes by those ids,
+  never by a URL you built yourself. (Features, Grid.)
+- **Keep ImageIO for thumbnails** (fast, orientation-aware, reads RAW and
+  HEIC). The embedded-preview size rule and the cancellation forwarding are
+  in `ImageLoading.swift`; do not route a thumbnail through the renderer.
+  (Features, Grid.)
+- **Cube builds allocate nothing.** The tone and HSL lookups are built in
+  `ColorCubes.swift` on a reusable workspace; a debug build pays for every
+  fresh array in that hot path. (Architecture 1, The chain.)
+- **Starter presets are data in Swift** (`Preset.starters`), not a resource
+  bundle: `scripts/bundle.sh` copies only the binary. (Architecture 2,
+  Preset.)
+- **Core Image gotchas met here:** a layer with alpha 0 is dropped by the
   compositing filters (use alpha 1 and multiply, or the stock unsharp mask);
-  `CIMix.amount` is clamped to 0…1 (no extrapolation); `CIRandomGenerator`'s
+  `CIFilter.mix()`'s `amount` is clamped to 0…1 (no extrapolation); `CIFilter.randomGenerator()`'s
   RGB is premultiplied by its random alpha (skewed dark) but the alpha is
-  uniform; the stock unsharp mask and the tone/HSL cubes are applied in
-  sRGB gamma space on purpose (wrap with `linearToSRGBToneCurve` /
+  uniform; the stock unsharp mask and the tone/HSL cubes are applied in sRGB
+  gamma space on purpose (wrap with `linearToSRGBToneCurve` /
   `sRGBToneCurveToLinear`, or `colorCubeWithColorSpace`). Spatial radii are
   fractions of the long side so preview and export match.
-- `swift test` runs the recipe/chain tests and three timed renders (the basic
-  sweep, every slider over an everything-on recipe, the preset strip); set
-  `PHOTOLAB_BENCH_IMAGE=<file>` to time a real photo through the loupe path.
-  The timing tests are load-sensitive: a box with a load average above ~8
-  (Spotlight indexing, other test runs) doubles every number; read `uptime`
-  before trusting a red one. A crop or rotate step changes the output size
-  and Core Image charges 5–15 ms the first time it meets a size; the test
-  gates those kinds on a second pass over the same sizes.
-- Keep ImageIO for thumbnails (fast, orientation-aware, reads RAW and HEIC).
-  `ImageLoading.thumbnail(from:maxPixelSize:)` asks for the container's
-  embedded preview first (`IfAbsent`) and accepts it only when its long side
-  is at least the requested size (a RAW's 1616 px preview serves a 480 px
-  cell in ~15 ms where the full decode is 100-800 ms; an iPhone JPEG's
-  320×240 thumbnail is refused and the image decoded). `Thumbnails.thumbnail(for:)`
-  forwards the caller's cancellation into its detached decode
-  (`withTaskCancellationHandler`) and checks it inside the body, so a cell
-  scrolled past costs nothing and a cancelled result is never cached; its
-  decoder is injected so a test can count or block it.
-  `Tests/PhotoLabTests/ThumbnailTests.swift` has the size rule, the 500-photo
-  folder timing, the cancellation proof, and a real-RAW timing that runs only
-  with `PHOTOLAB_BENCH_RAW=<file.ARW>` set. Timed tests print the load average
-  and scale their bound above a load of 8.
-- Keyboard shortcuts are global hidden buttons in `ContentView.swift`
-  (`HiddenShortcuts`); add new ones there.
+- **Timing tests are load-sensitive.** Read `uptime` before trusting a red
+  one; `PHOTOLAB_BENCH_IMAGE` times a real photo. (Testing, The timed
+  renders.)
+- **Keyboard shortcuts** that work whatever has focus (G / E / arrows /
+  Esc / Return / backslash / P X U / 0–5) are hidden buttons in
+  `HiddenShortcuts` (`ContentView.swift`); menu keys are the `.commands` of
+  `PhotoLabApp`. Add new ones there. (Features, Menus and shortcuts.)
 - No AI attribution lines in commit messages.
