@@ -39,9 +39,10 @@ func maxDiff(_ a: CGImage, _ b: CGImage) -> Int {
 }
 
 /// A synthetic photo: a horizontal luminance ramp with colored bands, so
-/// every test sees both neutral and saturated pixels.
-func syntheticImage(width: Int, height: Int) -> CGImage {
-    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+/// every test sees both neutral and saturated pixels. `space` is the color
+/// space the bitmap is drawn in and tagged with (sRGB unless asked; Display
+/// P3 for a wide-gamut source).
+func syntheticImage(width: Int, height: Int, space: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!) -> CGImage {
     let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                         space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     let colors = [CGColor(red: 0.05, green: 0.05, blue: 0.05, alpha: 1),
@@ -71,4 +72,43 @@ func bench24MPImageURL() throws -> URL {
         XCTAssertTrue(CGImageDestinationFinalize(dest))
     }
     return url
+}
+
+// MARK: - Timed gates under load
+
+/// `bound` scaled by the load above `quietLoad` (1× at or under it).
+func frameBudgetBound(_ bound: Double, load: Double, quietLoad: Double = 4) -> Double {
+    bound * (load.isNaN ? 1 : max(1, load / quietLoad))
+}
+
+/// The 1-minute load average, or NaN when it cannot be read.
+func loadAverage() -> Double {
+    var loads = [Double](repeating: 0, count: 3)
+    return getloadavg(&loads, 3) >= 1 ? loads[0] : .nan
+}
+
+/// The verdict of a timed render gate at the current load. `bound` is the
+/// gate as written and holds up to `quietLoad` (a clean box idles at 2–4;
+/// on 2026-10-15 every red of the 16 ms gate came at a 1-minute load of
+/// 7.3 or more from sibling builds, every pass at 5.3 or less, and nothing
+/// in the render path had changed). Above `quietLoad` the bound scales with
+/// `load / quietLoad`, so a sibling build cannot fail the suite on load
+/// alone; above `skipLoad` (3× quiet, where the scaled bound would be three
+/// frames) a miss is an `XCTSkip` that prints the numbers, never a red: the
+/// box cannot measure a frame budget then. A pass at any load stands.
+/// Returns the bound used. A timed test measures up to three times and
+/// gates the best (`frameBudgetBound` is the bound to retry against): a
+/// sibling build's compile burst is seconds long and rarely covers three
+/// sweeps, while a slower chain misses all three.
+@discardableResult
+func assertFrameBudget(_ measured: Double, bound: Double, load: Double, _ what: String,
+                       quietLoad: Double = 4, file: StaticString = #filePath, line: UInt = #line) throws -> Double {
+    let scaled = frameBudgetBound(bound, load: load, quietLoad: quietLoad)
+    guard measured >= scaled else { return scaled }
+    let message = String(format: "%@: %.1f ms against %.0f ms (scaled from %.0f at load %.2f)", what, measured, scaled, bound, load)
+    if load > quietLoad * 3 {
+        throw XCTSkip("load \(String(format: "%.2f", load)) is above \(quietLoad * 3): the frame budget cannot be measured on this box now — \(message)")
+    }
+    XCTFail(message, file: file, line: line)
+    return scaled
 }

@@ -167,4 +167,22 @@ final class EditStateTests: XCTestCase {
         lib.open(folder)
         XCTAssertNil(lib.openError, "a successful open clears the message")
     }
+    // MARK: Undo depth
+
+    /// `Library.maxUndoDepth` is the cap: the oldest steps fall off, the
+    /// newest are kept in order (lifted from the review's C10 probe).
+    func testUndoDepthIsCappedAtMaxUndoDepthKeepingTheNewestSteps() throws {
+        try makePhoto("a.png")
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let id = try XCTUnwrap(lib.photos.first).id
+        lib.selection = id
+        var r = Recipe.neutral
+        for i in 1...(Library.maxUndoDepth + 10) { r.set(.exposure, to: Double(i) / 100); lib.setRecipe(r, for: id) }
+        var n = 0
+        while lib.canUndo { lib.undo(); n += 1 }
+        XCTAssertEqual(n, Library.maxUndoDepth)
+        XCTAssertEqual(Library.maxUndoDepth, 100)
+        XCTAssertEqual(lib.recipe(for: id).value(of: .exposure), 0.10, accuracy: 1e-9, "the 10 oldest steps were dropped, the rest walk back in order")
+    }
 }

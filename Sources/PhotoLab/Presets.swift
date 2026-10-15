@@ -173,10 +173,15 @@ struct PresetStore {
                 try UnreadableBackup.moveAside(file, now: now)
             }
         }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var doc = preset
         doc.name = name
-        let data = try Self.encoder.encode(doc)
+        try write(doc, to: file)
+    }
+
+    /// The encode and the atomic write behind `save` and a case-only `rename`.
+    private func write(_ preset: Preset, to file: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try Self.encoder.encode(preset)
         try data.write(to: file, options: .atomic)
     }
 
@@ -188,15 +193,27 @@ struct PresetStore {
 
     /// Renames a preset; the recipe is kept, the old file goes. Refused when
     /// `newName` is taken (a rename never silently replaces another preset).
+    /// "Taken" is by file identity, not by path: on a case-insensitive volume
+    /// `Mine` → `mine` names the preset's own file, and that rename is
+    /// allowed (the entry is re-spelled and the file rewritten in place).
     func rename(_ name: String, to newName: String) throws {
         let target = try Self.validated(newName)
         guard var preset = try load(name) else { throw PresetError.notFound(name) }
         guard target != name else { return }
-        if FileManager.default.fileExists(atPath: url(for: target).path) { throw PresetError.nameExists(target) }
+        let from = url(for: name), to = url(for: target)
+        let sameFile = FileManager.default.fileExists(atPath: to.path)
+            && ((try? to.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier?
+                .isEqual(from.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier)) ?? false)
+        if FileManager.default.fileExists(atPath: to.path), !sameFile { throw PresetError.nameExists(target) }
         preset.name = target
         preset.updated = Date()
-        try save(preset)
-        try remove(name)
+        if sameFile {
+            guard Darwin.rename(from.path, to.path) == 0 else { throw PresetError.nameExists(target) }
+            try write(preset, to: to)
+        } else {
+            try save(preset)
+            try remove(name)
+        }
     }
 
     /// Every readable preset, sorted by name, plus the files that exist but
@@ -284,11 +301,14 @@ final class PresetLibrary {
         reload()
     }
 
+    /// Re-reads the store. The standing "could not read" message is shown
+    /// only when no operation has just failed: `run` sets `error` before
+    /// this reload, and a failed save or rename must not be masked by it.
     func reload() {
         let loaded = store.loadAll()
         presets = loaded.presets
         unreadable = loaded.unreadable
-        if let first = loaded.unreadable.first {
+        if error == nil, let first = loaded.unreadable.first {
             error = "Could not read the preset file \(first.lastPathComponent)"
         }
     }

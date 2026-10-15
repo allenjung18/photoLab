@@ -483,6 +483,53 @@ final class ExportTests: XCTestCase {
     /// folder is destined for `X.jpg`, a different string for the same file
     /// on a case-insensitive volume. The identity compare (resolved URL),
     /// not the string, is what refuses it.
+    // MARK: One render path — the preview and the export agree on colour
+
+    /// The loupe renders `Renderer.previewMaster` (an ImageIO downsample)
+    /// and the export renders `Renderer.fullResolution` (the full decode),
+    /// both through `Renderer.render` with the same recipe. For a Display P3
+    /// HEIC and an sRGB JPEG, the mean colour of the preview frame and of the
+    /// exported TIFF (lossless, read back the same way) agree to within
+    /// 1/255 per channel, on a recipe that moves every channel.
+    func testPreviewAndExportAgreeOnColourForAP3HEICAndAJPEG() throws {
+        let p3 = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
+        let sources = [
+            try writeSource("wide.heic", syntheticImage(width: 1200, height: 800, space: p3), type: .heic),
+            try writeSource("narrow.jpg", syntheticImage(width: 1200, height: 800), type: .jpeg),
+        ]
+        var recipe = Recipe.neutral
+        recipe.set(.exposure, to: 0.4); recipe.set(.temperature, to: 20); recipe.set(.contrast, to: 15)
+        recipe.set(.saturation, to: 20); recipe.set(.highlights, to: -30); recipe.set(.vignette, to: -20)
+        var o = ExportOptions()
+        o.format = .tiff
+        for src in sources {
+            let master = try XCTUnwrap(Renderer.previewMaster(src, maxPixelSize: 600))
+            let preview = try XCTUnwrap(Renderer.shared.render(master, recipe: recipe, maxPixelSize: 600)).image
+            let plain = try XCTUnwrap(Renderer.shared.render(master, recipe: .neutral, maxPixelSize: 600)).image
+            XCTAssertEqual(max(preview.width, preview.height), 600, src.lastPathComponent)
+            guard case .written(let url) = try Exporter.export(src, recipe: recipe, into: outDir, options: o) else { return XCTFail(src.lastPathComponent) }
+            let exported = try decode(url)
+            XCTAssertEqual((exported.width, exported.height) == (1200, 800), true, "\(src.lastPathComponent): \(exported.width)×\(exported.height)")
+            let a = meanRGB(try redrawn(preview)), b = meanRGB(exported), n = meanRGB(try redrawn(plain))
+            print(String(format: "COLOUR-AGREE %@: preview %.2f %.2f %.2f vs export %.2f %.2f %.2f (neutral %.2f %.2f %.2f)",
+                         src.lastPathComponent, a.r, a.g, a.b, b.r, b.g, b.b, n.r, n.g, n.b))
+            XCTAssertGreaterThan(abs(a.r - n.r) + abs(a.g - n.g) + abs(a.b - n.b), 15, "\(src.lastPathComponent): the recipe moved the picture")
+            for (c, d) in [("R", a.r - b.r), ("G", a.g - b.g), ("B", a.b - b.b)] {
+                XCTAssertLessThanOrEqual(abs(d), 1, String(format: "%@ %@: preview %.2f vs export %.2f", src.lastPathComponent, c, c == "R" ? a.r : c == "G" ? a.g : a.b, c == "R" ? b.r : c == "G" ? b.g : b.b))
+            }
+        }
+    }
+
+    /// `image` drawn into an sRGB RGBA8 bitmap, the way `decode` reads a
+    /// written file, so a P3 frame and its P3 export are compared in one space.
+    private func redrawn(_ image: CGImage) throws -> CGImage {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return try XCTUnwrap(ctx.makeImage())
+    }
+
     func testExportingTheOriginalUnderACaseVariantNameIsRefused() throws {
         let own = try writeSource("X.JPG", gray(0.5, width: 24, height: 24), type: .jpeg)
         let ownBytes = try Data(contentsOf: own)

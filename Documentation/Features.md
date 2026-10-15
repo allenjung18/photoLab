@@ -295,7 +295,8 @@ last preset error.
 - **The library and the store.** `PresetLibrary` (`Presets.swift`) is the
   store read into memory, re-read (`PresetLibrary.reload`) after every save,
   rename, delete or restore, with the last failure in `PresetLibrary.error`
-  for the strip to show. `PresetStore(directory:)` is one JSON per preset at
+  for the strip to show (a failed operation's message is not replaced by the
+  standing "could not read" one; that comes back after the next success). `PresetStore(directory:)` is one JSON per preset at
   `<directory>/<name>.json` (`PresetStore.url(for:)` replaces the two
   characters a file name cannot carry); the default directory is
   `PresetStore.defaultDirectory`, `~/Library/Application Support/PhotoLab/presets/`.
@@ -304,7 +305,8 @@ last preset error.
   character (`PresetError.emptyName`, `PresetError.invalidName`); `save`
   refuses a different name that maps onto an existing file
   (`PresetError.fileNameCollision`); `rename` refuses a taken name
-  (`PresetError.nameExists`) and `remove` a missing one
+  (`PresetError.nameExists`; taken by file identity, so a case-only change
+  of a preset's own name is allowed) and `remove` a missing one
   (`PresetError.notFound`). `PresetStore.seedStartersIfMissing` writes the
   starter set only when the directory does not exist yet, so a deleted
   starter stays deleted. A file that cannot be decoded (damaged, or a

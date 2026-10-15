@@ -392,7 +392,7 @@ private struct ExportBar: View {
             case .running:
                 ProgressView(value: Double(exports.completed), total: Double(max(1, exports.total)))
                     .frame(width: 160)
-                Text("Exporting \(exports.completed + 1) of \(exports.total)")
+                Text("Exporting \(min(exports.completed + 1, exports.total)) of \(exports.total)")
                     .font(.callout.monospacedDigit())
                 if let current = exports.current {
                     Text(current.lastPathComponent)

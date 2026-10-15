@@ -13,9 +13,10 @@ with `@testable import PhotoLab`.
 The filter is a regular expression over `Class/test`. Build with Xcode
 selected (README, Run): the Command Line Tools toolchain cannot build the
 SwiftUI target. A green run prints the executed count with its failures and
-skips; one test skips by design (the real-RAW timing, below). The timed tests
-print a `BENCH` line with their numbers beside the verdict; read it, not only
-the pass.
+skips; one test skips by design (the real-RAW timing, below), and a timed
+render gate that misses on a swamped box skips rather than fails (Load
+sensitivity, below). The timed tests print a `BENCH` line with their numbers
+beside the verdict; read it, not only the pass.
 
 ## What each file proves
 
@@ -25,8 +26,10 @@ the pass.
   saturation, the preview fit (down, never up), and the timed slider step on
   a 24 MP photo.
 - `ToneSetTests.swift` — the direction tests for the whole tone set (below),
-  the sidecar shape holding one entry per kind, and the timed sweep of every
-  slider over an everything-on recipe.
+  the sidecar shape holding one entry per kind, the timed sweep of every
+  slider over an everything-on recipe, and the load guard's own test
+  (`FrameBudgetGuardTests`: the bound holds when quiet, scales when busy,
+  skips only when unmeasurable, and a quiet miss is a red).
 - `SidecarTests.swift` — a recipe saved for a photo comes back when the
   folder is opened again in a new `Library`, two originals that differ only
   by extension never share a sidecar, the original is untouched, the default
@@ -40,7 +43,9 @@ the pass.
   disabled-only edit renders as identity but is still an edit, in memory and
   on disk; `Library.endEdit` closes whatever edit is open and `beginEdit` on
   another photo closes the first; `Library.open` of a missing path (or a
-  flag-like argument) opens nothing and keeps the current folder.
+  flag-like argument) opens nothing and keeps the current folder; and
+  `Library.maxUndoDepth` (100) caps the undo stack, dropping the oldest
+  steps and keeping the newest in order.
 - `SourceTests.swift` — the `PhotoSource` seam: a fake source of three
   assets opens in its own order with its names and title, a recipe on an
   asset persists under the flat naming (`A/L0/001` as `A_L0_001.json` in
@@ -60,12 +65,14 @@ the pass.
 - `PresetTests.swift` — the starter set is distinct looks without geometry,
   saving drops geometry and applying keeps the photo's own, a preset round
   trips through a fresh `PresetStore`, file names are sanitised and names
-  validated, rename keeps the recipe and refuses a taken name, an unreadable
+  validated, rename keeps the recipe and refuses a taken name (taken by file
+  identity: a case-only change of a preset's own name is allowed), an unreadable
   preset file is listed and left alone, an undecodable preset is not an
   empty slot and becomes the backup of a save (Restore Starters included),
   a preset from a newer build is refused, listed unreadable and kept on
   save, a fresh directory is seeded once,
-  `PresetLibrary` reports errors and recovers, a saved preset applied to
+  `PresetLibrary` reports errors and recovers and a failed operation's
+  message is not masked by the standing unreadable-file one, a saved preset applied to
   another photo after a reopen reproduces the edit, applying the preset a
   photo already shows is no step, and the timed strip.
 - `BatchTests.swift` — `Recipe.syncing` takes only the masked kinds, a
@@ -80,19 +87,25 @@ the pass.
   TIFF round trip, the collision policy (number, skip, overwrite) and the
   original is never written, not even under a case-variant name on a
   case-insensitive volume, the queue counts skipped files and passes the
-  options through, and the file name, suffix, extension and options round
-  trip.
+  options through, the file name, suffix, extension and options round
+  trip, and the preview and the export agree on colour: `Renderer.previewMaster`
+  rendered at loupe size and `Renderer.fullResolution` exported as a TIFF,
+  on a Display P3 HEIC and an sRGB JPEG under one recipe that moves every
+  channel, have the same mean colour to within 1/255 (the "one render path"
+  claim, pinned).
 - `ThumbnailTests.swift` — the embedded-preview size rule (a small embedded
   thumbnail is refused and the image decoded; a request at or under its
   size is served from it), the timed folder of synthetic JPEGs, the
   real-RAW timing (skipped unless asked for), and the cancellation proof: a
   request cancelled before its decode decodes nothing, one cancelled in
   flight sees the cancellation inside the decode and caches nothing.
-- `TestImages.swift` — no tests; the shared helpers. `syntheticImage(width:height:)`
+- `TestImages.swift` — no tests; the shared helpers. `syntheticImage(width:height:space:)`
   draws the photo every pixel test reads (a luminance ramp with coloured
-  bands, so both neutral and saturated pixels are present), `meanRGB` and
-  `maxDiff` measure a rendered frame, and `bench24MPImageURL()` is the 24 MP
-  source for the timed tests.
+  bands, so both neutral and saturated pixels are present; sRGB unless a
+  colour space is passed), `meanRGB` and `maxDiff` measure a rendered frame,
+  `bench24MPImageURL()` is the 24 MP source for the timed tests, and
+  `loadAverage()` / `assertFrameBudget` are the load guard on the timed
+  render gates.
 
 ## The direction tests
 
@@ -157,12 +170,22 @@ JPEG written once to the temporary directory (`bench24MPImageURL()`).
 `PHOTOLAB_BENCH_TARGET` overrides the loupe's long side in pixels.
 
 **Load sensitivity.** These numbers double on a busy box (a sibling build,
-Spotlight, another test run). The thumbnail timings read `getloadavg`,
-print the load beside their number and scale their bound above a load of 8
-(`loadFactor`); the render-step and strip gates are fixed. So before trusting
-a red timing test, read `uptime`: a red at a high load average is re-run on
-a quiet box before anything is changed, and a documentation or test-only
-change cannot have caused one. A green at a high load is still green.
+Spotlight, another test run). Every timed test reads the 1-minute load
+average and prints it beside its number. The thumbnail timings scale their
+bound above a load of 8 (`loadFactor`). The three render gates (the two
+slider steps and the strip) go through `assertFrameBudget`: the bound is as
+written up to a load of 4 (a clean box idles at 2–4; on 2026-10-15 every red
+of the 16 ms gate came at a load of 7.3 or more from sibling builds and every
+pass at 5.3 or less, with the render path unchanged), scales with
+`load / 4` above it (load 8 is 32 ms), and above a load of 12 a miss throws
+`XCTSkip` with the numbers in its message, never a red, because the box
+cannot measure a frame budget then. Each gate measures up to three times
+and the best sweep counts (a sibling build's compile burst is seconds long
+and rarely covers three sweeps; a slower chain misses all three; the `BENCH`
+line says "best of n sweeps" when it retried). A pass at any load stands,
+and a miss under the cap is a red whatever the load. So a skipped or scaled timing is
+read from its `BENCH` line and re-run on a quiet box before anything is
+changed; a documentation or test-only change cannot have caused a red.
 
 ## Injected directories
 

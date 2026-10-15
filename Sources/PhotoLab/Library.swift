@@ -430,7 +430,10 @@ final class Library {
     }
 
     /// The (file, recipe) pairs an export of `ids` writes, each file the
-    /// source's original (`originalFile(for:)`).
+    /// source's original (`originalFile(for:)`). The recipes are snapshotted
+    /// here, when the export sheet opens (`ExportQueue.requestExport` is
+    /// called with the result): an edit made while the sheet is up or while
+    /// the queue runs does not change what is written for a photo already in it.
     func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
         var items: [ExportQueue.Item] = []
         for id in ids {

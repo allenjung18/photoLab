@@ -286,7 +286,10 @@ under the user's Application Support), so tests never touch the user's
 folder. `save(_:)` validates the name (`PresetStore.validated`), writes
 atomically and replaces a preset of the same name, but refuses a different
 name that would map onto the same file (`PresetError.fileNameCollision`).
-`rename(_:to:)` never silently replaces another preset. `PresetStore.decode`
+`rename(_:to:)` never silently replaces another preset, where "another" is
+by file identity: on a case-insensitive volume a rename that changes only
+the case of the name (`Mine` → `mine`) is the preset's own file, re-spelled
+and rewritten in place. `PresetStore.decode`
 refuses a `version` above `Preset.currentVersion`
 (`PresetError.unsupportedVersion`), so `loadAll()` returns the readable
 presets sorted by name plus the files it could not decode, which are left
@@ -396,7 +399,9 @@ the `SyncSheet` turns into one `sync` call with the mask the user ticked;
 
 `ExportQueue` (`Batch.swift`) is one per app. `requestExport(_:)` puts up the
 options sheet for a list of `ExportQueue.Item` (a source URL and its recipe,
-from `Library.exportItems(for:)`); the sheet calls `keep(folder:options:)`
+from `Library.exportItems(for:)`, which snapshots the recipes at that moment:
+an edit made while the sheet is up or the queue runs does not change what is
+written for a photo already in it); the sheet calls `keep(folder:options:)`
 and then `ExportQueue.start(_:into:options:)`. `start` runs the items in
 order in one task: each item is handed to the `Worker` on a detached task
 off the main thread, one at a time, and `Task.isCancelled` is checked before
