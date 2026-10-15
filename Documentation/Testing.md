@@ -17,7 +17,7 @@ skips; five tests skip by design (the real-RAW timing, below, and the four
 real-PhotoKit tests: two in `PhotosTests`, which run only in a process that
 is already authorized for Photos, and the import in `ExportTests` and the
 edit in `AdjustmentDataTests`, which also need `PHOTOLAB_PHOTOS_WRITE=1`),
-and a timed render gate that misses on a
+and a timed gate that misses on a
 swamped box skips rather than fails (Load sensitivity, below). The timed
 tests print a `BENCH` line with their numbers beside the verdict; read it,
 not only the pass.
@@ -131,7 +131,10 @@ not only the pass.
   command / select-all rules, and the export queue writing every photo
   through the renderer and stopping after the item in flight on cancel.
 - `ExportTests.swift` — JPEG quality moves the file size monotonically,
-  resize gives an exact long side, works in percent and never upscales, the
+  resize gives an exact long side, works in percent and never upscales, a
+  rotated export resized to a 2048 px long side keeps every border pixel at
+  the source's gray at four angles (the rotate inset is applied at render
+  size; the resize after it must not bring the rotated edge back), the
   camera EXIF travels with the orientation reset in every format, HEIC and
   TIFF round trip, the collision policy (number, skip, overwrite) and the
   original is never written, not even under a case-variant name on a
@@ -188,8 +191,8 @@ not only the pass.
   bands, so both neutral and saturated pixels are present; sRGB unless a
   colour space is passed), `meanRGB` and `maxDiff` measure a rendered frame,
   `bench24MPImageURL()` is the 24 MP source for the timed tests, and
-  `loadAverage()` / `assertFrameBudget` are the load guard on the timed
-  render gates.
+  `loadAverage()` / `assertFrameBudget` are the one load guard every timed
+  test gates through.
 
 ## The direction tests
 
@@ -261,9 +264,8 @@ JPEG written once to the temporary directory (`bench24MPImageURL()`).
 
 **Load sensitivity.** These numbers double on a busy box (a sibling build,
 Spotlight, another test run). Every timed test reads the 1-minute load
-average and prints it beside its number. The thumbnail and histogram timings scale
-their bound above a load of 8 (`loadFactor`). The three render gates (the two
-slider steps and the strip) go through `assertFrameBudget`: the bound is as
+average and prints it beside its number, and every one gates through
+`assertFrameBudget` (there is no second load guard): the bound is as
 written up to a load of 4 (a clean box idles at 2–4; on 2026-10-15 every red
 of the 16 ms gate came at a load of 7.3 or more from sibling builds and every
 pass at 5.3 or less, with the render path unchanged), scales with
@@ -272,7 +274,9 @@ pass at 5.3 or less, with the render path unchanged), scales with
 cannot measure a frame budget then. Each gate measures up to three times
 and the best sweep counts (a sibling build's compile burst is seconds long
 and rarely covers three sweeps; a slower chain misses all three; the `BENCH`
-line says "best of n sweeps" when it retried). A pass at any load stands,
+line says "best of n" when it retried), except the two that time a cold
+path and so measure once: the 500-JPEG folder and the real RAW, where a
+second pass would be warm. A pass at any load stands,
 and a miss under the cap is a red whatever the load. So a skipped or scaled timing is
 read from its `BENCH` line and re-run on a quiet box before anything is
 changed; a documentation or test-only change cannot have caused a red.

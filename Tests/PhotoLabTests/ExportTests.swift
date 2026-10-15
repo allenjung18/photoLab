@@ -209,6 +209,44 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(OutputSize.percent(10).size(fitting: CGSize(width: 10, height: 5)), CGSize(width: 1, height: 1))
     }
 
+    /// The rotate stage insets its crop one pixel inside the rotated frame
+    /// at the size it renders (`Renderer.stage`, `.rotate`); an export renders
+    /// at full resolution and resizes after. A flat gray exported rotated at a
+    /// 2048 px long side must keep every border pixel within 8 levels of the
+    /// source's own gray as it decodes: a darker one is the rotated frame's
+    /// antialiased edge (or the transparent outside, if the resize stopped
+    /// clamping) carried through the downscale. The source is large enough
+    /// that every angle renders above 2048 px (45° keeps 57 % of the side),
+    /// so each export really is resized.
+    func testAResizedRotatedExportHasNoDarkBorder() throws {
+        let src = try writeSource("flat.png", gray(0.6, width: 4800, height: 3200))
+        let level = meanGray(try decode(src))
+        for degrees in [3.0, 15.0, 45.0, -20.0] {
+            var recipe = Recipe.neutral
+            recipe.set(.rotate, to: degrees)
+            var o = ExportOptions()
+            o.format = .tiff
+            o.resize = .longSide(2048)
+            o.suffix = "-rot\(Int(degrees))"
+            let written = try Exporter.export(src, recipe: recipe, into: outDir, options: o)
+            guard case .written(let url) = written else { XCTFail("rotate \(degrees)°: \(written)"); continue }
+            let out = try decode(url)
+            XCTAssertEqual(max(out.width, out.height), 2048, "rotate \(degrees)°: the long side is the asked size")
+            XCTAssertEqual(Double(out.width) / Double(out.height), 1.5, accuracy: 0.01, "rotate \(degrees)° keeps the aspect")
+            let data = try XCTUnwrap(out.dataProvider?.data)
+            let p = try XCTUnwrap(CFDataGetBytePtr(data))
+            var darkest = 255.0, at = (0, 0)
+            func look(_ x: Int, _ y: Int) {
+                let i = y * out.bytesPerRow + x * 4
+                let l = (Double(p[i]) + Double(p[i + 1]) + Double(p[i + 2])) / 3
+                if l < darkest { darkest = l; at = (x, y) }
+            }
+            for x in 0..<out.width { look(x, 0); look(x, out.height - 1) }
+            for y in 0..<out.height { look(0, y); look(out.width - 1, y) }
+            XCTAssertGreaterThan(darkest, level - 8, "rotate \(degrees)° at 2048 px: border pixel \(at) is \(darkest), the source is \(level)")
+        }
+    }
+
     // MARK: Metadata
 
     func testExportKeepsTheCameraEXIFWithOrientationNormalisedInEveryFormat() throws {
