@@ -51,26 +51,37 @@ struct ContentView: View {
         Binding(
             get: { library.loupe },
             set: { on in
-                if on, library.selection == nil { library.selection = library.photos.first?.id }
+                if on, library.selection == nil { library.selection = library.visiblePhotos.first?.id }
                 library.loupe = on && library.selection != nil
             })
     }
 
     private var title: String { library.folder?.lastPathComponent ?? "PhotoLab" }
 
+    /// Grid: "N photos", or "n of N shown" under a filter, plus the selection
+    /// count. Loupe: the anchor's place among the visible photos and its marks.
     private var subtitle: String {
         guard library.folder != nil else { return "" }
-        if library.loupe, let i = library.selectedIndex {
-            return "\(i + 1) of \(library.photos.count)"
+        let total = library.photos.count
+        let shown = library.visiblePhotos.count
+        if library.loupe, let i = library.visibleIndex {
+            var s = library.filter == .all ? "\(i + 1) of \(total)" : "\(i + 1) of \(shown) shown"
+            let marks = library.marks(for: library.selection!)
+            if let flag = marks.flag { s += flag == .pick ? " · Pick" : " · Rejected" }
+            if marks.rating > 0 { s += " · " + String(repeating: "★", count: marks.rating) }
+            return s
         }
+        var s = library.filter == .all ? "\(total) photos" : "\(shown) of \(total) shown"
         let n = library.selectedIDs.count
-        return n > 1 ? "\(library.photos.count) photos · \(n) selected" : "\(library.photos.count) photos"
+        if n > 1 { s += " · \(n) selected" }
+        return s
     }
 }
 
 /// Keyboard shortcuts that work whatever has focus: Lightroom's G / E, arrows
 /// to move the selection, Escape back to the grid, Return into the loupe,
-/// backslash to toggle before/after.
+/// backslash to toggle before/after, P / X / U to flag and 0–5 to rate the
+/// selection (every selected photo in the grid, the one photo in the loupe).
 private struct HiddenShortcuts: View {
     @Environment(Library.self) private var library
 
@@ -85,13 +96,20 @@ private struct HiddenShortcuts: View {
             Button("") { library.select(offset: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
             Button("") { library.select(offset: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
             Button("") { library.showBefore.toggle() }.keyboardShortcut("\\", modifiers: [])
+            Button("") { library.setFlag(.pick, for: library.batchTargets) }.keyboardShortcut("p", modifiers: [])
+            Button("") { library.setFlag(.reject, for: library.batchTargets) }.keyboardShortcut("x", modifiers: [])
+            Button("") { library.setFlag(nil, for: library.batchTargets) }.keyboardShortcut("u", modifiers: [])
+            ForEach(0...Marks.maxRating, id: \.self) { n in
+                Button("") { library.setRating(n, for: library.batchTargets) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: [])
+            }
         }
         .frame(width: 0, height: 0)
         .opacity(0)
     }
 
     private func enterLoupe() {
-        if library.selection == nil { library.selection = library.photos.first?.id }
+        if library.selection == nil { library.selection = library.visiblePhotos.first?.id }
         library.loupe = library.selection != nil
     }
 }
@@ -131,12 +149,17 @@ struct GridView: View {
                     Text("No photos in this folder")
                         .foregroundStyle(.secondary)
                         .padding(40)
+                } else if library.visiblePhotos.isEmpty {
+                    Text("No photos match the filter")
+                        .foregroundStyle(.secondary)
+                        .padding(40)
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(library.photos) { photo in
+                        ForEach(library.visiblePhotos) { photo in
                             ThumbnailCell(photo: photo, selected: library.selectedIDs.contains(photo.id),
                                           anchor: photo.id == library.selection,
-                                          edited: library.isEdited(photo.id))
+                                          edited: library.isEdited(photo.id),
+                                          marks: library.marks(for: photo.id))
                                 .id(photo.id)
                                 .onTapGesture(count: 2) {
                                     library.selection = photo.id
@@ -158,9 +181,47 @@ struct GridView: View {
             }
         }
         .background(Color(nsColor: .underPageBackgroundColor))
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !library.photos.isEmpty { FilterBar() }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if library.selectedIDs.count > 1 { BatchBar() }
         }
+    }
+}
+
+/// The bar above the grid: Lightroom's filter choices (All · Picks ·
+/// Unflagged · Rejected · ≥ 1…5 stars). The grid, Select All, the batch
+/// actions and the loupe arrows all walk the filtered list.
+private struct FilterBar: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        @Bindable var library = library
+        HStack(spacing: 10) {
+            Text("Show")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Picker("Filter", selection: $library.filter) {
+                ForEach(PhotoFilter.allCases, id: \.self) { f in
+                    Text(f.label).tag(f)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("Which photos the grid shows; P / X / U flag, 0–5 rate the selection")
+            Spacer()
+            Text(library.filter == .all
+                 ? "\(library.photos.count) photos"
+                 : "\(library.visiblePhotos.count) of \(library.photos.count) shown")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -385,6 +446,8 @@ struct ThumbnailCell: View {
     var anchor = false
     /// Shows a small badge when the photo has a saved edit.
     var edited = false
+    /// The flag corner (top-left) and the stars (bottom-left) over the image.
+    var marks = Marks.none
     @State private var image: NSImage?
 
     var body: some View {
@@ -412,6 +475,33 @@ struct ThumbnailCell: View {
                         .help("Edited")
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if let flag = marks.flag {
+                    Image(systemName: flag == .pick ? "flag.fill" : "xmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(flag == .pick ? Color.white : Color.white.opacity(0.9))
+                        .padding(4)
+                        .background(flag == .pick ? Color.accentColor : Color.black.opacity(0.7), in: Circle())
+                        .padding(6)
+                        .help(flag == .pick ? "Pick (P)" : "Rejected (X)")
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if marks.rating > 0 {
+                    HStack(spacing: 1) {
+                        ForEach(1...Marks.maxRating, id: \.self) { n in
+                            Image(systemName: n <= marks.rating ? "star.fill" : "star")
+                                .font(.system(size: 9))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 3)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(6)
+                    .help("\(marks.rating) star\(marks.rating == 1 ? "" : "s") (0–5)")
+                }
+            }
+            .opacity(marks.flag == .reject ? 0.55 : 1)
             Text(photo.name)
                 .font(.caption)
                 .lineLimit(1)

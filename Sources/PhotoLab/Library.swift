@@ -20,6 +20,39 @@ struct SyncRequest: Identifiable {
     let mask: SyncMask
 }
 
+/// Which photos the grid shows: one of Lightroom's default filter-bar
+/// choices. A photo outside the filter is hidden from the grid, from
+/// `batchTargets`, from Select All and from the loupe arrows.
+enum PhotoFilter: Hashable, CaseIterable {
+    case all, picks, unflagged, rejected
+    /// At least `n` stars (1…5).
+    case stars(Int)
+
+    static var allCases: [PhotoFilter] {
+        [.all, .picks, .unflagged, .rejected] + (1...Marks.maxRating).map { .stars($0) }
+    }
+
+    func admits(_ marks: Marks) -> Bool {
+        switch self {
+        case .all: return true
+        case .picks: return marks.flag == .pick
+        case .unflagged: return marks.flag == nil
+        case .rejected: return marks.flag == .reject
+        case .stars(let n): return marks.rating >= n
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .picks: return "Picks"
+        case .unflagged: return "Unflagged"
+        case .rejected: return "Rejected"
+        case .stars(let n): return "≥ \(n)★"
+        }
+    }
+}
+
 /// The library is a folder. Originals are never written to: every edit is a
 /// recipe, held in memory for the open folder and persisted as a sidecar
 /// (`SidecarStore`) the moment it changes.
@@ -27,6 +60,11 @@ struct SyncRequest: Identifiable {
 final class Library {
     var folder: URL?
     var photos: [Photo] = []
+    /// The grid's filter. Changing it drops hidden photos from the selection
+    /// and moves a hidden anchor to the nearest visible photo.
+    var filter: PhotoFilter = .all {
+        didSet { if filter != oldValue { reconcileSelection() } }
+    }
     /// The anchor of the selection: the photo the loupe shows, the one a
     /// shift-click extends from, the source of Sync Settings. Setting it
     /// collapses a multi-selection to that one photo; `click` is the path
@@ -46,6 +84,9 @@ final class Library {
     var lastSyncMask = SyncMask.look
     /// Edits per photo for the open folder, mirrored to sidecars.
     private(set) var recipes: [Photo.ID: Recipe] = [:]
+    /// Flags and ratings per photo (only the non-empty ones), mirrored to the
+    /// same sidecars beside the recipe; never an undo step.
+    private(set) var marks: [Photo.ID: Marks] = [:]
     /// Before/after: true shows the unadjusted photo in the loupe.
     var showBefore = false
     /// The last sidecar write or read that failed, for the panel to show.
@@ -100,11 +141,13 @@ final class Library {
         openEdit = nil
         history = [:]
         sidecarError = nil
+        filter = .all
         photos = Self.scan(dir)
         let store = SidecarStore(folder: dir)
         self.store = store
         let loaded = store.loadAll(for: photos.map(\.url))
         recipes = loaded.recipes
+        marks = loaded.marks
         unreadableSidecars = Set(loaded.unreadable)
         if let first = loaded.unreadable.first {
             sidecarError = "Could not read the edit saved for \(first.lastPathComponent)"
@@ -123,32 +166,52 @@ final class Library {
         open(URL(fileURLWithPath: path))
     }
 
+    /// The photos the filter admits, in folder order: what the grid shows and
+    /// what every selection path walks. Under `.all` it is `photos`.
+    var visiblePhotos: [Photo] {
+        if filter == .all { return photos }
+        return photos.filter { filter.admits(marks(for: $0.id)) }
+    }
+
+    func isVisible(_ id: Photo.ID) -> Bool { filter.admits(marks(for: id)) }
+
     var selectedIndex: Int? {
         guard let selection else { return nil }
         return photos.firstIndex { $0.id == selection }
+    }
+
+    /// The anchor's position among the visible photos (the loupe's "n of N").
+    var visibleIndex: Int? {
+        guard let selection else { return nil }
+        return visiblePhotos.firstIndex { $0.id == selection }
     }
 
     var selectedPhoto: Photo? {
         selectedIndex.map { photos[$0] }
     }
 
+    /// Moves the anchor by `offset` along the visible photos (the arrows and
+    /// the loupe walk the filtered list, never a hidden photo).
     func select(offset: Int) {
-        guard !photos.isEmpty else { return }
-        let i = selectedIndex ?? 0
-        let j = min(max(i + offset, 0), photos.count - 1)
-        selection = photos[j].id
+        let visible = visiblePhotos
+        guard !visible.isEmpty else { return }
+        let i = visibleIndex ?? 0
+        let j = min(max(i + offset, 0), visible.count - 1)
+        selection = visible[j].id
     }
 
     // MARK: Multi-selection
 
     /// A click in the grid. Plain: that photo alone. `toggling` (⌘): add or
     /// remove it, the anchor moving to it when added. `extending` (⇧): every
-    /// photo between the anchor and it, the anchor kept.
+    /// visible photo between the anchor and it, the anchor kept. A click on a
+    /// photo the filter hides is ignored.
     func click(_ id: Photo.ID, extending: Bool = false, toggling: Bool = false) {
-        guard let i = photos.firstIndex(where: { $0.id == id }) else { return }
-        if extending, let a = selectedIndex {
+        let visible = visiblePhotos
+        guard let i = visible.firstIndex(where: { $0.id == id }) else { return }
+        if extending, let a = visible.firstIndex(where: { $0.id == selection }) {
             let range = min(a, i)...max(a, i)
-            selectedIDs = Set(photos[range].map(\.id))
+            selectedIDs = Set(visible[range].map(\.id))
         } else if toggling {
             if selectedIDs.contains(id) {
                 var rest = selectedIDs
@@ -167,11 +230,12 @@ final class Library {
         }
     }
 
-    /// Every photo of the folder, the anchor kept (or the first photo).
+    /// Every visible photo, the anchor kept (or the first visible photo).
     func selectAll() {
-        guard !photos.isEmpty else { return }
-        if selection == nil { selection = photos.first?.id }
-        selectedIDs = Set(photos.map(\.id))
+        let visible = visiblePhotos
+        guard !visible.isEmpty else { return }
+        if let anchor = selection, isVisible(anchor) {} else { selection = visible.first?.id }
+        selectedIDs = Set(visible.map(\.id))
     }
 
     /// Back to the anchor alone.
@@ -180,11 +244,63 @@ final class Library {
     }
 
     /// The photos a batch action targets, in folder order: the multi-selection
-    /// when there is one, else the anchor.
+    /// when there is one, else the anchor. A photo the filter hides is never a
+    /// target, whatever the selection set holds.
     var batchTargets: [Photo.ID] {
-        let ids = photos.map(\.id).filter { selectedIDs.contains($0) }
-        if ids.isEmpty, let selection { return [selection] }
+        let ids = visiblePhotos.map(\.id).filter { selectedIDs.contains($0) }
+        if ids.isEmpty, let selection, isVisible(selection) { return [selection] }
         return ids
+    }
+
+    /// After the filter or a mark changed: hidden photos leave the selection,
+    /// and a hidden anchor moves to the nearest visible photo after it in
+    /// folder order (culling flow: reject under Picks shows the next one),
+    /// else the nearest before, else none.
+    private func reconcileSelection() {
+        let kept = selectedIDs.filter(isVisible)
+        if let anchor = selection, !isVisible(anchor) {
+            let visible = photos.indices.filter { isVisible(photos[$0].id) }
+            let pos = selectedIndex ?? 0
+            let next = visible.first { $0 > pos } ?? visible.last { $0 < pos }
+            selection = next.map { photos[$0].id }  // collapses selectedIDs
+            if selection == nil { loupe = false }
+        }
+        if let anchor = selection { selectedIDs = kept.union([anchor]) } else { selectedIDs = [] }
+    }
+
+    // MARK: Flags and ratings
+
+    func marks(for id: Photo.ID) -> Marks { marks[id] ?? .none }
+    func flag(for id: Photo.ID) -> Marks.Flag? { marks(for: id).flag }
+    func rating(for id: Photo.ID) -> Int { marks(for: id).rating }
+
+    /// Flags every photo in `ids` (P pick, X reject, U none). Written to the
+    /// sidecar at once; not an undo step, and the recipe is untouched.
+    func setFlag(_ flag: Marks.Flag?, for ids: [Photo.ID]) {
+        for id in ids {
+            var m = marks(for: id)
+            guard m.flag != flag else { continue }
+            m.flag = flag
+            setMarks(m, for: id)
+        }
+        reconcileSelection()
+    }
+
+    /// Rates every photo in `ids` 0–5 (0 clears). Same rules as `setFlag`.
+    func setRating(_ rating: Int, for ids: [Photo.ID]) {
+        let rating = min(max(rating, 0), Marks.maxRating)
+        for id in ids {
+            var m = marks(for: id)
+            guard m.rating != rating else { continue }
+            m.rating = rating
+            setMarks(m, for: id)
+        }
+        reconcileSelection()
+    }
+
+    private func setMarks(_ m: Marks, for id: Photo.ID) {
+        if m.isEmpty { marks.removeValue(forKey: id) } else { marks[id] = m }
+        persist(id)
     }
 
     // MARK: Recipes, undo and sidecars
@@ -357,10 +473,12 @@ final class Library {
         if recipe.isDefault { recipes.removeValue(forKey: id) } else { recipes[id] = recipe }
     }
 
+    /// Writes the photo's sidecar: recipe and marks together, so a reset
+    /// keeps the flag and a flag keeps a default recipe's file.
     private func persist(_ id: Photo.ID) {
         guard let store else { return }
         do {
-            try store.save(recipe(for: id), for: id)
+            try store.save(recipe(for: id), marks: marks(for: id), for: id)
             unreadableSidecars.remove(id)
             sidecarError = nil
         } catch {
