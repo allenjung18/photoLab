@@ -164,36 +164,12 @@ The original photo is never written to, under any of these.
 
 ## Design
 
-- **Edits are data.** Each photo gets a sidecar JSON: an ordered list of
-  adjustments, each with parameters and an enabled flag. Toggles, undo,
-  presets and batch apply are all edits to that list. Undo is a stack of
-  whole recipes per photo, kept for the open folder.
-- **One render path.** The `apply(_:to:)` method of `Renderer` is the Core Image
-  filter chain for a recipe; the loupe feeds it a 3200 px ImageIO master, the export feeds it
-  the full-resolution decode, so the two cannot drift in color. A slider
-  step re-renders at the view's pixel size.
-- **Grouped stages.** The tone sliders and the curve are one per-channel
-  lookup, the 24 HSL sliders one 3D color cube, both built on the CPU with
-  Accelerate and cached by their values; the four crop edges are one crop.
-  Kinds apply in a fixed order (geometry, exposure and white balance, tone,
-  color, HSL, detail, effects) whatever order the sidecar lists them in.
-- **A preset is a named recipe.** One JSON file per preset in a user-level
-  folder, carrying every kind but geometry; applying one writes the photo's
-  sidecar through the same `setRecipe` path as a slider, so it undoes like
-  one. The strip's thumbnails are the same chain at 160 px.
-- **A batch is a sync mask over a selection.** Sync, Paste and Apply Preset
-  are one operation: for each selected photo, the kinds in the mask are
-  taken from the source recipe and the rest kept, written through
-  `setRecipe` per photo. The undo steps of one batch share a tag, so undo
-  from any photo of the batch takes back every photo whose latest step is
-  that batch. The export queue feeds the full-resolution decode into the
-  same `apply(_:to:)` of `Renderer` as the loupe, one photo at a time, cancellable
-  between files.
-- **Export options are one value on the one path.** `ExportOptions`
-  (format, quality, size, suffix, collision policy, metadata) goes with
-  every item through `Exporter.export`, which renders through `Renderer`
-  (the resize is the last step of the chain, Lanczos to an exact long
-  side after the crop), copies the source's ImageIO properties with the
-  orientation and pixel dimensions made true for the output
-  (`ExportMetadata`), writes to a hidden partial file and moves it into
-  place, so a failed or cancelled export leaves no half file.
+Edits are data: a photo's edit is a recipe, a list of adjustments each with
+a value and an enabled flag, saved as a sidecar JSON and changed only through
+one method in the library that records the undo step and writes the file.
+One Core Image chain renders every recipe, for the loupe, the preset strip
+and the export alike; only the input image and the output size differ. A
+preset is a named recipe without the crop and rotation, and a batch is that
+same write with a mask over a selection, so undo takes a whole batch back.
+How each of these works, with the types that implement it, is in
+[Documentation/Architecture.md](Documentation/Architecture.md).
