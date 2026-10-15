@@ -420,7 +420,9 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
 
 - **The request.** `ExportQueue.requestExport(_:)` (`Batch.swift`) takes
   the `ExportQueue.Item` list from `Library.exportItems(for:)` (each a
-  source URL and its recipe) and sets `ExportQueue.request`; `ContentView`
+  source URL, its recipe and, for a Photos photo, its own file name: the
+  output is `<original name><suffix>.<ext>`, never the cached copy's id;
+  a folder photo keeps its file's name) and sets `ExportQueue.request`; `ContentView`
   presents `ExportSheet(request:options:folder:album:toPhotos:)` for it with
   the last options, folder, album and target kind. Ignored while a run is
   going.

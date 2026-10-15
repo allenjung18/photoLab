@@ -82,13 +82,21 @@ struct ExportOptions: Codable, Hashable, Sendable {
     }
 
     /// `<stem><suffix>.<ext>` for `source`, before any collision handling.
-    func fileName(for source: URL) -> String {
-        source.deletingPathExtension().lastPathComponent + cleanSuffix + "." + format.fileExtension
+    /// `name` is the photo's own file name when the source file is a cache
+    /// copy under another name (a Photos original); its extension is dropped
+    /// like the source's.
+    func fileName(for source: URL, name: String? = nil) -> String {
+        Self.stem(of: source, name: name) + cleanSuffix + "." + format.fileExtension
+    }
+
+    private static func stem(of source: URL, name: String?) -> String {
+        guard let name, !name.isEmpty else { return source.deletingPathExtension().lastPathComponent }
+        return (name as NSString).deletingPathExtension
     }
 
     /// `fileName(for:)` with a counter: `<stem><suffix> 2.<ext>` (n = 2).
-    func fileName(for source: URL, number n: Int) -> String {
-        let stem = source.deletingPathExtension().lastPathComponent + cleanSuffix
+    func fileName(for source: URL, name: String? = nil, number n: Int) -> String {
+        let stem = Self.stem(of: source, name: name) + cleanSuffix
         return (n <= 1 ? stem : "\(stem) \(n)") + "." + format.fileExtension
     }
 }

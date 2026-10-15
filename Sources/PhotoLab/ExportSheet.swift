@@ -203,7 +203,7 @@ struct ExportSheet: View {
 
     private var namePreview: String {
         guard let first = request.items.first else { return "" }
-        return resolved.fileName(for: first.source)
+        return resolved.fileName(for: first.source, name: first.name)
     }
 
     /// `options` with the size controls folded into `resize`.

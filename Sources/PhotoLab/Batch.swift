@@ -99,10 +99,10 @@ enum Exporter {
     /// taken (another export, or the original itself when exporting into
     /// its own folder): `<stem> 2.jpg`, `<stem> 3.jpg`, …. Under `.skip`
     /// and `.overwrite` it is the plain name whether or not it exists.
-    static func destination(for source: URL, in folder: URL, options: ExportOptions = .default) -> URL {
+    static func destination(for source: URL, name: String? = nil, in folder: URL, options: ExportOptions = .default) -> URL {
         var n = 1
         while true {
-            let url = folder.appendingPathComponent(options.fileName(for: source, number: n), isDirectory: false)
+            let url = folder.appendingPathComponent(options.fileName(for: source, name: name, number: n), isDirectory: false)
             if options.collision != .number || !FileManager.default.fileExists(atPath: url.path) { return url }
             n += 1
         }
@@ -132,10 +132,10 @@ enum Exporter {
     /// an Overwrite whose target is one of them, by file identity, is refused
     /// with `Failure.isALibraryOriginal` and nothing is written.
     @discardableResult
-    static func export(_ source: URL, recipe: Recipe, into folder: URL, options: ExportOptions = .default,
+    static func export(_ source: URL, name: String? = nil, recipe: Recipe, into folder: URL, options: ExportOptions = .default,
                        protected: Set<URL> = [], renderer: Renderer = .shared) throws -> Outcome {
         let fm = FileManager.default
-        let out = destination(for: source, in: folder, options: options)
+        let out = destination(for: source, name: name, in: folder, options: options)
         let exists = fm.fileExists(atPath: out.path)
         if exists {
             switch options.collision {
@@ -236,6 +236,10 @@ final class ExportQueue {
         let id = UUID()
         let source: URL
         let recipe: Recipe
+        /// The photo's own file name, when `source` is a cached copy of a
+        /// Photos original under another name: the output is named from it.
+        /// Nil for a folder photo (its file name is used).
+        var name: String? = nil
         /// The open library's originals when the export was asked for: an
         /// Overwrite onto one of them is refused (`Exporter.export`).
         var protected: Set<URL> = []
@@ -258,7 +262,7 @@ final class ExportQueue {
     /// Exports one item (source, recipe, protected originals) into the
     /// folder per the options; the default is `Exporter.export`. Injected so
     /// a test can time or count jobs without rendering.
-    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>) throws -> Exporter.Outcome
+    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>, String?) throws -> Exporter.Outcome
 
     private(set) var state: State = .idle
     private(set) var total = 0
@@ -308,7 +312,7 @@ final class ExportQueue {
     init(remember: Bool = false,
          photos: any PhotosWriter = PhotoKitLive(),
          stagingDirectory: URL = ExportQueue.defaultStagingDirectory,
-         worker: @escaping Worker = { try Exporter.export($0, recipe: $1, into: $2, options: $3, protected: $4) }) {
+         worker: @escaping Worker = { try Exporter.export($0, name: $5, recipe: $1, into: $2, options: $3, protected: $4) }) {
         self.worker = worker
         self.remember = remember
         self.photos = photos
@@ -419,13 +423,13 @@ final class ExportQueue {
                     switch target {
                     case .folder(let folder):
                         return Result {
-                            switch try worker(item.source, item.recipe, folder, runOptions, item.protected) {
+                            switch try worker(item.source, item.recipe, folder, runOptions, item.protected, item.name) {
                             case .written(let url): return .written(url)
                             case .skipped(let url): return .skipped(url)
                             }
                         }
                     case .photosLibrary(let album):
-                        return await Self.importIntoPhotos(item.source, recipe: item.recipe, staging: staging,
+                        return await Self.importIntoPhotos(item.source, name: item.name, recipe: item.recipe, staging: staging,
                                                            protected: item.protected, album: album, options: runOptions,
                                                            worker: worker, photos: photos)
                     }
@@ -454,12 +458,12 @@ final class ExportQueue {
     /// the one path for format, quality, size and metadata) into `staging`,
     /// imported, and the staged file removed whether or not the import
     /// worked.
-    nonisolated private static func importIntoPhotos(_ source: URL, recipe: Recipe, staging: URL,
+    nonisolated private static func importIntoPhotos(_ source: URL, name: String?, recipe: Recipe, staging: URL,
                                                      protected: Set<URL>, album: String?,
                                                      options: ExportOptions, worker: Worker,
                                                      photos: any PhotosWriter) async -> Result<Done, Error> {
         do {
-            let outcome = try worker(source, recipe, staging, options, protected)
+            let outcome = try worker(source, recipe, staging, options, protected, name)
             guard case .written(let file) = outcome else { return .success(.skipped(outcome.url)) }
             defer { try? FileManager.default.removeItem(at: file) }
             return .success(.imported(try await photos.importImage(at: file, intoAlbum: album)))

@@ -568,12 +568,16 @@ final class Library {
     /// photo's own file plus the files resolved for this export (a Photos
     /// original's cached copy), so an Overwrite never lands on one.
     func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
-        var resolved: [(URL, Recipe)] = []
+        var resolved: [(URL, Recipe, String?)] = []
         for id in ids {
-            resolved.append((try await originalFile(for: id), recipe(for: id)))
+            // A Photos original's cached copy is named by its id: the output
+            // takes the photo's own name instead. Folder photos keep theirs.
+            var own: String?
+            if case .asset = id { own = name(for: id) }
+            resolved.append((try await originalFile(for: id), recipe(for: id), own))
         }
         let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))
-        return resolved.map { ExportQueue.Item(source: $0.0, recipe: $0.1, protected: protected) }
+        return resolved.map { ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected) }
     }
 
     /// Marks the start of a continuous edit (a slider drag) on `id`. At most

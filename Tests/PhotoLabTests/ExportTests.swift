@@ -850,3 +850,78 @@ extension ExportTests {
         XCTAssertTrue(ids.contains(id), "the new asset is in the album")
     }
 }
+
+// MARK: Export names of Photos originals
+
+/// A PhotoKit stand-in with two image assets whose originals are real PNGs.
+private final class NamedPhotoKit: PhotoKitClient, @unchecked Sendable {
+    static let album = PhotosAlbum(id: "ALB/L0/040", title: "Trip", count: 2, isRecents: false)
+    static let list = [PhotosAsset(id: "A/L0/001", originalFilename: "IMG_0001.PNG"),
+                       PhotosAsset(id: "B/L0/001", originalFilename: "Holiday photo.PNG")]
+    func authorizationStatus() -> PhotosAuthorization { .authorized }
+    func requestAuthorization() async -> PhotosAuthorization { .authorized }
+    func albums() -> [PhotosAlbum] { [Self.album] }
+    func assets(in album: PhotosAlbum) -> [PhotosAsset] { Self.list }
+    func thumbnail(for assetID: String, maxPixelSize: Int) -> NSImage? { nil }
+    func writeOriginal(of assetID: String, to url: URL) async throws {
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, syntheticImage(width: 16, height: 16), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+    }
+    func hasAdjustments(_ assetID: String) -> Bool { false }
+    func adjustment(of assetID: String) async throws -> PhotosAdjustment? { nil }
+    func saveEdit(_ adjustment: PhotosAdjustment, to assetID: String,
+                  render: @escaping @Sendable (URL) throws -> Void) async throws {
+        throw PhotosError.cannotEdit(assetID)
+    }
+}
+
+extension ExportTests {
+    private func photosLibrary() -> Library {
+        let access = PhotosAccess(client: NamedPhotoKit(),
+                                  sidecarDirectory: base.appendingPathComponent("sidecars", isDirectory: true),
+                                  originalsDirectory: base.appendingPathComponent("originals", isDirectory: true))
+        let lib = Library(rememberFolder: false)
+        lib.open(album: NamedPhotoKit.album, access: access)
+        return lib
+    }
+
+    /// A Photos-sourced item exports as `<original name><suffix>.<ext>`,
+    /// never the cache copy's id, to a folder and to the Photos library.
+    func testAPhotosItemIsNamedFromItsOriginalFilenameNotTheCacheCopy() async throws {
+        let lib = photosLibrary()
+        lib.selectAll()
+        let items = try await lib.exportItems(for: lib.batchTargets)
+        XCTAssertEqual(items.compactMap(\.name).sorted(), ["Holiday photo.PNG", "IMG_0001.PNG"])
+        XCTAssertTrue(items.allSatisfy { $0.source.lastPathComponent.contains("L0") }, "the source is the cache copy")
+
+        var o = ExportOptions()
+        o.suffix = "-edit"
+        let q = ExportQueue(photos: FakePhotosWriter(), stagingDirectory: base.appendingPathComponent("staging"))
+        q.start(items, into: outDir, options: o)
+        await q.wait()
+        XCTAssertEqual(q.state, .finished)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outDir.path).sorted(),
+                       ["Holiday photo-edit.jpg", "IMG_0001-edit.jpg"])
+
+        let writer = FakePhotosWriter()
+        let p = ExportQueue(photos: writer, stagingDirectory: base.appendingPathComponent("staging"))
+        p.start(items, to: .photosLibrary(album: nil), options: o)
+        await p.wait()
+        XCTAssertEqual(writer.imports.map(\.name).sorted(), ["Holiday photo-edit.jpg", "IMG_0001-edit.jpg"])
+
+        // The sheet's preview and the collision counter follow the same name.
+        XCTAssertEqual(o.fileName(for: items[0].source, name: items[0].name), items[0].name!.replacingOccurrences(of: ".PNG", with: "-edit.jpg"))
+        XCTAssertEqual(o.fileName(for: items[0].source, name: "IMG_0001.PNG", number: 2), "IMG_0001-edit 2.jpg")
+    }
+
+    /// A folder photo carries no name and keeps its file's.
+    func testAFolderItemCarriesNoNameAndKeepsItsFileName() async throws {
+        try writeSource("p0.png", gray(0.3, width: 16, height: 16))
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        lib.selectAll()
+        let items = try await lib.exportItems(for: lib.batchTargets)
+        XCTAssertEqual(items.map(\.name), [nil])
+    }
+}
