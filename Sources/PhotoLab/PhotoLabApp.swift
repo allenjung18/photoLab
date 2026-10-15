@@ -6,6 +6,10 @@ struct PhotoLabApp: App {
     @State private var library = Library()
     @State private var presets = PresetLibrary()
     @State private var exports = ExportQueue(remember: true)
+    /// The launch open runs once: a window re-created later (the last one
+    /// closed, then the Dock icon) must not reopen the argument and wipe the
+    /// selection and history.
+    @State private var launched = false
 
     init() {
         // Running from `swift run` has no bundle; make the process a real
@@ -22,8 +26,12 @@ struct PhotoLabApp: App {
                 .frame(minWidth: 900, minHeight: 600)
                 .onAppear {
                     NSApp.activate(ignoringOtherApps: true)
-                    // `PhotoLab <folder>` opens that folder; otherwise the last one.
-                    if let arg = CommandLine.arguments.dropFirst().first {
+                    guard !launched else { return }
+                    launched = true
+                    // `PhotoLab <folder>` opens that folder; otherwise the last
+                    // one. Flags (`-NSDocumentRevisionsDebugMode` from Xcode,
+                    // `-psn_…` from Finder) are not paths and are skipped.
+                    if let arg = CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("-") }) {
                         library.open(URL(fileURLWithPath: arg))
                     } else {
                         library.restoreLastFolder()

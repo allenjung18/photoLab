@@ -237,7 +237,16 @@ struct Recipe: Codable, Hashable {
     static let neutral = Recipe(
         adjustments: AdjustmentKind.allCases.map { Adjustment(kind: $0, value: $0.neutral) })
 
+    /// Render identity: applying this recipe changes nothing. A disabled
+    /// entry counts (it is not applied), so a recipe can be neutral and still
+    /// carry values worth keeping; use `isDefault` for "is there an edit".
     var isNeutral: Bool { adjustments.allSatisfy(\.isNoop) }
+
+    /// True when this is the default recipe: every kind at its neutral value
+    /// and enabled. A disabled-only edit (a value kept but switched off) is
+    /// NOT the default, so it stays in memory, keeps its sidecar and counts
+    /// as edited; `isNeutral` is the render-side notion.
+    var isDefault: Bool { normalized == .neutral }
 
     subscript(kind: AdjustmentKind) -> Adjustment {
         get {

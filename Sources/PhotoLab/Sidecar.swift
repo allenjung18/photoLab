@@ -49,11 +49,13 @@ struct SidecarStore {
         return try Self.decoder.decode(Sidecar.self, from: data).recipe
     }
 
-    /// Writes the sidecar for `photo`; a neutral recipe removes it instead,
-    /// so a reset leaves no trace. The write is atomic (temp file + rename).
+    /// Writes the sidecar for `photo`; the default recipe removes it instead,
+    /// so a reset leaves no trace. A recipe that only differs by a disabled
+    /// entry is still written (`Recipe.isDefault`, not `isNeutral`). The
+    /// write is atomic (temp file + rename).
     func save(_ recipe: Recipe, for photo: URL, now: Date = Date()) throws {
         let file = url(for: photo)
-        if recipe.isNeutral {
+        if recipe.isDefault {
             try remove(for: photo)
             return
         }
@@ -79,7 +81,7 @@ struct SidecarStore {
         var unreadable: [URL] = []
         for photo in photos {
             do {
-                if let recipe = try load(for: photo), !recipe.isNeutral { recipes[photo] = recipe }
+                if let recipe = try load(for: photo), !recipe.isDefault { recipes[photo] = recipe }
             } catch {
                 unreadable.append(photo)
             }

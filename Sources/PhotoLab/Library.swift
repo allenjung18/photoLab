@@ -50,6 +50,8 @@ final class Library {
     var showBefore = false
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
+    /// Why the last `open` was refused (a missing path); nil after one succeeds.
+    private(set) var openError: String?
     /// Photos whose sidecar exists but could not be decoded; their edits show
     /// as neutral and their sidecars are left alone until the user edits.
     private(set) var unreadableSidecars: Set<Photo.ID> = []
@@ -80,9 +82,16 @@ final class Library {
 
     /// Opens a folder; given a file, opens its folder with that photo in the loupe.
     /// Every sidecar in the folder is read here, so a photo opens with its edit.
+    /// A path that does not exist is refused: the current folder (or none)
+    /// stays, and `openError` says why, so a mistyped argument never opens
+    /// its parent or the working directory.
     func open(_ url: URL) {
         var isDir: ObjCBool = false
-        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
+            openError = "No such file or folder: \(url.path)"
+            return
+        }
+        openError = nil
         let dir = isDir.boolValue ? url : url.deletingLastPathComponent()
         folder = dir
         selection = nil
@@ -182,7 +191,8 @@ final class Library {
 
     func recipe(for id: Photo.ID) -> Recipe { recipes[id] ?? .neutral }
 
-    /// True when the photo has an edit (a non-neutral recipe).
+    /// True when the photo has an edit: a recipe other than the default
+    /// (`apply` keeps every non-default recipe, a disabled-only one included).
     func isEdited(_ id: Photo.ID) -> Bool { recipes[id] != nil }
 
     /// Replaces the photo's recipe. Outside a slider drag this is one undo
@@ -274,21 +284,31 @@ final class Library {
         ids.map { ExportQueue.Item(source: $0, recipe: recipe(for: $0)) }
     }
 
-    /// Marks the start of a continuous edit (a slider drag) on `id`.
+    /// Marks the start of a continuous edit (a slider drag) on `id`. At most
+    /// one edit is open at a time: beginning one on another photo ends the
+    /// open one first (its drag persisted and made an undo step), so no
+    /// photo is ever left on the mid-drag path with its writes unsaved.
     func beginEdit(_ id: Photo.ID) {
-        guard openEdit == nil else { return }
+        if let openEdit, openEdit.id == id { return }
+        closeOpenEdit()
         openEdit = (id, recipe(for: id))
     }
 
-    /// Ends the continuous edit on `id`: if the recipe moved, the value at
-    /// `beginEdit` becomes the undo step and the result is written.
+    /// Ends the continuous edit: if the recipe moved, the value at
+    /// `beginEdit` becomes the undo step and the result is written. The `id`
+    /// is the caller's photo at mouse-up; whatever edit is open is the one
+    /// closed, so a loupe photo changing mid-drag cannot strand the edit.
     func endEdit(_ id: Photo.ID) {
-        guard let edit = openEdit, edit.id == id else { return }
+        closeOpenEdit()
+    }
+
+    private func closeOpenEdit() {
+        guard let edit = openEdit else { return }
         openEdit = nil
-        let now = recipe(for: id)
+        let now = recipe(for: edit.id)
         guard now != edit.before else { return }
-        history[id, default: EditHistory()].push(edit.before)
-        persist(id)
+        history[edit.id, default: EditHistory()].push(edit.before)
+        persist(edit.id)
     }
 
     var canUndo: Bool { selection.map { history[$0]?.undo.isEmpty == false } ?? false }
@@ -331,8 +351,10 @@ final class Library {
         return photos.map(\.id).filter { history[$0].flatMap(top)?.batch == batch }
     }
 
+    /// Only the default recipe is dropped from memory; a recipe that renders
+    /// as identity because an entry is disabled keeps its values.
     private func apply(_ recipe: Recipe, to id: Photo.ID) {
-        if recipe.isNeutral { recipes.removeValue(forKey: id) } else { recipes[id] = recipe }
+        if recipe.isDefault { recipes.removeValue(forKey: id) } else { recipes[id] = recipe }
     }
 
     private func persist(_ id: Photo.ID) {

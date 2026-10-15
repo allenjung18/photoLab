@@ -106,6 +106,13 @@ struct WelcomeView: View {
                 .foregroundStyle(.secondary)
             Text("Open a folder of photos to begin")
                 .font(.title2)
+            if let error = library.openError {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .frame(maxWidth: 480)
+            }
             Button("Open Folder…") { library.chooseFolder() }
                 .keyboardShortcut(.defaultAction)
         }
@@ -564,7 +571,7 @@ struct AdjustmentsPanel: View {
                     .disabled(!library.canRedo)
                     .help("Redo (⇧⌘Z)")
                 Button("Reset") { library.resetRecipe(for: photo.id) }
-                    .disabled(recipe.wrappedValue.isNeutral)
+                    .disabled(recipe.wrappedValue.isDefault)
                     .help("Back to the original; removes the sidecar (⇧⌘R)")
             }
             .controlSize(.small)
