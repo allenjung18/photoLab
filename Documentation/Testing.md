@@ -13,9 +13,11 @@ with `@testable import PhotoLab`.
 The filter is a regular expression over `Class/test`. Build with Xcode
 selected (README, Run): the Command Line Tools toolchain cannot build the
 SwiftUI target. A green run prints the executed count with its failures and
-skips; three tests skip by design (the real-RAW timing, below, and the two
-real-PhotoKit tests in `PhotosTests`, which run only in a process that is
-already authorized for Photos), and a timed render gate that misses on a
+skips; five tests skip by design (the real-RAW timing, below, and the four
+real-PhotoKit tests: two in `PhotosTests`, which run only in a process that
+is already authorized for Photos, and the import in `ExportTests` and the
+edit in `AdjustmentDataTests`, which also need `PHOTOLAB_PHOTOS_WRITE=1`),
+and a timed render gate that misses on a
 swamped box skips rather than fails (Load sensitivity, below). The timed
 tests print a `BENCH` line with their numbers beside the verdict; read it,
 not only the pass.
@@ -83,6 +85,25 @@ not only the pass.
   `PHPhotoLibrary.authorizationStatus(for: .readWrite)` is already
   `.authorized` (never `requestAuthorization`; the `xctest` host under
   `swift test` is not, so they skip there and say so).
+- `AdjustmentDataTests.swift` — Save to Photos and the recipe read back,
+  behind `FakeEditingPhotoKit` (an authorized one-album library whose
+  originals are mid-gray PNGs, one adjustment per asset in memory, the JPEG
+  each save rendered kept, a read that can be held): a save holds
+  `local.photolab.recipe`, version `1` and recipe-only JSON that decodes to
+  the saved recipe, its rendered content is a full-size JPEG brighter than
+  the original under exposure +1, and the sidecar is unchanged; a second
+  save replaces the data and the render; Save is offered only for an edited
+  photo of a Photos album and a refused save is reported and can be tried
+  again; `PhotosAdjustment.canHandle` is our identifier at an integer
+  version this build reads. Reopen: no sidecar plus PhotoLab's data restores
+  the recipe, writes the sidecar and leaves `canUndo` false, and the next
+  open reads the sidecar; a sidecar wins and an unedited asset is never
+  asked; another app's data gives neutral and writes nothing; version 2 (or
+  version-2 JSON under a version-1 label) is refused and the photo listed in
+  `unreadableSidecars`; an edit made while the data is read wins.
+  `testRealSaveOntoATestAssetReadsBack` imports a 16 px JPEG into "PhotoLab
+  Tests", saves an edit onto that asset and reads the data back; it skips
+  unless `PHOTOLAB_PHOTOS_WRITE=1` AND the host is already authorized.
 - `CullingTests.swift` — a flag and rating on a neutral recipe round trip
   through a fresh `Library` (the sidecar kept for the marks alone), Reset
   keeps the flag while an unmarked reset removes the file, marks never enter
@@ -277,7 +298,8 @@ place the app writes is injected:
   client, `~/Library/Application Support/PhotoLab/photos-sidecars/` and
   `~/Library/Caches/PhotoLab/originals/`) is the app's alone. No test calls
   `requestAuthorization`: the permission dialog is the user's click, from
-  the bundled app.
+  the bundled app. `AdjustmentDataTests` injects its own fake the same way,
+  plus a temporary directory for the JPEGs its saves render.
 - `ExportQueue`: `init(remember:worker:)` leaves `remember:` off (the folder
   and options stay in memory) and takes a `ExportQueue.Worker`, so a test
   can count, slow or fail jobs without rendering; exports that do render go

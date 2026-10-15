@@ -147,8 +147,15 @@ struct SidecarStore: Sendable {
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let doc = Sidecar(original: name ?? id.defaultName, updated: now, recipe: recipe,
                           flag: marks.flag, rating: marks.rating == 0 ? nil : marks.rating)
-        let data = try Self.encoder.encode(doc)
+        let data = try Self.encode(doc)
         try data.write(to: file, options: .atomic)
+    }
+
+    /// One sidecar as its file's bytes: the form `save` writes and `decode`
+    /// reads (pretty, sorted keys, ISO 8601 dates). The Photos adjustment
+    /// data (`PhotosAdjustment`) is the same JSON.
+    static func encode(_ doc: Sidecar) throws -> Data {
+        try encoder.encode(doc)
     }
 
     func remove(for id: PhotoID) throws {

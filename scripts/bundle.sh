@@ -29,7 +29,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSPhotoLibraryUsageDescription</key><string>PhotoLab opens albums from your Photos library, reads the originals and writes nothing back unless you export to it.</string>
+  <key>NSPhotoLibraryUsageDescription</key><string>PhotoLab opens albums from your Photos library, reads the originals and writes back only what you export or save to Photos; originals are never changed.</string>
 </dict></plist>
 PLIST
 codesign --force --sign "$IDENTITY" "$APP"

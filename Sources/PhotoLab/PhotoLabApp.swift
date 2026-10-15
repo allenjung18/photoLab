@@ -51,6 +51,11 @@ struct PhotoLabApp: App {
                 Button(exportTitle) { export() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                     .disabled(library.batchTargets.isEmpty || exports.isRunning)
+                // The selected photo's edit written into Photos itself (a
+                // Photos album's edited photo only): Photos shows it and can
+                // revert it; the export above makes a new asset instead.
+                Button("Save to Photos") { Task { await library.saveToPhotos() } }
+                    .disabled(!library.canSaveToPhotos)
             }
             // Copy / paste a photo's settings; select every photo in the grid.
             CommandGroup(after: .pasteboard) {

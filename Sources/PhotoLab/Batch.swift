@@ -150,6 +150,21 @@ enum Exporter {
             case .number: break
             }
         }
+        try write(source, recipe: recipe, to: out, options: options, renderer: renderer)
+        return .written(out)
+    }
+
+    /// Renders `recipe` over the full-resolution decode of `source` and
+    /// writes it to `out` in `options`' format, quality and size, with the
+    /// source's metadata when `options.keepMetadata`; a file at `out` is
+    /// replaced. The bytes go to a partial file beside `out`, moved into
+    /// place when complete. `export` calls this after its collision rules;
+    /// a Save to Photos calls it for the rendered JPEG PhotoKit asks for
+    /// (`PhotosSource.saveEdit`), so both are the one render and write path.
+    static func write(_ source: URL, recipe: Recipe, to out: URL, options: ExportOptions,
+                      renderer: Renderer = .shared) throws {
+        let fm = FileManager.default
+        let folder = out.deletingLastPathComponent()
         guard let image = Renderer.fullResolution(source) else { throw Failure.cannotDecode(source) }
         guard let result = renderer.render(image, recipe: recipe, resize: options.resize) else {
             throw Failure.cannotRender(source)
@@ -189,7 +204,6 @@ enum Exporter {
         } catch {
             throw Failure.cannotWrite(out)
         }
-        return .written(out)
     }
 
     /// `image` redrawn, pixel for pixel, into a bitmap with no alpha channel

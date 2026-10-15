@@ -20,7 +20,7 @@ struct PhotosAlbumSheet: View {
             Group {
                 switch browser.status {
                 case .notDetermined:
-                    prompt("PhotoLab needs permission to read your Photos library. It reads the originals and writes nothing back.") {
+                    prompt("PhotoLab needs permission to read your Photos library. It reads the originals and writes back only what you export or save to Photos.") {
                         Button("Allow Access to Photos…") {
                             requesting = true
                             Task {

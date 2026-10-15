@@ -33,11 +33,14 @@ to run it, the timing tests, adding an adjustment).
   preset, copied settings or a sync mask. Every selection path walks
   `Library.visiblePhotos`; a photo the filter hides is never in
   `batchTargets`. (Architecture 2, Marks; Features, Flags and ratings.)
-- **`Library.setRecipe` is the only writer.** It records the undo step and
-  writes the sidecar; a slider drag wraps its changes in `beginEdit` /
-  `endEdit` so the drag is one step and one write. Presets apply through
-  `Library.apply(_:to:)` -> `setRecipe`, never by writing a sidecar; there is
-  no path that writes a recipe or a sidecar around it. (Architecture 3.)
+- **`Library.setRecipe` is the only path that changes an edit.** It records
+  the undo step and writes the sidecar; a slider drag wraps its changes in
+  `beginEdit` / `endEdit` so the drag is one step and one write. Presets
+  apply through `Library.apply(_:to:)` -> `setRecipe`, never by writing a
+  sidecar. `open` and `restore` are the LOAD path: they install a recipe
+  read from a sidecar or from a Photos asset's adjustment data
+  (`Library.recoverRecipe`) and record no step; there is no other path that
+  writes a recipe or a sidecar. (Architecture 3.)
 - **One render path.** `Renderer.apply(_:to:)` is the Core Image chain for
   the loupe, the preset strip and the export alike; do not add a second
   renderer. A new adjustment is a new `AdjustmentKind` case in chain
@@ -61,10 +64,13 @@ to run it, the timing tests, adding an adjustment).
   before `PhotosAuthorization.canRead`; `requestAuthorization` is called
   from a sheet's Allow button alone (the album sheet's, the export sheet's),
   never at launch and never from a test (the real tests `XCTSkip` unless
-  already authorized; the one that imports also needs
+  already authorized; the ones that import or edit also need
   `PHOTOLAB_PHOTOS_WRITE=1`). Originals are copied once into the Caches
   directory and read from there; the library is written only by an export
-  to Photos, and only as new assets. (Architecture 2, PhotosSource; 4,
+  to Photos (new assets) and by Save to Photos (`PhotoKitClient.saveEdit`:
+  the asset's edit, PhotoLab's adjustment data plus a JPEG rendered from
+  the cached original through `Exporter.write`, never from the input's own
+  image). (Architecture 2, PhotosSource and adjustment data; 4,
   PhotosWriter.)
 - **Photo ids are the URLs `Library.scan` returns** (symlinks resolved:
   `/var/...` comes back as `/private/var/...`). Key recipes by those ids,

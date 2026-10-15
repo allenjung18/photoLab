@@ -67,6 +67,71 @@ protocol PhotoKitClient: Sendable {
     /// Writes the asset's original resource to `url` (iCloud originals are
     /// downloaded first). The file at `url` is complete when this returns.
     func writeOriginal(of assetID: String, to url: URL) async throws
+    /// Whether Photos holds an edit of the asset, any app's
+    /// (`PHAsset.hasAdjustments`). Cheap: no content-editing input.
+    func hasAdjustments(_ assetID: String) -> Bool
+    /// The adjustment data of the asset's current edit when it is
+    /// PhotoLab's (any version: the caller refuses one too new), else nil.
+    /// Asks a content-editing input whose `canHandleAdjustmentData` accepts
+    /// PhotoLab's format identifier; another app's data never comes back
+    /// from PhotoKit (a fake may hand it back, and `PhotosAdjustment.recipe()`
+    /// ignores it).
+    func adjustment(of assetID: String) async throws -> PhotosAdjustment?
+    /// Writes an edit onto the asset, non-destructively: a content-editing
+    /// input asked with `PhotosAdjustment.canHandle` (PhotoLab's data at a
+    /// version this build reads), `render` writing the full-size JPEG to the
+    /// URL it is handed (the output's rendered content), then ONE
+    /// `performChanges` committing the output with `adjustment` as its data.
+    /// Photos keeps the original (Revert to Original) and one edit per
+    /// asset, so a second save replaces the first. Photos may ask the user
+    /// to allow the change; that is the user's click.
+    func saveEdit(_ adjustment: PhotosAdjustment, to assetID: String,
+                  render: @escaping @Sendable (URL) throws -> Void) async throws
+}
+
+/// A PhotoLab edit as Photos stores it beside an asset (`PHAdjustmentData`):
+/// format identifier `local.photolab.recipe`, format version
+/// `Sidecar.currentVersion`, and as data the recipe-only sidecar JSON (no
+/// flag or rating: marks are not an edit). Photos syncs it with the library
+/// and hands it back on a content-editing input, which is how a photo whose
+/// sidecar is gone gets its recipe back (`PhotosSource.recoverRecipe`).
+struct PhotosAdjustment: Equatable, Sendable {
+    static let formatIdentifier = "local.photolab.recipe"
+
+    let formatIdentifier: String
+    let formatVersion: String
+    let data: Data
+
+    init(formatIdentifier: String, formatVersion: String, data: Data) {
+        self.formatIdentifier = formatIdentifier
+        self.formatVersion = formatVersion
+        self.data = data
+    }
+
+    /// PhotoLab's data for `recipe`; `name` is the sidecar's `original`.
+    init(recipe: Recipe, name: String, now: Date = Date()) throws {
+        let doc = Sidecar(original: name, updated: now, recipe: recipe)
+        self.init(formatIdentifier: Self.formatIdentifier, formatVersion: String(Sidecar.currentVersion),
+                  data: try SidecarStore.encode(doc))
+    }
+
+    /// The live client's `canHandleAdjustmentData` for a save: PhotoLab's
+    /// identifier at a version this build reads.
+    static func canHandle(identifier: String, version: String) -> Bool {
+        guard identifier == formatIdentifier, let v = Int(version) else { return false }
+        return v <= Sidecar.currentVersion
+    }
+
+    /// The recipe the data holds. Nil for another app's data (a different
+    /// identifier: the photo shows its original). PhotoLab data of a version
+    /// above `Sidecar.currentVersion` (the format version or the JSON's own)
+    /// throws `SidecarError.unsupportedVersion`, like a sidecar a newer
+    /// PhotoLab wrote; data that does not decode throws its decoding error.
+    func recipe() throws -> Recipe? {
+        guard formatIdentifier == Self.formatIdentifier else { return nil }
+        if let v = Int(formatVersion), v > Sidecar.currentVersion { throw SidecarError.unsupportedVersion(v) }
+        return try SidecarStore.decode(data).recipe
+    }
 }
 
 enum PhotosError: LocalizedError, Equatable {
@@ -78,6 +143,8 @@ enum PhotosError: LocalizedError, Equatable {
     case noOriginal(String)
     /// Photos did not create an asset from the exported file.
     case cannotImport(String)
+    /// Photos gave no content-editing input for the asset.
+    case cannotEdit(String)
 
     var errorDescription: String? {
         switch self {
@@ -86,6 +153,7 @@ enum PhotosError: LocalizedError, Equatable {
         case .assetMissing(let id): return "The photo \(id) is no longer in the library."
         case .noOriginal(let id): return "The photo \(id) has no original to open."
         case .cannotImport(let name): return "Photos could not import \(name)."
+        case .cannotEdit(let id): return "Photos could not open the photo \(id) for editing."
         }
     }
 }
@@ -208,9 +276,71 @@ struct PhotoKitLive: PhotoKitClient {
         }
     }
 
-    /// A result slot for a synchronous callback.
+    func hasAdjustments(_ assetID: String) -> Bool {
+        asset(assetID)?.hasAdjustments ?? false
+    }
+
+    func adjustment(of assetID: String) async throws -> PhotosAdjustment? {
+        guard let asset = asset(assetID) else { throw PhotosError.assetMissing(assetID) }
+        guard asset.hasAdjustments else { return nil }
+        let input = try await contentEditingInput(for: asset) {
+            $0.formatIdentifier == PhotosAdjustment.formatIdentifier
+        }
+        guard let data = input.value?.adjustmentData else { return nil }
+        return PhotosAdjustment(formatIdentifier: data.formatIdentifier, formatVersion: data.formatVersion,
+                                data: data.data)
+    }
+
+    func saveEdit(_ adjustment: PhotosAdjustment, to assetID: String,
+                  render: @escaping @Sendable (URL) throws -> Void) async throws {
+        let status = authorizationStatus()
+        guard status.canRead else { throw PhotosError.notAuthorized(status) }
+        guard let asset = asset(assetID) else { throw PhotosError.assetMissing(assetID) }
+        let input = try await contentEditingInput(for: asset) {
+            PhotosAdjustment.canHandle(identifier: $0.formatIdentifier, version: $0.formatVersion)
+        }
+        guard let editing = input.value else { throw PhotosError.cannotEdit(assetID) }
+        let output = PHContentEditingOutput(contentEditingInput: editing)
+        output.adjustmentData = PHAdjustmentData(formatIdentifier: adjustment.formatIdentifier,
+                                                 formatVersion: adjustment.formatVersion, data: adjustment.data)
+        try render(try output.renderedContentURL(for: .jpeg))
+        let edit = Box(output)
+        try await PHPhotoLibrary.shared().performChanges {
+            guard let target = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else { return }
+            PHAssetChangeRequest(for: target).contentEditingOutput = edit.value
+        }
+    }
+
+    /// `requestContentEditingInput`, iCloud allowed, with `canHandle` as
+    /// the options' `canHandleAdjustmentData`; the completion is the resume.
+    /// When `canHandle` accepts the asset's data, the input carries it and
+    /// its image is the unadjusted original (PhotoLab never reads that
+    /// image: it renders from its cached original).
+    private func contentEditingInput(for asset: PHAsset,
+                                     canHandle: @escaping @Sendable (PHAdjustmentData) -> Bool) async throws
+        -> Box<PHContentEditingInput> {
+        let options = PHContentEditingInputRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.canHandleAdjustmentData = canHandle
+        let id = asset.localIdentifier
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Box<PHContentEditingInput>, Error>) in
+            asset.requestContentEditingInput(with: options) { input, info in
+                if let input {
+                    continuation.resume(returning: Box(input))
+                } else if let error = info[PHContentEditingInputErrorKey] as? Error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(throwing: PhotosError.cannotEdit(id))
+                }
+            }
+        }
+    }
+
+    /// A result slot for a synchronous callback, or a PhotoKit object
+    /// carried across a concurrency boundary it is only read on.
     fileprivate final class Box<T>: @unchecked Sendable {
         var value: T?
+        init(_ value: T? = nil) { self.value = value }
     }
 }
 
@@ -346,6 +476,37 @@ struct PhotosSource: PhotoSource {
     func originalFile(for id: PhotoID) async throws -> URL {
         guard case .asset(let assetID) = id else { throw PhotoSourceError.notInThisSource(id) }
         return try await originals.file(for: assetID, client: client)
+    }
+
+    /// How a Save to Photos renders: JPEG (PhotoKit's rendered content is
+    /// JPEG, a RAW original's too), full size, the original's metadata.
+    static let saveOptions = ExportOptions(format: .jpeg, quality: 0.9, resize: nil, keepMetadata: true)
+
+    /// Save to Photos: writes `recipe` into the library as the asset's edit
+    /// (`PhotoKitClient.saveEdit`), the data `PhotosAdjustment(recipe:)` and
+    /// the rendered content the FULL-SIZE render of the cached original
+    /// (`originalFile(for:)`) through `Exporter.write`, the one render path;
+    /// never the input's own image, which for another app's edit is that
+    /// app's render. The sidecar is untouched: it stays the primary record.
+    func saveEdit(_ recipe: Recipe, for id: PhotoID, name: String, renderer: Renderer = .shared) async throws {
+        guard case .asset(let assetID) = id else { throw PhotoSourceError.notInThisSource(id) }
+        let original = try await originalFile(for: id)
+        let adjustment = try PhotosAdjustment(recipe: recipe, name: name)
+        try await client.saveEdit(adjustment, to: assetID) { url in
+            try Exporter.write(original, recipe: recipe, to: url, options: Self.saveOptions, renderer: renderer)
+        }
+    }
+
+    /// The recipe Photos holds for the asset as PhotoLab's adjustment data,
+    /// for a photo with no sidecar (`Library.recoverRecipe`). Nil when
+    /// access is not allowed, the asset has no edit (`hasAdjustments`; no
+    /// content-editing input is asked then) or the edit is another app's.
+    /// Throws `SidecarError.unsupportedVersion` for PhotoLab data a newer
+    /// build wrote.
+    func recoverRecipe(for id: PhotoID) async throws -> Recipe? {
+        guard case .asset(let assetID) = id else { throw PhotoSourceError.notInThisSource(id) }
+        guard client.authorizationStatus().canRead, client.hasAdjustments(assetID) else { return nil }
+        return try await client.adjustment(of: assetID)?.recipe()
     }
 }
 

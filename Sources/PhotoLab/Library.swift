@@ -47,6 +47,14 @@ enum PhotoFilter: Hashable, CaseIterable {
     }
 }
 
+/// Where the last Save to Photos stands, per photo.
+enum PhotosSaveState: Equatable {
+    case idle
+    case saving(Photo.ID)
+    case saved(Photo.ID)
+    case failed(Photo.ID, String)
+}
+
 /// The library is one `PhotoSource` (a folder through `FolderSource`, a
 /// Photos album through `PhotosSource`). Originals are never written to:
 /// every edit is a recipe, held in memory for the open source and
@@ -103,9 +111,13 @@ final class Library {
     private(set) var openError: String?
     /// The Open Photos Library sheet the window should show.
     var photosSheet = false
-    /// Photos whose sidecar exists but could not be decoded; their edits show
-    /// as neutral and their sidecars are left alone until the user edits.
+    /// Photos whose sidecar exists but could not be decoded, or whose Photos
+    /// adjustment data is PhotoLab's at a version this build does not read;
+    /// their edits show as neutral and their sidecars are left alone until
+    /// the user edits.
     private(set) var unreadableSidecars: Set<Photo.ID> = []
+    /// The last Save to Photos: running, done, or why it failed.
+    private(set) var photosSave = PhotosSaveState.idle
 
     private var store: SidecarStore?
     private var history: [Photo.ID: EditHistory] = [:]
@@ -206,6 +218,7 @@ final class Library {
         openEdit = nil
         history = [:]
         sidecarError = nil
+        photosSave = .idle
         filter = .all
         photos = listed
         let store = source.sidecars
@@ -418,6 +431,74 @@ final class Library {
 
     /// Everything back to neutral: one undo step, and the sidecar is removed.
     func resetRecipe(for id: Photo.ID) { setRecipe(.neutral, for: id) }
+
+    /// The LOAD path for a recipe found outside the sidecar (a Photos
+    /// asset's adjustment data, `recoverRecipe`): installed like `open`'s
+    /// `recipes = loaded.recipes`, so no undo step is recorded, and written
+    /// to the sidecar so the next open reads it from JSON. Not an edit:
+    /// `setRecipe` remains the only path that changes one.
+    func restore(_ recipe: Recipe, for id: Photo.ID) {
+        apply(recipe, to: id)
+        persist(id)
+    }
+
+    /// When the loupe opens a Photos asset that has no sidecar: if Photos
+    /// holds PhotoLab's adjustment data for it, its recipe is installed
+    /// through `restore`. Another app's edit is ignored (the original shows);
+    /// PhotoLab data of a newer version lists the photo in
+    /// `unreadableSidecars`. Nothing is asked for a folder photo, a photo
+    /// with a sidecar, an edit or an unreadable mark, and nothing is
+    /// installed when the photo was edited, or the source changed, while
+    /// the data was read. A read that fails (offline) leaves the photo as is.
+    func recoverRecipe(for id: Photo.ID) async {
+        guard let source = source as? PhotosSource, let store, !store.exists(for: id),
+              recipes[id] == nil, !unreadableSidecars.contains(id) else { return }
+        let recovered: Recipe?
+        do {
+            recovered = try await source.recoverRecipe(for: id)
+        } catch let error as SidecarError {
+            guard stillRecoverable(id, store: store) else { return }
+            unreadableSidecars.insert(id)
+            sidecarError = "Could not read the edit saved in Photos for \(name(for: id)): \(error.localizedDescription)"
+            return
+        } catch {
+            return
+        }
+        guard let recovered, stillRecoverable(id, store: store) else { return }
+        restore(recovered, for: id)
+    }
+
+    /// True while `id` is in the open listing of the same sidecar store and
+    /// still has no sidecar, recipe, history or open drag.
+    private func stillRecoverable(_ id: Photo.ID, store: SidecarStore) -> Bool {
+        self.store?.directory == store.directory && photos.contains { $0.id == id }
+            && !store.exists(for: id) && recipes[id] == nil && history[id] == nil && openEdit?.id != id
+    }
+
+    /// Save to Photos is offered for the anchor when it is an edited photo
+    /// of a Photos album and no save is running.
+    var canSaveToPhotos: Bool {
+        guard let id = selection, source is PhotosSource, isEdited(id) else { return false }
+        if case .saving = photosSave { return false }
+        return true
+    }
+
+    /// Writes the anchor's recipe into Photos as the asset's edit
+    /// (`PhotosSource.saveEdit`): the adjustment data plus the rendered
+    /// full-size JPEG, so Photos shows the edit and can revert it. A slider
+    /// drag in progress is closed first. The sidecar is not touched.
+    func saveToPhotos() async {
+        guard canSaveToPhotos, let id = selection, let source = source as? PhotosSource else { return }
+        closeOpenEdit()
+        let recipe = recipe(for: id)
+        photosSave = .saving(id)
+        do {
+            try await source.saveEdit(recipe, for: id, name: name(for: id))
+            photosSave = .saved(id)
+        } catch {
+            photosSave = .failed(id, error.localizedDescription)
+        }
+    }
 
     /// Applies a preset to one photo: its look over the photo's own rotation
     /// and crop, through `setRecipe` (one undo step, the sidecar written).

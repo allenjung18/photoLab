@@ -11,6 +11,9 @@ app does, this document says how. Four mechanisms carry everything:
    sidecar persists it, a `Preset` names one, a batch copies parts of one.
 3. **One writer.** `Library.setRecipe(_:for:)` is the only path that changes
    a photo's edit: it records the undo step and writes the sidecar.
+   `Library.open` and `Library.restore` are the load path: they install a
+   recipe read from a sidecar or a Photos asset's adjustment data, with no
+   undo step.
 4. **One export path.** `ExportQueue` feeds `Exporter.export` one item at a
    time; `Exporter.export` renders through the same chain and writes the
    file per `ExportOptions`.
@@ -209,7 +212,9 @@ PhotoKit, so the test fake is complete and no `PHAsset` leaves
 `requestAuthorization()` (the Allow button and nothing else calls it),
 `albums()` (Recents, then the regular albums by title), `assets(in:)`
 (images only, oldest capture first: `PhotoKitLive.assetFetchOptions()`),
-`thumbnail(for:maxPixelSize:)` and `writeOriginal(of:to:)`. The live
+`thumbnail(for:maxPixelSize:)`, `writeOriginal(of:to:)`, and the three
+calls of the adjustment data (below): `hasAdjustments(_:)`,
+`adjustment(of:)` and `saveEdit(_:to:render:)`. The live
 client needs an app bundle: the system keys Photos access to a bundle
 identifier and a usage string, both written by `scripts/bundle.sh`; under a
 bare `swift run` it never fetches, and `PhotosAccess.hasBundle` is what the
@@ -241,6 +246,46 @@ assets take the flat naming under `PhotosAccess.defaultSidecarDirectory`
 (`~/Library/Application Support/PhotoLab/photos-sidecars/`). Photos' own
 edits are not stacked: the unadjusted original is what the grid, the loupe
 and the export show.
+
+### Adjustment data (`PhotosAdjustment`)
+
+Save to Photos writes a PhotoLab edit into the library non-destructively.
+`PhotosAdjustment` is the edit as Photos stores it: format identifier
+`local.photolab.recipe`, format version `Sidecar.currentVersion`, and as
+data the recipe-only sidecar JSON (`SidecarStore.encode`, no flag or
+rating). `Library.saveToPhotos()` (enabled by `canSaveToPhotos`: the
+anchor is an edited photo of a Photos album and no save is running; the
+state is `photosSave`) closes an open drag and calls
+`PhotosSource.saveEdit(_:for:name:)`, which takes the cached original
+(`originalFile(for:)`) and hands `PhotoKitClient.saveEdit` the data and a
+render closure: `Exporter.write` with `PhotosSource.saveOptions` (JPEG,
+full size, metadata kept), the same render and write path as an export.
+`PhotoKitLive.saveEdit` asks a content-editing input with
+`canHandleAdjustmentData` = `PhotosAdjustment.canHandle` (PhotoLab's
+identifier at a version this build reads), builds a
+`PHContentEditingOutput` with the data, runs the closure into
+`renderedContentURL(for: .jpeg)` (never reading the input's own image,
+which for another app's edit is that app's render) and commits
+`PHAssetChangeRequest(for:).contentEditingOutput` in one `performChanges`.
+Photos keeps the original (Revert to Original) and one edit per asset, so a
+second save replaces the first. The sidecar is untouched: it is the
+primary record, and a revert in Photos does not change it.
+
+Reading back is lazy and per photo. When the loupe opens a photo,
+`Library.recoverRecipe(for:)` runs; for a Photos asset with no sidecar, no
+recipe and no unreadable mark it asks `PhotosSource.recoverRecipe(for:)`,
+which returns nil unless reading is allowed and the asset
+`hasAdjustments` (so an unedited asset never costs a content-editing
+input), then `adjustment(of:)` (the live client accepts PhotoLab's
+identifier at any version) and `PhotosAdjustment.recipe()`: nil for another
+app's identifier, `SidecarError.unsupportedVersion` for a format version or
+a JSON version above `Sidecar.currentVersion`. A recipe is installed
+through `Library.restore(_:for:)` (the load path: no undo step, the sidecar
+written so the next open reads JSON) only if, after the read, the photo is
+still in the listing of the same store and still has no sidecar, recipe,
+history or open drag, so an edit made meanwhile wins. A newer version puts
+the photo in `unreadableSidecars` with a `sidecarError`; a read that fails
+leaves the photo as it was.
 
 ### `AdjustmentKind`
 
@@ -457,8 +502,11 @@ panel. `resetRecipe(for:)` is `setRecipe` with `Recipe.neutral`, so a reset
 is one undo step and removes the sidecar. Applying a preset to one photo,
 `Library.apply(_:to:)`, is `setRecipe` with `Preset.apply(to:)`, so it undoes
 like a slider move. The adjustments panel binds every slider and checkbox to
-`setRecipe`; the Presets menu, the strip, Sync and Paste all end in it. There
-is no path that writes a sidecar or a recipe around it.
+`setRecipe`; the Presets menu, the strip, Sync and Paste all end in it. The
+load path is the one other way a recipe lands in `recipes`: `open` reads
+the sidecars, and `restore(_:for:)` installs a recipe recovered from a
+Photos asset's adjustment data and writes its sidecar, neither recording
+a step. There is no path that writes a sidecar or a recipe around them.
 
 ### A drag is one step
 
@@ -590,6 +638,10 @@ one photo:
    file under `.overwrite`). The partial is removed on every exit, so a
    failed or cancelled export leaves no half file. The outcome is
    `.written` with the URL.
+
+Steps 3 to 5 are `Exporter.write(_:recipe:to:options:renderer:)`, which a
+Save to Photos also calls for the JPEG PhotoKit asks for (section 2,
+Adjustment data).
 
 ## 5. The picture
 

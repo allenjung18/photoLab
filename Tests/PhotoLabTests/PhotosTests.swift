@@ -91,6 +91,13 @@ final class PhotosTests: XCTestCase {
             if failWrites { throw PhotosError.noOriginal(assetID) }
             try Data("original of \(assetID)".utf8).write(to: url)
         }
+        // No asset here carries an edit (adjustment data: AdjustmentDataTests).
+        func hasAdjustments(_ assetID: String) -> Bool { false }
+        func adjustment(of assetID: String) async throws -> PhotosAdjustment? { nil }
+        func saveEdit(_ adjustment: PhotosAdjustment, to assetID: String,
+                      render: @escaping @Sendable (URL) throws -> Void) async throws {
+            throw PhotosError.cannotEdit(assetID)
+        }
     }
 
     static let recents = PhotosAlbum(id: "RECENTS/L0/040", title: "Recents", count: 3, isRecents: true)

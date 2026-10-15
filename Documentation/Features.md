@@ -285,9 +285,21 @@ Nothing else; the copied settings live in memory.
   never lands on a hidden photo and "n of N" counts the visible ones;
   **Esc** leaves the loupe; **Return** and **E** enter it; **G** goes to the grid
   (see Menus and shortcuts).
+- **Save to Photos.** For a photo of a Photos album the toolbar gains
+  **Save to Photos** (the File menu has it too), enabled by
+  `Library.canSaveToPhotos` (the photo is edited, no save running); it runs
+  `Library.saveToPhotos()` (Architecture 2, Adjustment data), and the
+  panel's last line says "Saving to Photos…", "Saved to Photos" or why it
+  could not (`Library.photosSave`). Photos may ask to allow the change.
+- **A recipe from Photos.** Each time a photo opens, `LoupeView` also runs
+  `Library.recoverRecipe(for:)`: a Photos asset with no sidecar whose edit
+  in Photos is PhotoLab's gets that recipe back (no undo step), and its
+  sidecar is written.
 
-Writes: nothing to the photo. The loupe only reads the recipe; for a
-Photos asset it fills the originals cache (Architecture 2).
+Writes: nothing to the photo. The loupe reads the recipe; for a Photos
+asset it fills the originals cache (Architecture 2), writes the sidecar of
+a recipe recovered from Photos, and Save to Photos writes the asset's edit
+in the library (the rendered JPEG and PhotoLab's adjustment data).
 
 ## Adjustments panel
 
@@ -472,8 +484,9 @@ Two places define keys; the README's Keys table is the user's list.
   - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) and **Open
     Photos Library…** **⇧⌘O** (`Library.choosePhotosAlbum`) replace
     `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
-    `batchTargets`, disabled with nothing targeted or a run going) replaces
-    `.importExport`.
+    `batchTargets`, disabled with nothing targeted or a run going) and
+    **Save to Photos** (`Library.saveToPhotos()`, enabled by
+    `Library.canSaveToPhotos`) replace `.importExport`.
   - Edit, after `.pasteboard`: **Copy Settings** **⇧⌘C**
     (`Library.copySettings(from:)`), **Paste Settings…** **⇧⌘V**
     (`Library.requestPaste`), **Sync Settings…** (`Library.requestSync`,
@@ -497,8 +510,8 @@ Two places define keys; the README's Keys table is the user's list.
   menu key in `PhotoLabApp`.
 - **Toolbar**: **Open Folder**, the **Grid / Loupe** segmented picker
   (which selects the first photo when entering the loupe with none
-  selected) and the **Before / After** toggle (`Library.compare`, the same
-  as **Y**).
+  selected), the **Before / After** toggle (`Library.compare`, the same
+  as **Y**) and, in the loupe of a Photos album, **Save to Photos**.
 - **Launch**: `PhotoLabApp` opens the first command-line argument that does
   not start with `-` (a folder, or a file to open in the loupe), else the
   remembered source (`Library.restoreLastSource`); the process is made a

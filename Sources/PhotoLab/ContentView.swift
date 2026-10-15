@@ -38,6 +38,13 @@ struct ContentView: View {
                 }
                 .disabled(library.photos.isEmpty)
                 .help("Before and After side by side (Y)")
+                if library.loupe, library.source is PhotosSource {
+                    Button { Task { await library.saveToPhotos() } } label: {
+                        Label("Save to Photos", systemImage: "square.and.arrow.down.on.square")
+                    }
+                    .disabled(!library.canSaveToPhotos)
+                    .help("Write this edit into Photos: it shows there and Revert to Original undoes it")
+                }
             }
         }
         .background(HiddenShortcuts())
@@ -618,6 +625,11 @@ struct LoupeView: View {
                 fetch = .failed(error.localizedDescription)
             }
         }
+        // A Photos asset with no sidecar may carry PhotoLab's edit in its
+        // adjustment data (saved from another Mac, or the sidecar deleted).
+        .task(id: photo.id) {
+            await library.recoverRecipe(for: photo.id)
+        }
     }
 
     private var resolvedFile: URL? { photo.fileURL ?? file }
@@ -873,6 +885,13 @@ struct AdjustmentsPanel: View {
                     .lineLimit(3)
                     .padding(.horizontal, 16).padding(.bottom, 10)
             }
+            if let save = photosSaveLine {
+                Text(save.text)
+                    .font(.caption2)
+                    .foregroundStyle(save.failed ? Color.red : Color.secondary)
+                    .lineLimit(3)
+                    .padding(.horizontal, 16).padding(.bottom, 10)
+            }
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -894,6 +913,16 @@ struct AdjustmentsPanel: View {
     private func sectionEdited(_ section: AdjustmentKind.Section) -> Bool {
         let r = recipe.wrappedValue
         return section.kinds.contains { !r[$0].isNoop }
+    }
+
+    /// The last Save to Photos of this photo, when there was one.
+    private var photosSaveLine: (text: String, failed: Bool)? {
+        switch library.photosSave {
+        case .saving(photo.id): return ("Saving to Photos…", false)
+        case .saved(photo.id): return ("Saved to Photos", false)
+        case .failed(photo.id, let reason): return ("Could not save to Photos: \(reason)", true)
+        default: return nil
+        }
     }
 
     private var footer: String {

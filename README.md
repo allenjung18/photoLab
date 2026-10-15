@@ -27,6 +27,16 @@ and build with `PHOTOLAB_SIGN_IDENTITY="PhotoLab Dev" scripts/bundle.sh
 shows them unadjusted: an edit made in Photos is not shown. An iCloud-only
 original is downloaded the first time its photo opens in the loupe.
 
+**Save to Photos** (File menu, or the loupe's toolbar button, for an edited
+photo of a Photos album) writes the edit into Photos itself: Photos shows
+the edited photo, **Revert to Original** there takes it back, and the
+recipe travels with the photo as PhotoLab's adjustment data (Photos may ask
+you to allow the change). Saving again replaces the edit. PhotoLab's own
+record stays the sidecar: reverting in Photos does not change what PhotoLab
+shows. When a photo has no sidecar (another Mac, or the sidecar deleted)
+and Photos holds PhotoLab's edit for it, opening it in the loupe brings the
+recipe back and writes the sidecar; another app's edit is ignored.
+
 Needs macOS 14 or later (the `platforms` line in `Package.swift`) and Xcode
 (free; no developer account is needed to build or run locally). On macOS 27
 the bare Command Line Tools cannot build SwiftUI (the SDK needs a macro
@@ -186,7 +196,9 @@ Everything the app writes, and nothing else:
   one per edited, flagged or rated photo of a Photos album (the asset's
   identifier with its slashes as underscores), with the same rules as a
   folder's sidecars. The Photos library is written to only by an export
-  you send there (new photos, never an existing one).
+  you send there (new photos) and by Save to Photos (the edit of that one
+  photo: a rendered JPEG plus PhotoLab's adjustment data, which Photos keeps
+  beside the untouched original).
 - **Originals cache** — `~/Library/Caches/PhotoLab/originals/<asset-id>.<ext>`,
   a copy of each Photos original the loupe or an export has opened (an
   iCloud-only original is downloaded into it once). A cache: delete the
