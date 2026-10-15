@@ -453,4 +453,30 @@ final class ExportTests: XCTestCase {
         }
         XCTAssertEqual(ExportOptions.default, ExportOptions())
     }
+
+
+    /// A case-variant of the original: `X.JPG` exported as JPEG into its own
+    /// folder is destined for `X.jpg`, a different string for the same file
+    /// on a case-insensitive volume. The identity compare (resolved URL),
+    /// not the string, is what refuses it.
+    func testExportingTheOriginalUnderACaseVariantNameIsRefused() throws {
+        let own = try writeSource("X.JPG", gray(0.5, width: 24, height: 24), type: .jpeg)
+        let ownBytes = try Data(contentsOf: own)
+        var overwrite = ExportOptions()
+        overwrite.collision = .overwrite
+        let target = Exporter.destination(for: own, in: folder, options: overwrite)
+        XCTAssertEqual(target.lastPathComponent, "X.jpg")
+        XCTAssertNotEqual(target.path, own.path, "the strings differ; only the file identity can tell")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: target.path),
+                          "case-sensitive volume: X.jpg is a different file here")
+
+        var bright = Recipe.neutral
+        bright.set(.exposure, to: 2)
+        XCTAssertThrowsError(try Exporter.export(own, recipe: bright, into: folder, options: overwrite)) { error in
+            guard case Exporter.Failure.isTheOriginal(let u)? = error as? Exporter.Failure else { return XCTFail("\(error)") }
+            XCTAssertEqual(u, own)
+        }
+        XCTAssertEqual(try Data(contentsOf: own), ownBytes, "untouched")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["X.JPG"], "no partial, no X.jpg")
+    }
 }

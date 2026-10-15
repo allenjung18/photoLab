@@ -81,6 +81,8 @@ enum PresetError: LocalizedError, Equatable {
     case nameExists(String)
     case notFound(String)
     case fileNameCollision(String, String)
+    /// The file's `version` is above what this build reads.
+    case unsupportedVersion(String, Int)
 
     var errorDescription: String? {
         switch self {
@@ -90,6 +92,8 @@ enum PresetError: LocalizedError, Equatable {
         case .notFound(let n): return "There is no preset named “\(n)”."
         case .fileNameCollision(let a, let b):
             return "“\(a)” and “\(b)” would share a file name; pick a name that differs in more than punctuation."
+        case .unsupportedVersion(let n, let v):
+            return "The preset “\(n)” was saved by a newer version of PhotoLab (format \(v); this version reads up to \(Preset.currentVersion))."
         }
     }
 }
@@ -136,8 +140,11 @@ struct PresetStore {
             .appendingPathExtension(Self.fileExtension)
     }
 
+    /// True when a file is stored under `name`, whether or not this build
+    /// can read it: an undecodable preset is still the user's, never an
+    /// empty slot to write into.
     func exists(_ name: String) -> Bool {
-        (try? load(name)) != nil
+        FileManager.default.fileExists(atPath: url(for: name).path)
     }
 
     // MARK: Files
@@ -148,16 +155,23 @@ struct PresetStore {
         let file = url(for: name)
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         let data = try Data(contentsOf: file)
-        return try Self.decoder.decode(Preset.self, from: data)
+        return try Self.decode(data)
     }
 
     /// Writes `preset` (atomic: temp file + rename), replacing a preset of the
-    /// same name. A different name that maps to the same file is refused.
-    func save(_ preset: Preset) throws {
+    /// same name. A different name that maps to the same file is refused. A
+    /// file this build cannot decode (damaged, or a `version` too new) is
+    /// moved to `<name>.json.unreadable-<yyyymmdd-hhmmss>` first
+    /// (`UnreadableBackup`), never replaced.
+    func save(_ preset: Preset, now: Date = Date()) throws {
         let name = try Self.validated(preset.name)
         let file = url(for: name)
-        if let other = try? load(name), other.name != name {
-            throw PresetError.fileNameCollision(name, other.name)
+        if FileManager.default.fileExists(atPath: file.path) {
+            if let other = try? load(name) {
+                if other.name != name { throw PresetError.fileNameCollision(name, other.name) }
+            } else {
+                try UnreadableBackup.moveAside(file, now: now)
+            }
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var doc = preset
@@ -197,7 +211,7 @@ struct PresetStore {
         for file in entries where file.pathExtension == Self.fileExtension {
             do {
                 let data = try Data(contentsOf: file)
-                presets.append(try Self.decoder.decode(Preset.self, from: data))
+                presets.append(try Self.decode(data))
             } catch {
                 unreadable.append(file)
             }
@@ -219,6 +233,17 @@ struct PresetStore {
     /// Writes (or rewrites) every starter preset.
     func writeStarters() throws {
         for preset in Preset.starters { try save(preset) }
+    }
+
+    /// Decodes one preset file; a `version` above `Preset.currentVersion`
+    /// is refused (written by a newer PhotoLab) rather than read with its
+    /// unknown fields dropped.
+    static func decode(_ data: Data) throws -> Preset {
+        let doc = try decoder.decode(Preset.self, from: data)
+        guard doc.version <= Preset.currentVersion else {
+            throw PresetError.unsupportedVersion(doc.name, doc.version)
+        }
+        return doc
     }
 
     private static let encoder: JSONEncoder = {

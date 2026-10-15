@@ -306,4 +306,73 @@ final class PresetTests: XCTestCase {
                      Preset.starters.count, PresetThumbnails.cellPixelSize, total, worst))
         for line in lines { print("BENCH-PRESET " + line) }
     }
+
+
+    // MARK: Unreadable files are kept, never overwritten
+
+    private func backups(of file: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: file.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix(file.lastPathComponent + ".unreadable-") }
+            .sorted { $0.path < $1.path }
+    }
+
+    func testUnreadablePresetIsNotAnEmptySlotAndIsKeptAsTheBackupOfASave() throws {
+        let store = PresetStore(directory: presetsDir)
+        try FileManager.default.createDirectory(at: presetsDir, withIntermediateDirectories: true)
+        let bad = presetsDir.appendingPathComponent("Broken.json")
+        let junk = Data("{not json".utf8)
+        try junk.write(to: bad)
+        XCTAssertTrue(store.exists("Broken"), "an undecodable file is still a preset, not an empty slot")
+        XCTAssertThrowsError(try store.load("Broken"))
+
+        let when = Date()
+        try store.save(Preset(name: "Broken", from: sampleLook), now: when)
+        let kept = try backups(of: bad)
+        XCTAssertEqual(kept.map(\.lastPathComponent), ["Broken.json.unreadable-\(UnreadableBackup.stamp(when))"])
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept.first)), junk)
+        XCTAssertEqual(try store.load("Broken")?.recipe, Preset(name: "Broken", from: sampleLook).recipe)
+        let all = store.loadAll()
+        XCTAssertEqual(all.presets.map(\.name), ["Broken"])
+        XCTAssertTrue(all.unreadable.isEmpty, "the backup is not a .json and is not listed")
+
+        // Restore Starters over a damaged starter file keeps the damaged bytes too.
+        let neutral = presetsDir.appendingPathComponent("Neutral.json")
+        try junk.write(to: neutral)
+        try store.writeStarters()
+        XCTAssertEqual(try backups(of: neutral).count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(backups(of: neutral).first)), junk)
+        XCTAssertEqual(store.loadAll().presets.count, Preset.starters.count + 1)
+    }
+
+    @MainActor
+    func testPresetFromANewerBuildIsRefusedListedUnreadableAndKeptOnSave() throws {
+        let store = PresetStore(directory: presetsDir)
+        try store.save(Preset(name: "Future", from: sampleLook))
+        let file = store.url(for: "Future")
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        obj["version"] = Preset.currentVersion + 1
+        let newer = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+        try newer.write(to: file)
+
+        XCTAssertThrowsError(try store.load("Future")) { error in
+            XCTAssertEqual(error as? PresetError, .unsupportedVersion("Future", Preset.currentVersion + 1))
+        }
+        XCTAssertTrue(store.exists("Future"))
+        let all = store.loadAll()
+        XCTAssertTrue(all.presets.isEmpty)
+        XCTAssertEqual(all.unreadable.map { $0.resolvingSymlinksInPath().path }, [file.resolvingSymlinksInPath().path])
+        XCTAssertEqual(try Data(contentsOf: file), newer, "a read never rewrites")
+
+        // The library shows it as unreadable; saving over it keeps the newer file as the backup.
+        let lib = PresetLibrary(store: store)
+        XCTAssertEqual(lib.unreadable.count, 1)
+        XCTAssertNotNil(lib.error)
+        XCTAssertNotNil(lib.save(sampleLook, as: "Future"))
+        XCTAssertNil(lib.error)
+        XCTAssertTrue(lib.unreadable.isEmpty)
+        XCTAssertEqual(lib.preset(named: "Future")?.recipe, Preset(name: "Future", from: sampleLook).recipe)
+        let kept = try backups(of: file)
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept.first)), newer)
+    }
 }

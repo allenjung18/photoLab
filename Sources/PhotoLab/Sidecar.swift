@@ -87,7 +87,7 @@ struct SidecarStore {
         let file = url(for: photo)
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         let data = try Data(contentsOf: file)
-        return try Self.decoder.decode(Sidecar.self, from: data)
+        return try Self.decode(data)
     }
 
     /// Writes the recipe for `photo`, keeping whatever marks the sidecar
@@ -106,6 +106,7 @@ struct SidecarStore {
     /// as null. The write is atomic (temp file + rename).
     func save(_ recipe: Recipe, marks: Marks, for photo: URL, now: Date = Date()) throws {
         let file = url(for: photo)
+        try Self.backUpIfUnreadable(file, now: now)
         if recipe.isDefault && marks.isEmpty {
             try remove(for: photo)
             return
@@ -154,6 +155,31 @@ struct SidecarStore {
         return photo.lastPathComponent
     }
 
+    /// Decodes one sidecar file. A `version` above `Sidecar.currentVersion`
+    /// is refused: the file was written by a newer PhotoLab and may hold
+    /// fields this build would silently drop and then write back without.
+    static func decode(_ data: Data) throws -> Sidecar {
+        let doc = try decoder.decode(Sidecar.self, from: data)
+        guard doc.version <= Sidecar.currentVersion else {
+            throw SidecarError.unsupportedVersion(doc.version)
+        }
+        return doc
+    }
+
+    /// Moves a sidecar this build cannot decode (damaged, or a `version`
+    /// too new) to `<name>.json.unreadable-<yyyymmdd-hhmmss>` before
+    /// anything is written or removed at its path, so the edit it holds is
+    /// never lost. PhotoLab never deletes a backup. Called at the top of
+    /// `save`; a missing file is nothing to do.
+    static func backUpIfUnreadable(_ file: URL, now: Date) throws {
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        do {
+            _ = try decode(try Data(contentsOf: file))
+        } catch {
+            try UnreadableBackup.moveAside(file, now: now)
+        }
+    }
+
     private static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -166,4 +192,53 @@ struct SidecarStore {
         d.dateDecodingStrategy = .iso8601
         return d
     }()
+}
+
+enum SidecarError: LocalizedError, Equatable {
+    /// The file's `version` is above what this build reads.
+    case unsupportedVersion(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedVersion(let v):
+            return "This edit was saved by a newer version of PhotoLab (format \(v); this version reads up to \(Sidecar.currentVersion))."
+        }
+    }
+}
+
+/// The one way an unreadable sidecar or preset file is moved aside:
+/// `<file>.unreadable-<yyyymmdd-hhmmss>` beside it (`-2`, `-3`, … when that
+/// second is taken). The copy keeps the original bytes and is never deleted
+/// by PhotoLab; the user can inspect or restore it by hand. Neither store
+/// lists these files (the extension is not `json`) and the folder scan never
+/// sees them (`.photolab` is hidden).
+enum UnreadableBackup {
+    static let marker = "unreadable"
+
+    static func stamp(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return f.string(from: date)
+    }
+
+    /// The backup path for `file` at `now`: the first one not yet taken.
+    static func url(for file: URL, now: Date) -> URL {
+        let base = file.path + "." + marker + "-" + stamp(now)
+        var candidate = base
+        var n = 2
+        while FileManager.default.fileExists(atPath: candidate) {
+            candidate = "\(base)-\(n)"
+            n += 1
+        }
+        return URL(fileURLWithPath: candidate, isDirectory: false)
+    }
+
+    /// Renames `file` to its backup path and returns that path.
+    @discardableResult
+    static func moveAside(_ file: URL, now: Date = Date()) throws -> URL {
+        let target = url(for: file, now: now)
+        try FileManager.default.moveItem(at: file, to: target)
+        return target
+    }
 }

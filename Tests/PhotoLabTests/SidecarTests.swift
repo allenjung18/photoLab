@@ -227,4 +227,90 @@ final class SidecarTests: XCTestCase {
         lib.undo()
         XCTAssertEqual(lib.recipe(for: photo), .neutral)
     }
+
+
+    // MARK: Unreadable files are kept, never overwritten
+
+    /// The file's bytes with `version` set to `v`: a sidecar a newer build wrote.
+    private func bumpVersion(of file: URL, to v: Int) throws -> Data {
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        obj["version"] = v
+        let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+        try data.write(to: file)
+        return data
+    }
+
+    /// The `<file>.unreadable-<stamp>` copies beside `file`, by name.
+    private func backups(of file: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: file.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix(file.lastPathComponent + ".unreadable-") }
+            .sorted { $0.path < $1.path }
+    }
+
+    func testSidecarFromANewerBuildIsRefusedAndKeptAsTheBackupOfTheNextSave() throws {
+        let photo = try makePhoto("v.png")
+        let store = SidecarStore(folder: folder)
+        try store.save(sampleRecipe, for: photo)
+        let file = store.url(for: photo)
+        let newer = try bumpVersion(of: file, to: Sidecar.currentVersion + 1)
+
+        // Refused on read: a version this build does not know is "unreadable", not "an edit".
+        XCTAssertThrowsError(try store.load(for: photo)) { error in
+            XCTAssertEqual(error as? SidecarError, .unsupportedVersion(Sidecar.currentVersion + 1))
+        }
+        let all = store.loadAll(for: [photo])
+        XCTAssertTrue(all.recipes.isEmpty)
+        XCTAssertEqual(all.unreadable, [photo])
+        XCTAssertEqual(try Data(contentsOf: file), newer, "a read never rewrites")
+
+        // The next save moves it aside, bytes intact, and writes the new sidecar beside it.
+        var edit = Recipe.neutral
+        edit.set(.contrast, to: 33)
+        let when = Date()
+        try store.save(edit, for: photo, now: when)
+        let kept = try backups(of: file)
+        XCTAssertEqual(kept.map(\.lastPathComponent), ["v.png.json.unreadable-\(UnreadableBackup.stamp(when))"])
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept.first)), newer)
+        XCTAssertEqual(try store.load(for: photo), edit)
+
+        // Later saves and a reset leave the backup alone: it is never deleted.
+        edit.set(.contrast, to: 44)
+        try store.save(edit, for: photo, now: when)
+        try store.save(.neutral, for: photo, now: when)
+        XCTAssertFalse(store.exists(for: photo))
+        XCTAssertEqual(try backups(of: file), kept)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept.first)), newer)
+    }
+
+    func testJunkSidecarSurvivesAnEditThroughTheLibraryAsTheBackup() throws {
+        let written = try makePhoto("j.png")
+        let store = SidecarStore(folder: folder)
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let junk = Data("{not json".utf8)
+        try junk.write(to: store.url(for: written))
+
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let photo = try XCTUnwrap(lib.photos.first).id
+        XCTAssertEqual(lib.unreadableSidecars, [photo])
+        XCTAssertNotNil(lib.sidecarError)
+        XCTAssertEqual(lib.recipe(for: photo), .neutral)
+
+        lib.setRecipe(sampleRecipe, for: photo)
+        XCTAssertTrue(lib.unreadableSidecars.isEmpty)
+        XCTAssertNil(lib.sidecarError)
+        let file = store.url(for: photo)
+        let kept = try backups(of: file)
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertTrue(kept.first?.lastPathComponent.hasPrefix("j.png.json.unreadable-") ?? false, "\(kept)")
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept.first)), junk, "the old bytes, byte for byte")
+        XCTAssertEqual(try store.load(for: photo), sampleRecipe)
+
+        // Reopen: the edit is read; the backup is neither a photo nor a sidecar.
+        let again = Library(rememberFolder: false)
+        again.open(folder)
+        XCTAssertEqual(again.photos.count, 1)
+        XCTAssertEqual(again.recipe(for: photo), sampleRecipe)
+        XCTAssertNil(again.sidecarError)
+    }
 }
