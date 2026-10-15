@@ -46,6 +46,7 @@ in Xcode works too.
 | `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
+| `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
 | `J` | Toggle the clipping warning (blown pixels red, crushed pixels blue; or click a histogram triangle) |
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
@@ -65,7 +66,7 @@ every photo between the anchor and it (the anchor kept), `⌘`-click adds or
 removes one (the anchor moves to a photo added), double-click opens it in
 the loupe. In the loupe: double-click the photo to go back to the grid,
 double-click an adjustment's name to reset it, hold **Before** to see the
-original.
+original, press `Y` to see the original and the edit side by side.
 
 ## Adjustments
 

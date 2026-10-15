@@ -33,6 +33,11 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .disabled(library.photos.isEmpty)
                 .help("Grid (G) or single photo (E)")
+                Toggle(isOn: compareBinding) {
+                    Label("Before / After", systemImage: "rectangle.split.2x1")
+                }
+                .disabled(library.photos.isEmpty)
+                .help("Before and After side by side (Y)")
             }
         }
         .background(HiddenShortcuts())
@@ -60,6 +65,19 @@ struct ContentView: View {
             })
     }
 
+    /// Turning compare on from the grid opens the loupe on the selection.
+    private var compareBinding: Binding<Bool> {
+        Binding(
+            get: { library.compare && library.loupe },
+            set: { on in
+                library.compare = on
+                if on, !library.loupe {
+                    if library.selection == nil { library.selection = library.visiblePhotos.first?.id }
+                    library.loupe = library.selection != nil
+                }
+            })
+    }
+
     private var title: String { library.source?.title ?? "PhotoLab" }
 
     /// Grid: "N photos", or "n of N shown" under a filter, plus the selection
@@ -84,7 +102,8 @@ struct ContentView: View {
 
 /// Keyboard shortcuts that work whatever has focus: Lightroom's G / E, arrows
 /// to move the selection, Escape back to the grid, Return into the loupe,
-/// backslash to toggle before/after, P / X / U to flag and 0–5 to rate the
+/// backslash to toggle before/after, Y for Before and After side by side
+/// (from the grid it opens the loupe), P / X / U to flag and 0–5 to rate the
 /// selection (every selected photo in the grid, the one photo in the loupe).
 private struct HiddenShortcuts: View {
     @Environment(Library.self) private var library
@@ -100,6 +119,9 @@ private struct HiddenShortcuts: View {
             Button("") { library.select(offset: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
             Button("") { library.select(offset: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
             Button("") { library.showBefore.toggle() }.keyboardShortcut("\\", modifiers: [])
+            Button("") {
+                if library.loupe { library.compare.toggle() } else { library.compare = true; enterLoupe() }
+            }.keyboardShortcut("y", modifiers: [])
             Button("") { library.showClipping.toggle() }.keyboardShortcut("j", modifiers: [])
             Button("") { library.setFlag(.pick, for: library.batchTargets) }.keyboardShortcut("p", modifiers: [])
             Button("") { library.setFlag(.reject, for: library.batchTargets) }.keyboardShortcut("x", modifiers: [])
@@ -602,7 +624,9 @@ struct LoupeView: View {
 }
 
 /// The rendered frame, sized to the view. Every recipe or size change asks
-/// the preview model for a new frame at the view's pixel size.
+/// the preview model for a new frame at the view's pixel size. In compare
+/// mode (`Library.compare`, Y) the canvas is two equal halves, Before (the
+/// model's neutral frame) and After (the recipe), each at one half's size.
 private struct PreviewCanvas: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
@@ -612,56 +636,37 @@ private struct PreviewCanvas: View {
     /// How the file is coming along while it is nil.
     let fetch: OriginalFetch
     let preview: PreviewModel
-    @State private var pixelSize = 0
+    @State private var viewSize: CGSize = .zero
 
     private var recipe: Recipe { library.showBefore ? .neutral : library.recipe(for: photo.id) }
 
+    /// One pane's longest side in pixels: the whole canvas, or one half of
+    /// it side by side. Both halves are rendered at this size.
+    private var pixelSize: Int {
+        let pane = library.compare ? CGSize(width: viewSize.width / 2, height: viewSize.height) : viewSize
+        return longestSide(pane)
+    }
+
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                Color.black
-                if let cg = preview.image, let file, preview.imageURL == file {
-                    Image(decorative: cg, scale: displayScale)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(8)
-                } else if let file, preview.failed == file {
-                    VStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.title2)
-                        Text("Could not open \(photo.name)")
-                            .font(.callout)
+            Group {
+                if library.compare {
+                    HStack(spacing: 0) {
+                        beforeFrame
+                            .overlay(alignment: .topLeading) { badge("Before") }
+                        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1)
+                        afterFrame
+                            .overlay(alignment: .topLeading) { badge(library.showBefore ? "Before" : "After") }
                     }
-                    .foregroundStyle(.secondary)
-                } else if case .failed(let why) = fetch {
-                    VStack(spacing: 6) {
-                        Image(systemName: "icloud.slash")
-                            .font(.title2)
-                        Text("Original not available for \(photo.name)")
-                            .font(.callout)
-                        Text(why)
-                            .font(.caption)
-                            .lineLimit(2)
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: 480)
-                } else if let thumb = Thumbnails.shared.cached(photo.id, recipe: recipe) ?? Thumbnails.shared.cached(photo.id) {
-                    Image(nsImage: thumb).resizable().scaledToFit().padding(8)
-                        .overlay(fetchOverlay)
                 } else {
-                    fetchOverlay
-                }
-                if library.showBefore {
-                    Text("Before")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.thinMaterial, in: Capsule())
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(12)
+                    afterFrame
+                        .overlay(alignment: .topLeading) { if library.showBefore { badge("Before") } }
                 }
             }
-            .onAppear { pixelSize = longestSide(geo.size) }
-            .onChange(of: geo.size) { _, size in pixelSize = longestSide(size) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .onAppear { viewSize = geo.size }
+            .onChange(of: geo.size) { _, size in viewSize = size }
         }
         .onTapGesture(count: 2) { library.loupe = false }
         .onChange(of: file, initial: true) { _, url in
@@ -671,7 +676,80 @@ private struct PreviewCanvas: View {
         }
         .onChange(of: recipe) { request() }
         .onChange(of: pixelSize) { request() }
+        .onChange(of: library.compare, initial: true) { _, on in
+            // The half-size request first, so the Before that compare mode
+            // asks for is already the half-size one.
+            request()
+            preview.setCompare(on)
+        }
         .onChange(of: library.showClipping, initial: true) { _, on in preview.setClipping(on) }
+    }
+
+    /// The recipe's frame (or, while it is coming, why not).
+    @ViewBuilder private var afterFrame: some View {
+        ZStack {
+            Color.black
+            if let cg = preview.image, let file, preview.imageURL == file {
+                Image(decorative: cg, scale: displayScale)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+            } else if let file, preview.failed == file {
+                VStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title2)
+                    Text("Could not open \(photo.name)")
+                        .font(.callout)
+                }
+                .foregroundStyle(.secondary)
+            } else if case .failed(let why) = fetch {
+                VStack(spacing: 6) {
+                    Image(systemName: "icloud.slash")
+                        .font(.title2)
+                    Text("Original not available for \(photo.name)")
+                        .font(.callout)
+                    Text(why)
+                        .font(.caption)
+                        .lineLimit(2)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 480)
+            } else if let thumb = Thumbnails.shared.cached(photo.id, recipe: recipe) ?? Thumbnails.shared.cached(photo.id) {
+                Image(nsImage: thumb).resizable().scaledToFit().padding(8)
+                    .overlay(fetchOverlay)
+            } else {
+                fetchOverlay
+            }
+        }
+    }
+
+    /// Compare mode's neutral frame; the plain thumbnail until it lands.
+    @ViewBuilder private var beforeFrame: some View {
+        ZStack {
+            Color.black
+            if let cg = preview.beforeImage, let file, preview.beforeURL == file {
+                Image(decorative: cg, scale: displayScale)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+            } else if let file, preview.failed == file {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            } else if let thumb = Thumbnails.shared.cached(photo.id) {
+                Image(nsImage: thumb).resizable().scaledToFit().padding(8)
+            } else {
+                ProgressView().controlSize(.regular)
+            }
+        }
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.thinMaterial, in: Capsule())
+            .padding(12)
     }
 
     /// A spinner, labelled while the source downloads the original.

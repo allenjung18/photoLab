@@ -90,6 +90,9 @@ final class Library {
     private(set) var marks: [Photo.ID: Marks] = [:]
     /// Before/after: true shows the unadjusted photo in the loupe.
     var showBefore = false
+    /// Before / After side by side in the loupe (Y, or the toolbar toggle):
+    /// the canvas splits into the neutral render and the recipe's.
+    var compare = false
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
     var showClipping = false
@@ -199,6 +202,7 @@ final class Library {
         selection = nil
         loupe = false
         showBefore = false
+        compare = false
         openEdit = nil
         history = [:]
         sidecarError = nil

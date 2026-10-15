@@ -102,7 +102,7 @@ to run it, the timing tests, adding an adjustment).
   one; `PHOTOLAB_BENCH_IMAGE` times a real photo. (Testing, The timed
   renders.)
 - **Keyboard shortcuts** that work whatever has focus (G / E / arrows /
-  Esc / Return / backslash / J / P X U / 0–5) are hidden buttons in
+  Esc / Return / backslash / Y / J / P X U / 0–5) are hidden buttons in
   `HiddenShortcuts` (`ContentView.swift`); menu keys are the `.commands` of
   `PhotoLabApp`. Add new ones there. (Features, Menus and shortcuts.)
 - No AI attribution lines in commit messages.

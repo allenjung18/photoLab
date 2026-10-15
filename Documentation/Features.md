@@ -271,6 +271,15 @@ Nothing else; the copied settings live in memory.
   While it is on, `PreviewCanvas` substitutes `Recipe.neutral` for the
   photo's recipe and shows a "Before" badge; nothing else changes, and the
   recipe on disk is untouched.
+- **Before / After side by side.** **Y** or the toolbar's **Before / After**
+  toggle flips `Library.compare` (off again whenever a source opens).
+  `PreviewCanvas` then splits into two equal halves, Before on the left
+  (`PreviewModel.beforeImage`, the neutral render, the plain thumbnail
+  until it lands) and After on the right (the recipe), each labelled and
+  each rendered at one half's pixel size from the one master
+  (`PreviewModel.setCompare(_:)`). Holding **Before** or `\` still works
+  and shows the original in the After half too. From the grid, **Y** opens
+  the loupe on the selection in compare mode.
 - **Moving through the folder.** **←** and **→** are `Library.select(offset:)`,
   which walks the filtered list (`Library.visiblePhotos`), so the loupe
   never lands on a hidden photo and "n of N" counts the visible ones;
@@ -480,14 +489,16 @@ Two places define keys; the README's Keys table is the user's list.
   work whatever has focus. **G** leaves the loupe; **E** and **Return** enter it
   (selecting the first photo when none is); **Esc** leaves the loupe or, in
   the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
-  `\` toggles `Library.showBefore`; **J** toggles `Library.showClipping`
+  `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and
+  from the grid enters the loupe with it on); **J** toggles `Library.showClipping`
   (the clipping overlay, see Adjustments panel); **P** / **X** / **U** flag
   and **0**–**5** rate the batch targets (`Library.setFlag(_:for:)`,
   `Library.setRating(_:for:)`). Add a new focus-free key there, and a
   menu key in `PhotoLabApp`.
-- **Toolbar**: **Open Folder** and the **Grid / Loupe** segmented picker
+- **Toolbar**: **Open Folder**, the **Grid / Loupe** segmented picker
   (which selects the first photo when entering the loupe with none
-  selected).
+  selected) and the **Before / After** toggle (`Library.compare`, the same
+  as **Y**).
 - **Launch**: `PhotoLabApp` opens the first command-line argument that does
   not start with `-` (a folder, or a file to open in the loupe), else the
   remembered source (`Library.restoreLastSource`); the process is made a

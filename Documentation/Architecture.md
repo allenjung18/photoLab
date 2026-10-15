@@ -91,6 +91,20 @@ stale frames. `PreviewCanvas` (`ContentView.swift`) is the view: it calls
 size changes, and substitutes `Recipe.neutral` while `Library.showBefore` is
 on, which is all the Before button does.
 
+Compare mode (`Library.compare`, `Y`) is the same model with a second
+request. `PreviewModel.setCompare(_:)` turns it on; from then on each
+`request` also records a neutral request of the same url at the same pixel
+size (`requestBefore`), which `pump` renders through the same
+`Renderer.render` from the same master into `beforeImage` / `beforeURL`.
+The canvas passes one half's longest side while compare is on, so Before
+and After come out at equal pixel size. A waiting Before goes before a
+waiting After (it is asked for once per photo or size, so a drag cannot
+starve it), it is not rendered again for a request equal to the one shown
+or rendering (a slider move re-renders After only), and it never carries
+the clipping overlay; the histogram stays the After frame's. Leaving compare
+mode drops `beforeImage` and clears the in-flight request, so a Before
+still rendering then finds itself unwanted and is discarded.
+
 ### The histogram and the clipping overlay
 
 `Histogram` (`Histogram.swift`) is read off the finished 8-bit preview

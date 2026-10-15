@@ -154,6 +154,14 @@ not only the pass.
   preview-sized frame, and the overlay flags exactly the clipped pixels of a
   frame holding every 8-bit level and of a rendered frame, agreeing with
   that frame's histogram.
+- `CompareTests.swift` — compare mode in `PreviewModel`: Before and After
+  come out at equal pixel size from one master, Before equal to the neutral
+  render (maxDiff 0) and After to the recipe's; no second frame outside
+  compare mode; turning it on renders Before for the shown request; a
+  slider drag re-renders After only (latest wins) while a new size renders
+  both again; Before lands during a sustained drag rather than after it;
+  leaving compare mode drops the second frame, and a Before from an
+  earlier compare session never shows; opening a folder turns it off.
 - `TestImages.swift` — no tests; the shared helpers. `syntheticImage(width:height:space:)`
   draws the photo every pixel test reads (a luminance ramp with coloured
   bands, so both neutral and saturated pixels are present; sRGB unless a
