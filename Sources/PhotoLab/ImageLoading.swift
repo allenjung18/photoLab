@@ -4,10 +4,10 @@ import ImageIO
 
 /// Downsampled decodes through ImageIO: fast, honours EXIF orientation, and
 /// reads everything Core Image will later render (JPEG, HEIC, RAW, ...).
-/// Chunk 2 replaces the loupe path with the Core Image filter chain; the
-/// thumbnail path stays.
+/// Thumbnails use the NSImage form; the loupe's preview master is the CGImage
+/// form wrapped as a CIImage (see `Renderer.previewMaster`).
 enum ImageLoading {
-    static func downsampled(_ url: URL, maxPixelSize: Int) -> NSImage? {
+    static func downsampledCGImage(_ url: URL, maxPixelSize: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -15,7 +15,11 @@ enum ImageLoading {
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
         ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    static func downsampled(_ url: URL, maxPixelSize: Int) -> NSImage? {
+        guard let cg = downsampledCGImage(url, maxPixelSize: maxPixelSize) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 }

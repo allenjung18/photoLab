@@ -17,6 +17,10 @@ final class Library {
     var selection: Photo.ID?
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false
+    /// Edits per photo, in memory for now; chunk 3 moves them to sidecars.
+    var recipes: [Photo.ID: Recipe] = [:]
+    /// Before/after: true shows the unadjusted photo in the loupe.
+    var showBefore = false
 
     private static let lastFolderKey = "lastFolder"
 
@@ -30,12 +34,21 @@ final class Library {
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
 
+    /// Opens a folder; given a file, opens its folder with that photo in the loupe.
     func open(_ url: URL) {
-        folder = url
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        let dir = isDir.boolValue ? url : url.deletingLastPathComponent()
+        folder = dir
         selection = nil
         loupe = false
-        photos = Self.scan(url)
-        UserDefaults.standard.set(url.path, forKey: Self.lastFolderKey)
+        showBefore = false
+        photos = Self.scan(dir)
+        UserDefaults.standard.set(dir.path, forKey: Self.lastFolderKey)
+        if !isDir.boolValue, let hit = photos.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) {
+            selection = hit.id
+            loupe = true
+        }
     }
 
     func restoreLastFolder() {
@@ -52,6 +65,12 @@ final class Library {
 
     var selectedPhoto: Photo? {
         selectedIndex.map { photos[$0] }
+    }
+
+    func recipe(for id: Photo.ID) -> Recipe { recipes[id] ?? .neutral }
+
+    func setRecipe(_ recipe: Recipe, for id: Photo.ID) {
+        if recipe == .neutral { recipes.removeValue(forKey: id) } else { recipes[id] = recipe }
     }
 
     func select(offset: Int) {

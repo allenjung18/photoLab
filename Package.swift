@@ -6,5 +6,6 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(name: "PhotoLab", path: "Sources/PhotoLab"),
+        .testTarget(name: "PhotoLabTests", dependencies: ["PhotoLab"], path: "Tests/PhotoLabTests"),
     ]
 )
