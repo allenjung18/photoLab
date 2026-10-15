@@ -31,6 +31,24 @@ struct PhotoLabApp: App {
                 Button("Open Folder…") { library.chooseFolder() }
                     .keyboardShortcut("o")
             }
+            // Undo and redo act on the selected photo's edit history; there
+            // are no text fields, so the window's own undo manager is unused.
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") { library.undo() }
+                    .keyboardShortcut("z")
+                    .disabled(!library.canUndo)
+                Button("Redo") { library.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(!library.canRedo)
+            }
+            CommandGroup(after: .undoRedo) {
+                Divider()
+                Button("Reset Photo") {
+                    if let id = library.selection { library.resetRecipe(for: id) }
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(library.selection.map { !library.isEdited($0) } ?? true)
+            }
         }
     }
 }

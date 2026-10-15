@@ -5,8 +5,16 @@
   Swift 5 language mode (tools 5.9); macOS 14 minimum. Build with Xcode
   selected (`xcode-select -p` must show Xcode.app): the Command Line Tools
   toolchain lacks the SwiftUIMacros plugin on macOS 27 and fails on `@State`.
-- Never write to a photo's original file. Edits live in sidecar JSON;
-  exports go to a separate output folder.
+- Never write to a photo's original file. Edits live in sidecar JSON
+  (`SidecarStore` in `Sidecar.swift`: `<folder>/.photolab/<file>.json`,
+  atomic write, a neutral recipe deletes the file); exports go to a separate
+  output folder. `Library.setRecipe` is the only path that changes an edit:
+  it records the undo step and writes the sidecar. A slider drag wraps its
+  changes in `beginEdit` / `endEdit` so the drag is one step and one write.
+- Photo ids are the URLs `Library.scan` returns, which resolve symlinks
+  (`/var/...` comes back as `/private/var/...`); key recipes by those ids,
+  never by a URL you built yourself. `Tests/PhotoLabTests/SidecarTests.swift`
+  covers save/reload, reset, undo/redo and the untouched original.
 - One render path: `Renderer.apply(_:to:)` in `Renderer.swift` is the Core
   Image chain for preview and export alike. Do not add a second renderer; a
   new adjustment is a new `AdjustmentKind` case plus one `stage` branch plus

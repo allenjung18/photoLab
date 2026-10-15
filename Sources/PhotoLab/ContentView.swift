@@ -112,7 +112,8 @@ struct GridView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(library.photos) { photo in
-                            ThumbnailCell(photo: photo, selected: photo.id == library.selection)
+                            ThumbnailCell(photo: photo, selected: photo.id == library.selection,
+                                          edited: library.isEdited(photo.id))
                                 .id(photo.id)
                                 .onTapGesture(count: 2) {
                                     library.selection = photo.id
@@ -135,6 +136,8 @@ struct GridView: View {
 struct ThumbnailCell: View {
     let photo: Photo
     let selected: Bool
+    /// Shows a small badge when the photo has a saved edit.
+    var edited = false
     @State private var image: NSImage?
 
     var body: some View {
@@ -152,6 +155,16 @@ struct ThumbnailCell: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(selected ? Color.accentColor : .clear, lineWidth: 3))
+            .overlay(alignment: .topTrailing) {
+                if edited {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption2.weight(.semibold))
+                        .padding(4)
+                        .background(.thinMaterial, in: Circle())
+                        .padding(6)
+                        .help("Edited")
+                }
+            }
             Text(photo.name)
                 .font(.caption)
                 .lineLimit(1)
@@ -255,23 +268,43 @@ struct AdjustmentsPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(AdjustmentKind.allCases) { kind in
-                        AdjustmentRow(kind: kind, recipe: recipe)
+                        AdjustmentRow(
+                            kind: kind, recipe: recipe,
+                            onEditingChanged: { editing in
+                                if editing { library.beginEdit(photo.id) } else { library.endEdit(photo.id) }
+                            })
                     }
                 }
                 .padding(16)
             }
             Divider()
-            HStack {
+            HStack(spacing: 6) {
                 BeforeButton(isPressed: $library.showBefore)
-                Spacer()
-                Button("Reset All") { recipe.wrappedValue.resetAll() }
+                    .fixedSize()
+                Spacer(minLength: 4)
+                Button { library.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!library.canUndo)
+                    .help("Undo (⌘Z)")
+                Button { library.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                    .disabled(!library.canRedo)
+                    .help("Redo (⇧⌘Z)")
+                Button("Reset") { library.resetRecipe(for: photo.id) }
                     .disabled(recipe.wrappedValue.isNeutral)
+                    .help("Back to the original; removes the sidecar (⇧⌘R)")
             }
+            .controlSize(.small)
             .padding(.horizontal, 16).padding(.vertical, 10)
             Text(footer)
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 16).padding(.bottom, 10)
+                .padding(.horizontal, 16).padding(.bottom, library.sidecarError == nil ? 10 : 4)
+            if let error = library.sidecarError {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+                    .padding(.horizontal, 16).padding(.bottom, 10)
+            }
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -287,6 +320,8 @@ struct AdjustmentsPanel: View {
 private struct AdjustmentRow: View {
     let kind: AdjustmentKind
     @Binding var recipe: Recipe
+    /// Slider mouse-down / mouse-up, so a whole drag is one undo step.
+    var onEditingChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         let enabled = recipe.isEnabled(kind)
@@ -309,7 +344,8 @@ private struct AdjustmentRow: View {
             .font(.callout)
             Slider(value: Binding(
                 get: { recipe.value(of: kind) },
-                set: { recipe.set(kind, to: $0) }), in: kind.range)
+                set: { recipe.set(kind, to: $0) }), in: kind.range,
+                   onEditingChanged: onEditingChanged)
                 .controlSize(.small)
                 .disabled(!enabled)
         }

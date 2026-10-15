@@ -29,15 +29,29 @@ or run locally.
 
 The loupe has a panel of six sliders: exposure (EV), contrast, temperature,
 tint, vibrance, saturation. Each has a checkbox that switches it off without
-losing its value; double-click a name to reset it, Reset All for the lot.
-The footer prints the Core Image time of the last frame. Edits are kept per
-photo for the session (sidecars come in chunk 3).
+losing its value; double-click a name to reset it, Reset for the lot.
+The footer prints the Core Image time of the last frame. `⌘Z` / `⇧⌘Z` undo
+and redo (a slider drag is one step), Reset or `⇧⌘R` puts the photo back to
+the original.
+
+## Sidecars
+
+Every edit is saved the moment it changes, as JSON in a hidden `.photolab/`
+directory inside the photo's folder: `Pictures/IMG_0001.JPG` has its edit in
+`Pictures/.photolab/IMG_0001.JPG.json` (the extension is kept, so a `.JPG`
+and a `.HEIC` of the same name never share one). Opening the folder again,
+in this app or after a quit, shows the same edit; the grid marks edited
+photos with a sliders badge. A photo reset to the original has no sidecar.
+To wipe every edit in a folder, delete its `.photolab/` directory. The
+original is never written to, so a folder that is read-only still opens;
+the panel then says the edit could not be saved.
 
 ## Design
 
 - **Edits are data.** Each photo gets a sidecar JSON: an ordered list of
   adjustments, each with parameters and an enabled flag. Toggles, undo,
-  presets and batch apply are all edits to that list. (Chunk 3.)
+  presets and batch apply are all edits to that list. Undo is a stack of
+  whole recipes per photo, kept for the open folder. (Chunk 3.)
 - **One render path.** `Renderer.apply` is the Core Image filter chain for a
   recipe; the loupe feeds it a 3200 px ImageIO master, the export will feed
   it the full-resolution decode, so the two cannot drift in color. A slider
