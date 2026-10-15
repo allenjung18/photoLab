@@ -416,13 +416,13 @@ final class BatchTests: XCTestCase {
         for i in 0..<10 { try makePhoto("p\(i).png") }
         let lib = openLibrary()
         let calls = Counter()
-        let queue = ExportQueue { source, _, folder in
+        let queue = ExportQueue { source, _, folder, _ in
             calls.increment()
             Thread.sleep(forTimeInterval: 0.08)
             let out = folder.appendingPathComponent(source.deletingPathExtension().lastPathComponent + ".jpg")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try Data([0xFF, 0xD8]).write(to: out)
-            return out
+            return .written(out)
         }
         lib.selectAll()
         queue.start(lib.exportItems(for: lib.batchTargets), into: outDir)
@@ -453,9 +453,9 @@ final class BatchTests: XCTestCase {
         XCTAssertEqual(queue.done, 2)
 
         // A failing worker is reported per item and the run still finishes.
-        let failing = ExportQueue { source, _, _ in
+        let failing = ExportQueue { source, _, _, _ in
             if source.lastPathComponent == "p1.png" { throw Exporter.Failure.cannotDecode(source) }
-            return source
+            return .written(source)
         }
         failing.start(lib.exportItems(for: Array(lib.batchTargets.prefix(3))), into: outDir)
         await failing.wait()

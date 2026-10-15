@@ -98,13 +98,19 @@ shows). A bar appears under the grid:
 - **Apply Preset** applies a preset to every selected photo (its look over
   each photo's own crop and rotation). The Presets menu does the same for
   the selection.
-- **Export…** renders every selected photo to a full-size JPEG in a folder
-  you choose (`⇧⌘E` from anywhere exports the selection, or the loupe's
-  photo). A bar at the bottom of the window shows the count done, the file
-  in flight and Cancel, which stops after that file; what is written stays.
-  Names are `<photo>.jpg`, never overwriting: a second export of the same
-  photo into the same folder is `<photo> 2.jpg`. Quality, resize and
-  metadata come in chunk 7 (default quality, no resize for now).
+- **Export…** renders every selected photo into a folder (`⇧⌘E` from
+  anywhere exports the selection, or the loupe's photo). A sheet asks, and
+  remembers for next time: the format (**JPEG**, **HEIC**, or lossless
+  LZW **TIFF**), the JPEG/HEIC quality, the size (as edited, an exact long
+  side in pixels, or a percentage; never upscaled), a name suffix
+  (`DSC06727` + `-edit` → `DSC06727-edit.jpg`), what to do when the file
+  exists (**Add a number** `<photo> 2.jpg`, **Skip**, or **Overwrite**;
+  the original is never overwritten, even when exporting into its own
+  folder), whether the camera info travels (EXIF, GPS and IPTC are copied
+  from the original with the orientation reset, since the render is
+  already upright), and the output folder. A bar at the bottom of the
+  window shows the count done, the file in flight and Cancel, which stops
+  after that file; what is written stays, a skipped file is counted.
 
 Copy Settings (`⇧⌘C`) remembers one photo's settings; Paste Settings…
 (`⇧⌘V`) opens the same sheet onto whatever is selected, so a look can be
@@ -143,3 +149,11 @@ slider move: one sidecar per photo, written at once, and the whole batch is
   that batch. The export queue feeds the full-resolution decode into the
   same `Renderer.apply` as the loupe, one photo at a time, cancellable
   between files. (Chunk 6.)
+- **Export options are one value on the one path.** `ExportOptions`
+  (format, quality, size, suffix, collision policy, metadata) goes with
+  every item through `Exporter.export`, which renders through `Renderer`
+  (the resize is the last step of the chain, Lanczos to an exact long
+  side after the crop), copies the source's ImageIO properties with the
+  orientation and pixel dimensions made true for the output
+  (`ExportMetadata`), writes to a hidden partial file and moves it into
+  place, so a failed or cancelled export leaves no half file. (Chunk 7.)

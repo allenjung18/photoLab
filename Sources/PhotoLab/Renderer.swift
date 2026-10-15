@@ -4,6 +4,30 @@ import CoreImage.CIFilterBuiltins
 import ImageIO
 import Metal
 
+/// The size an export is written at: an exact long side in pixels, or a
+/// percentage of the edited (cropped, rotated) size. Never upscales: a
+/// target at or above the rendered size leaves the picture as rendered.
+enum OutputSize: Hashable, Codable, Sendable {
+    case longSide(Int)
+    case percent(Int)
+
+    /// The exact pixel size to write for a picture that renders at
+    /// `current`, or nil when no downscale applies (keep the rendered size).
+    func size(fitting current: CGSize) -> CGSize? {
+        let long = max(current.width, current.height)
+        let targetLong: CGFloat
+        switch self {
+        case .longSide(let n): targetLong = CGFloat(n)
+        case .percent(let p): targetLong = (long * CGFloat(p) / 100).rounded()
+        }
+        guard targetLong >= 1, targetLong < long else { return nil }
+        let s = targetLong / long
+        return current.width >= current.height
+            ? CGSize(width: targetLong, height: max(1, (current.height * s).rounded()))
+            : CGSize(width: max(1, (current.width * s).rounded()), height: targetLong)
+    }
+}
+
 /// The one render path. `apply` builds the Core Image chain for a recipe;
 /// the loupe preview and the export both go through it, so they cannot drift
 /// in color. Only the input differs: a downsampled master for the preview,
@@ -257,8 +281,11 @@ final class Renderer: @unchecked Sendable {
 
     /// Renders `recipe` over `source`, scaled to fit `maxPixelSize` (never
     /// upscaled; nil renders at source size), to an 8-bit CGImage in the
-    /// source's color space. Synchronous; call off the main thread.
-    func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil) -> Result? {
+    /// source's color space. `resize` sizes the OUTPUT (after the crop) to an
+    /// exact long side or percentage, never upscaling: that is the export's
+    /// resize, done once at the end of the one chain. Synchronous; call off
+    /// the main thread.
+    func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil, resize: OutputSize? = nil) -> Result? {
         let t0 = DispatchTime.now().uptimeNanoseconds
         var image = source
         let extent = source.extent
@@ -270,8 +297,24 @@ final class Renderer: @unchecked Sendable {
             }
         }
         image = apply(recipe, to: image)
-        let rect = image.extent.integral
+        var rect = image.extent.integral
         guard !rect.isEmpty else { return nil }
+        if let target = resize?.size(fitting: rect.size) {
+            // Lanczos down to the exact target. The edges are clamped so the
+            // integer rect below never reads outside the picture, and the
+            // CGImage is cut to exactly `target` pixels.
+            let s = max(target.width, target.height) / max(rect.width, rect.height)
+            let lanczos = CIFilter.lanczosScaleTransform()
+            lanczos.inputImage = image
+                .transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
+                .clampedToExtent()
+            lanczos.scale = Float(s)
+            lanczos.aspectRatio = 1
+            if let scaled = lanczos.outputImage {
+                image = scaled
+                rect = CGRect(origin: .zero, size: target)
+            }
+        }
         let space = source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let cg = context.createCGImage(image, from: rect, format: .RGBA8, colorSpace: space) else {
             return nil

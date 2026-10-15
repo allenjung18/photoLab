@@ -32,14 +32,31 @@
   `Library.sync(_:mask:to:)` runs it through `setRecipe` per photo with a
   shared batch tag on the undo steps, and `undo` / `redo` act on every photo
   whose top step carries the selected photo's tag. Never write a second
-  batch path that bypasses `setRecipe`. Export: `Exporter.export` is
-  `Renderer.fullResolution` -> `Renderer.render` (no `maxPixelSize`) ->
-  `CGImageDestination` JPEG, names never overwrite (`destination(for:in:)`);
-  `ExportQueue` runs items one at a time off the main thread and checks
-  cancellation between items; its `Worker` is injected so a test can count
-  or slow jobs. `Tests/PhotoLabTests/BatchTests.swift` has the 20-photo
-  apply-and-undo proof, the mask, copy settings, the selection rules, and
-  the queue's completion and cancel; its exports go to a temp directory.
+  batch path that bypasses `setRecipe`. Export: `Exporter.export` is the
+  one path: `Renderer.fullResolution` -> `Renderer.render(resize:)` (the
+  export resize is the chain's last step, `OutputSize` = exact long side
+  or percent, never up) -> `CGImageDestination` in the format
+  `ExportOptions` names (JPEG / HEIC with `quality`, TIFF LZW), with the
+  source's properties from `ExportMetadata.properties` (orientation 1,
+  output pixel dimensions, the source container's own tags dropped) when
+  `keepMetadata` is on, written to a `.partial` beside the final name and
+  moved into place. `destination(for:in:options:)` is `<stem><suffix>.<ext>`
+  and the collision policy: `.number` (the default, `<stem> 2.jpg`),
+  `.skip` (returns `.skipped`), `.overwrite` (throws `isTheOriginal`
+  rather than replace the photo's own file). `ExportQueue` runs items one
+  at a time off the main thread, checks cancellation between items, counts
+  `done` / `skipped` / `failures`, and keeps the last folder and options
+  (`keep(folder:options:)`, UserDefaults only when `remember:` is on; the
+  app passes true, tests never do); `requestExport` puts up `ExportSheet`
+  (`ExportSheet.swift`), which calls `start` with the resolved options. Its
+  `Worker` is injected so a test can count or slow jobs.
+  `Tests/PhotoLabTests/BatchTests.swift` has the 20-photo apply-and-undo
+  proof, the mask, copy settings, the selection rules, and the queue's
+  completion and cancel; `ExportTests.swift` has quality vs. file size,
+  the exact resize (after the crop, never up), the EXIF carry-over with
+  orientation reset in all three formats, HEIC / TIFF round trips, the
+  collision policy and the untouched original. Every export in a test goes
+  to a temp directory; never point one at a real folder.
 - Photo ids are the URLs `Library.scan` returns, which resolve symlinks
   (`/var/...` comes back as `/private/var/...`); key recipes by those ids,
   never by a URL you built yourself. `Tests/PhotoLabTests/SidecarTests.swift`

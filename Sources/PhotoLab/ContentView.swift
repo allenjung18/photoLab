@@ -6,6 +6,7 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var library = library
+        @Bindable var exports = exports
         Group {
             if library.folder == nil {
                 WelcomeView()
@@ -40,6 +41,9 @@ struct ContentView: View {
         }
         .sheet(item: $library.syncRequest) { request in
             SyncSheet(request: request)
+        }
+        .sheet(item: $exports.request) { request in
+            ExportSheet(request: request, options: exports.options, folder: exports.folder)
         }
     }
 
@@ -182,9 +186,9 @@ private struct BatchBar: View {
             .fixedSize()
             .disabled(presets.presets.isEmpty)
             .help("Apply a preset to every selected photo (one undo step)")
-            Button("Export…") { exportSelection() }
+            Button("Export…") { exports.requestExport(library.exportItems(for: library.batchTargets)) }
                 .disabled(exports.isRunning)
-                .help("Render every selected photo to a full-size JPEG in a folder (⇧⌘E)")
+                .help("Render every selected photo into a folder: format, quality, size and name in the sheet (⇧⌘E)")
             Button("Deselect") { library.collapseSelection() }
                 .help("Back to the anchor alone (Esc)")
         }
@@ -192,12 +196,6 @@ private struct BatchBar: View {
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
-    }
-
-    private func exportSelection() {
-        let ids = library.batchTargets
-        guard !ids.isEmpty, let folder = ExportPanel.chooseFolder(count: ids.count) else { return }
-        exports.start(library.exportItems(for: ids), into: folder)
     }
 }
 
@@ -367,6 +365,7 @@ private struct ExportBar: View {
         var s = exports.state == .cancelled
             ? "Cancelled: \(exports.done) of \(exports.total) exported to \(folder)"
             : "Exported \(exports.done) of \(exports.total) to \(folder)"
+        if !exports.skipped.isEmpty { s += " · \(exports.skipped.count) skipped (file exists)" }
         if !exports.failures.isEmpty { s += " · \(exports.failures.count) failed" }
         return s
     }

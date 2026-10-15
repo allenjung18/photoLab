@@ -5,7 +5,7 @@ import AppKit
 struct PhotoLabApp: App {
     @State private var library = Library()
     @State private var presets = PresetLibrary()
-    @State private var exports = ExportQueue()
+    @State private var exports = ExportQueue(remember: true)
 
     init() {
         // Running from `swift run` has no bundle; make the process a real
@@ -36,7 +36,7 @@ struct PhotoLabApp: App {
                     .keyboardShortcut("o")
             }
             // Export the selection (one photo in the loupe, the multi-selection
-            // in the grid) as full-size JPEGs into a chosen folder.
+            // in the grid): the options sheet, then the queue.
             CommandGroup(replacing: .importExport) {
                 Button(exportTitle) { export() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
@@ -99,8 +99,6 @@ struct PhotoLabApp: App {
     }
 
     private func export() {
-        let ids = library.batchTargets
-        guard !ids.isEmpty, let folder = ExportPanel.chooseFolder(count: ids.count) else { return }
-        exports.start(library.exportItems(for: ids), into: folder)
+        exports.requestExport(library.exportItems(for: library.batchTargets))
     }
 }
