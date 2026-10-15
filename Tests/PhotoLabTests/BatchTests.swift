@@ -9,12 +9,13 @@ import UniformTypeIdentifiers
 /// the lot), and the export queue (full-size JPEGs through the one renderer,
 /// with progress and cancel). Every folder here is a temp directory: photos,
 /// sidecars and exports never touch the user's files.
+@MainActor
 final class BatchTests: XCTestCase {
     private var base: URL!
     private var folder: URL!
     private var outDir: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         base = FileManager.default.temporaryDirectory
             .appendingPathComponent("photolab-batch-\(UUID().uuidString)", isDirectory: true)
         folder = base.appendingPathComponent("photos", isDirectory: true)
@@ -22,7 +23,7 @@ final class BatchTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: base)
     }
 

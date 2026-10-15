@@ -9,12 +9,13 @@ import UniformTypeIdentifiers
 /// source's camera EXIF travels with the orientation reset to upright, HEIC
 /// and TIFF round-trip, the collision policy holds and the original is
 /// never written. Every folder is a temp directory.
+@MainActor
 final class ExportTests: XCTestCase {
     private var base: URL!
     private var folder: URL!
     private var outDir: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         base = FileManager.default.temporaryDirectory
             .appendingPathComponent("photolab-export-\(UUID().uuidString)", isDirectory: true)
         folder = base.appendingPathComponent("photos", isDirectory: true)
@@ -22,7 +23,7 @@ final class ExportTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: base)
     }
 
@@ -141,6 +142,20 @@ final class ExportTests: XCTestCase {
         o.quality = -1
         XCTAssertEqual(o.clampedQuality, ExportOptions.qualityRange.lowerBound)
     }
+
+    /// The sheet's slider and the writer's clamp share `qualityRange`: the
+    /// floor is the 30% the slider shows, so a stored quality below it is
+    /// written at the slider's floor, never at a value the sheet cannot set.
+    func testQualityFloorIsTheSlidersThirtyPercent() {
+        XCTAssertEqual(ExportOptions.qualityRange, 0.3...1.0)
+        var o = ExportOptions()
+        XCTAssertTrue(ExportOptions.qualityRange.contains(o.quality), "the default is on the slider")
+        o.quality = 0.1
+        XCTAssertEqual(o.clampedQuality, 0.3, accuracy: 1e-9)
+        o.quality = 0.3
+        XCTAssertEqual(o.clampedQuality, 0.3, accuracy: 1e-9)
+    }
+
 
     // MARK: Resize
 
@@ -291,6 +306,15 @@ final class ExportTests: XCTestCase {
         XCTAssertLessThan(try fileSize(urls[.tiff]!), 256 * 256 * 3 * 6 / 10, "TIFF is LZW compressed, not raw")
         let tp = try properties(urls[.tiff]!)
         XCTAssertEqual((tp[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFCompression] as? Int, 5)
+        // No format carries an alpha channel: the renderer's RGBA frame is
+        // written opaque, so a TIFF opens as a photo, never as transparency.
+        for (format, url) in urls {
+            let p = try properties(url)
+            XCTAssertEqual(p[kCGImagePropertyHasAlpha] as? Bool ?? false, false, "\(format) export has an alpha channel")
+            XCTAssertEqual(p[kCGImagePropertyDepth] as? Int, 8, "\(format)")
+        }
+        XCTAssertEqual(try decode(urls[.tiff]!).width, 256)
+
 
         // Exposure goes through the one renderer in every format.
         var bright = Recipe.neutral

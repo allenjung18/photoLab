@@ -46,7 +46,8 @@ struct ExportSheet: View {
                     .labelsHidden()
                     if options.format.isLossy {
                         HStack {
-                            Slider(value: $options.quality, in: 0.3...1.0, step: 0.05) { Text("Quality") }
+                            Slider(value: $options.quality, in: ExportOptions.qualityRange, step: 0.05) { Text("Quality") }
+
                             Text("\(Int((options.quality * 100).rounded()))%")
                                 .monospacedDigit()
                                 .frame(width: 44, alignment: .trailing)

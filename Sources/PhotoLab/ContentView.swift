@@ -550,7 +550,16 @@ private struct PreviewCanvas: View {
                         .resizable()
                         .scaledToFit()
                         .padding(8)
+                } else if preview.failed == photo.url {
+                    VStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.title2)
+                        Text("Could not open \(photo.name)")
+                            .font(.callout)
+                    }
+                    .foregroundStyle(.secondary)
                 } else if let thumb = Thumbnails.shared.cached(photo.url) {
+
                     Image(nsImage: thumb).resizable().scaledToFit().padding(8)
                         .overlay(ProgressView().controlSize(.regular))
                 } else {
@@ -701,7 +710,10 @@ struct AdjustmentsPanel: View {
     }
 
     private var footer: String {
-        guard preview.imageURL == photo.url, let cg = preview.image else { return "Loading…" }
+        guard preview.imageURL == photo.url, let cg = preview.image else {
+            return preview.failed == photo.url ? "Could not open" : "Loading…"
+        }
+
         let master = preview.masterSize
         return String(format: "render %.1f ms · %d×%d px of %.0f×%.0f master",
                       preview.renderMilliseconds, cg.width, cg.height, master.width, master.height)

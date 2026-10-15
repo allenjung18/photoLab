@@ -18,10 +18,15 @@ final class PreviewModel {
     /// Core Image time of the latest frame, ms (filter graph + readback).
     private(set) var renderMilliseconds: Double = 0
     private(set) var masterSize: CGSize = .zero
+    /// The photo whose master could not be decoded (not an image, unreadable);
+    /// the canvas labels it instead of waiting for a frame. Cleared by the
+    /// next decode that succeeds.
+    private(set) var failed: URL?
 
     private var master: CIImage?
     private var masterURL: URL?
     private var loadTask: Task<Void, Never>?
+
     private var pending: Request?
     private var rendering = false
 
@@ -32,7 +37,8 @@ final class PreviewModel {
     }
 
     /// Decodes the master for `url` off the main thread, then renders the
-    /// request that is waiting (if any).
+    /// request that is waiting (if any). A decode that fails forgets the url
+    /// (so the next `load` of it decodes again) and sets `failed`.
     func load(_ url: URL) {
         guard url != masterURL else { return }
         loadTask?.cancel()
@@ -44,11 +50,24 @@ final class PreviewModel {
                 Renderer.previewMaster(url, maxPixelSize: size)
             }.value
             guard let self, !Task.isCancelled, self.masterURL == url else { return }
+            guard let decoded else {
+                self.masterURL = nil
+                self.masterSize = .zero
+                self.failed = url
+                return
+            }
+            self.failed = nil
             self.master = decoded
-            self.masterSize = decoded?.extent.size ?? .zero
+            self.masterSize = decoded.extent.size
             self.pump()
         }
     }
+
+    /// Waits for the decode `load` started (tests).
+    func awaitLoad() async {
+        await loadTask?.value
+    }
+
 
     /// Asks for a frame; `maxPixelSize` is the view's longest side in pixels.
     func request(url: URL, recipe: Recipe, maxPixelSize: Int) {

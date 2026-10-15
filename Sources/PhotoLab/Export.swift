@@ -56,7 +56,10 @@ struct ExportOptions: Codable, Hashable, Sendable {
         }
     }
 
-    static let qualityRange: ClosedRange<Double> = 0.1...1.0
+    /// The quality a lossy export may ask for: the sheet's slider range and
+    /// the clamp `clampedQuality` applies are this one constant.
+    static let qualityRange: ClosedRange<Double> = 0.3...1.0
+
 
     var format: Format = .jpeg
     /// Lossy compression quality, `qualityRange`; ignored for TIFF.

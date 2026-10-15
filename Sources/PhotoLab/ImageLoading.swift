@@ -79,8 +79,10 @@ enum ImageLoading {
 /// (`withTaskCancellationHandler` cancels the detached handle) and the decode
 /// body checks it at its start: a cell scrolled past before its decode got a
 /// core costs nothing, and a decode that finishes for a cancelled request is
-/// not cached.
-final class Thumbnails {
+/// not cached. The class itself is immutable (`decode` and the cache are
+/// `let`), so the shared instance is safe to use from any task.
+final class Thumbnails: @unchecked Sendable {
+
     typealias Decoder = @Sendable (URL, Int) -> NSImage?
 
     static let shared = Thumbnails()

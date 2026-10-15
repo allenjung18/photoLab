@@ -160,11 +160,13 @@ enum ColorCubes {
 
     // MARK: Identity planes
 
-    private typealias Buf = UnsafeMutablePointer<Float>
+    typealias Buf = UnsafeMutablePointer<Float>
 
     /// The R, G and B coordinate of every cube entry (0…1, r fastest), plus
     /// the same scaled to 0…255 with the half added for truncating gathers.
-    private final class Identity {
+    /// Written once in `init` and only read after, so sharing it is safe.
+    private final class Identity: @unchecked Sendable {
+
         static let shared = Identity()
         let count: Int
         let r: Buf, g: Buf, b: Buf
@@ -198,10 +200,15 @@ enum ColorCubes {
     /// Scratch buffers for one build, allocated once: a debug build spends
     /// ~50 µs on every fresh 128 KB array (an mmap and 32 page faults),
     /// which is most of a cube's cost; reusing them makes it ~0.5 ms.
-    private final class Workspace {
+    /// The pool starts at `slots` and grows by one buffer whenever a build
+    /// asks for more (the new buffer is kept and reused like the rest), so a
+    /// stage added to a cube can never trip a precondition. Every builder
+    /// holds `ColorCubes.lock` while it uses `shared`, which is what makes
+    /// the shared instance safe to hand around.
+    final class Workspace: @unchecked Sendable {
         static let shared = Workspace(count: dimension * dimension * dimension, slots: 128)
         let count: Int
-        private let slots: [Buf]
+        private var slots: [Buf]
         private var next = 0
 
         init(count: Int, slots: Int) {
@@ -209,14 +216,20 @@ enum ColorCubes {
             self.slots = (0..<slots).map { _ in Buf.allocate(capacity: count) }
         }
 
+        /// Buffers the current (or last) build has taken since `reset`.
+        var used: Int { next }
+        /// Buffers allocated so far: the initial `slots` plus any growth.
+        var capacity: Int { slots.count }
+
         func take() -> Buf {
-            precondition(next < slots.count, "ColorCubes workspace exhausted")
+            if next == slots.count { slots.append(Buf.allocate(capacity: count)) }
             defer { next += 1 }
             return slots[next]
         }
 
         func reset() { next = 0 }
     }
+
 
     private static let lock = NSLock()
 

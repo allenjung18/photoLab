@@ -56,9 +56,11 @@ enum PhotoFilter: Hashable, CaseIterable {
 /// The library is a folder. Originals are never written to: every edit is a
 /// recipe, held in memory for the open folder and persisted as a sidecar
 /// (`SidecarStore`) the moment it changes.
+@MainActor
 @Observable
 final class Library {
     var folder: URL?
+
     var photos: [Photo] = []
     /// The grid's filter. Changing it drops hidden photos from the selection
     /// and moves a hidden anchor to the nearest visible photo.
@@ -104,7 +106,8 @@ final class Library {
     private let rememberFolder: Bool
 
     private static let lastFolderKey = "lastFolder"
-    static let maxUndoDepth = 100
+    nonisolated static let maxUndoDepth = 100
+
 
     /// `rememberFolder: false` keeps the folder out of UserDefaults (tests).
     init(rememberFolder: Bool = true) {

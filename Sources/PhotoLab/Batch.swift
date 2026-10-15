@@ -143,7 +143,14 @@ enum Exporter {
         guard let dest = CGImageDestinationCreateWithURL(partial as CFURL, options.format.utType.identifier as CFString, 1, nil) else {
             throw Failure.cannotWrite(out)
         }
-        CGImageDestinationAddImage(dest, result.image, properties as CFDictionary)
+        // The renderer's frame is RGBA (premultiplied, alpha 1 everywhere).
+        // JPEG and HEIC drop the channel; TIFF would keep it as a fourth
+        // sample flagged as associated alpha, which some readers open as
+        // transparency, so a TIFF is written from an opaque copy.
+        let output = options.format == .tiff ? (opaque(result.image) ?? result.image) : result.image
+        CGImageDestinationAddImage(dest, output, properties as CFDictionary)
+
+
         guard CGImageDestinationFinalize(dest) else { throw Failure.cannotWrite(out) }
         do {
             if fm.fileExists(atPath: out.path) {
@@ -156,7 +163,20 @@ enum Exporter {
         }
         return .written(out)
     }
+
+    /// `image` redrawn, pixel for pixel, into a bitmap with no alpha channel
+    /// (RGBX), so an image destination writes three samples per pixel.
+    static func opaque(_ image: CGImage) -> CGImage? {
+        let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let ctx = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return ctx.makeImage()
+    }
 }
+
 
 /// The export queue: a list of (photo, recipe) pairs written one after the
 /// other into one folder with one `ExportOptions`, with progress the window

@@ -6,16 +6,17 @@ import UniformTypeIdentifiers
 /// Sidecars: a recipe written for a photo comes back when the folder is
 /// opened again, the original is never touched, a reset removes the file,
 /// and edits undo and redo.
+@MainActor
 final class SidecarTests: XCTestCase {
     private var folder: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("photolab-sidecar-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: folder)
     }
 

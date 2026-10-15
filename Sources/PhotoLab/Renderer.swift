@@ -135,7 +135,11 @@ final class Renderer: @unchecked Sendable {
         switch a.kind {
         case .rotate:
             // Positive = clockwise on screen; the result is the largest
-            // same-aspect rectangle inside the rotated frame (no empty corners).
+            // same-aspect rectangle inside the rotated frame (no empty corners),
+            // inset by one pixel on every side: the exact inscribed rect
+            // touches the rotated frame's antialiased edge at two corners, and
+            // that edge is a dark line a pixel wide along the output's border.
+
             let theta = a.value * .pi / 180
             let e = image.extent
             let c = CGPoint(x: e.midX, y: e.midY)
@@ -145,7 +149,8 @@ final class Renderer: @unchecked Sendable {
             let rotated = image.transformed(by: t)
             let cs = abs(cos(theta)), sn = abs(sin(theta))
             let s = min(e.width / (e.width * cs + e.height * sn), e.height / (e.width * sn + e.height * cs))
-            let w = floor(e.width * s), h = floor(e.height * s)
+            let w = max(1, floor(e.width * s) - 2), h = max(1, floor(e.height * s) - 2)
+
             let crop = CGRect(x: (c.x - w / 2).rounded(), y: (c.y - h / 2).rounded(), width: w, height: h)
             return rotated.cropped(to: crop)
         case .exposure:

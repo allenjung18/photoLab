@@ -10,11 +10,12 @@ import UniformTypeIdentifiers
 /// geometry, renames and deletes; the starter set seeds once; and the strip's
 /// thumbnails render in time on a 24 MP photo. Every store here points at a
 /// temp directory, never the user's Application Support folder.
+@MainActor
 final class PresetTests: XCTestCase {
     private var presetsDir: URL!
     private var folder: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("photolab-presets-\(UUID().uuidString)", isDirectory: true)
         presetsDir = base.appendingPathComponent("presets", isDirectory: true)
@@ -22,7 +23,7 @@ final class PresetTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: presetsDir.deletingLastPathComponent())
     }
 

@@ -6,16 +6,17 @@ import UniformTypeIdentifiers
 /// Library edit state and launch (code review of chunks 1–7, M1/M2/M3): a
 /// disabled-only edit is still an edit, closing a drag never strands it on
 /// another photo, and opening a path that does not exist opens nothing.
+@MainActor
 final class EditStateTests: XCTestCase {
     private var folder: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("photolab-editstate-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: folder)
     }
 

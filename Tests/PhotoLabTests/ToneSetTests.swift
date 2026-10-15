@@ -353,7 +353,31 @@ final class ToneSetTests: XCTestCase {
         XCTAssertGreaterThan((l2 ?? 0), (r2 ?? 0) + 10, "-rotate must turn counter-clockwise")
     }
 
+    func testRotateLeavesNoDarkLineAlongTheBorder() {
+        // A flat 0.6 gray (153): any darkness on the border is the rotated
+        // frame's antialiased edge, which the inscribed crop must not touch.
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ctx = CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 300, height: 200))
+        let gray = CIImage(cgImage: ctx.makeImage()!)
+        for degrees in [1.0, 3.0, 7.0, 15.0, 30.0, 45.0, -5.0, -20.0] {
+            let out = render(recipe(.rotate, degrees), gray)
+            var darkest = 255.0, at = (0, 0)
+            func look(_ x: Int, _ y: Int) {
+                let l = luma(pixel(out, x, y))
+                if l < darkest { darkest = l; at = (x, y) }
+            }
+            for x in 0..<out.width { look(x, 0); look(x, out.height - 1) }
+            for y in 0..<out.height { look(0, y); look(out.width - 1, y) }
+            XCTAssertGreaterThan(darkest, 140, "rotate \(degrees)°: border pixel \(at) is \(darkest), the crop touches the rotated edge")
+            XCTAssertEqual(Double(out.width) / Double(out.height), 1.5, accuracy: 0.03, "rotate \(degrees)° keeps the aspect")
+        }
+    }
+
     func testEachCropEdgeRemovesItsOwnSide() {
+
         let base = render(.neutral)
         let w = base.width, h = base.height
         func row(_ cg: CGImage, _ y: Int) -> [(r: Double, g: Double, b: Double)] {
@@ -454,5 +478,44 @@ final class ToneSetTests: XCTestCase {
         }
         print("BENCH-ALL \(url.lastPathComponent): master \(Int(master.extent.width))×\(Int(master.extent.height)), preview \(target) px, \(steps) steps per kind, everything on; slowest \(worst.0.rawValue) \(String(format: "%.1f", worst.1)) ms")
         for line in lines { print("BENCH-KIND " + line) }
+    }
+}
+
+// MARK: - Cube workspace
+
+/// The scratch pool behind `ColorCubes`: the heaviest cube leaves headroom
+/// in the pool it starts with, and a build that asks for more buffers than
+/// the pool holds grows it instead of trapping, keeping the reuse.
+final class ColorCubeWorkspaceTests: XCTestCase {
+    func testHeaviestCubeLeavesHeadroomInTheSharedPool() {
+        let bands = AdjustmentKind.HSLBand.allCases.count
+        let ones = [Double](repeating: 1, count: bands)
+        let mixed = (0..<bands).map { $0.isMultiple(of: 2) ? 1.0 : -1.0 }
+        _ = ColorCubes.hslCube(hue: ones, sat: mixed, lum: ones)
+        let ws = ColorCubes.Workspace.shared
+        let hsl = ws.used
+        XCTAssertGreaterThan(hsl, 0)
+        XCTAssertEqual(ws.capacity, 128, "the HSL cube fits the pool it starts with")
+        XCTAssertGreaterThanOrEqual(ws.capacity - hsl, 32, "an HSL cube takes \(hsl) of \(ws.capacity) buffers; keep 32 spare")
+        _ = ColorCubes.toneCube(ColorCubes.toneLUT(highlights: 1, shadows: -1, whites: 1, blacks: -1, curve: [0.2, -0.2, 0.2, -0.2, 0.2]))
+        XCTAssertLessThan(ws.used, hsl, "the tone cube is the lighter build")
+    }
+
+    func testPoolGrowsWhenABuildTakesMoreThanItHoldsAndReusesTheBuffers() {
+        let ws = ColorCubes.Workspace(count: 16, slots: 2)
+        XCTAssertEqual(ws.capacity, 2)
+        let a = ws.take(), b = ws.take()
+        XCTAssertNotEqual(a, b)
+        XCTAssertEqual(ws.used, 2)
+        let c = ws.take()
+        XCTAssertEqual(ws.capacity, 3, "a third take grows the pool by one")
+        XCTAssertEqual(ws.used, 3)
+        XCTAssertNotEqual(c, a); XCTAssertNotEqual(c, b)
+        ws.reset()
+        XCTAssertEqual(ws.used, 0)
+        XCTAssertEqual(ws.take(), a, "after reset the same buffers are handed out again")
+        XCTAssertEqual(ws.take(), b)
+        XCTAssertEqual(ws.take(), c, "the grown buffer is kept and reused")
+        XCTAssertEqual(ws.capacity, 3)
     }
 }

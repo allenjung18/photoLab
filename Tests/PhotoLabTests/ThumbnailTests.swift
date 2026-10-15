@@ -29,7 +29,7 @@ final class ThumbnailTests: XCTestCase {
 
     /// Writes `image` as a JPEG. `embedThumbnail` asks ImageIO to embed its
     /// own EXIF thumbnail (160 px on the long side), the way a camera does.
-    private func writeJPEG(_ image: CGImage, to url: URL, embedThumbnail: Bool) throws {
+    private static func writeJPEG(_ image: CGImage, to url: URL, embedThumbnail: Bool) throws {
         let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil))
         var props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.85]
         if embedThumbnail { props[kCGImageDestinationEmbedThumbnail] = true }
@@ -60,7 +60,7 @@ final class ThumbnailTests: XCTestCase {
     /// same file asked for 160 px or less is served from the embedded preview.
     func testEmbeddedThumbnailSmallerThanRequestIsRefusedAndTheImageDecoded() throws {
         let url = tempDir.appendingPathComponent("embedded-160.jpg")
-        try writeJPEG(syntheticImage(width: 2400, height: 1600), to: url, embedThumbnail: true)
+        try Self.writeJPEG(syntheticImage(width: 2400, height: 1600), to: url, embedThumbnail: true)
         let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
 
         // The fixture is real: ImageIO's embedded thumbnail is 160 px on the long side.
@@ -85,7 +85,7 @@ final class ThumbnailTests: XCTestCase {
 
         // A file without an embedded preview decodes once and reports it.
         let plain = tempDir.appendingPathComponent("plain.jpg")
-        try writeJPEG(syntheticImage(width: 2400, height: 1600), to: plain, embedThumbnail: false)
+        try Self.writeJPEG(syntheticImage(width: 2400, height: 1600), to: plain, embedThumbnail: false)
         let plainSource = try XCTUnwrap(CGImageSourceCreateWithURL(plain as CFURL, nil))
         let plainThumb = try XCTUnwrap(ImageLoading.thumbnail(from: plainSource, maxPixelSize: Thumbnails.pixelSize))
         XCTAssertEqual(max(plainThumb.image.width, plainThumb.image.height), 480)
@@ -99,11 +99,12 @@ final class ThumbnailTests: XCTestCase {
     func test500SyntheticJPEGsThumbnailConcurrentlyUnder3s() async throws {
         let variants = 8
         let count = 500
+        let tempDir = self.tempDir!
         let writeMs = milliseconds {
             DispatchQueue.concurrentPerform(iterations: variants) { i in
                 let image = syntheticImage(width: 6000 - i * 8, height: 4000 + i * 8)
                 let url = tempDir.appendingPathComponent("variant-\(i).jpg")
-                do { try writeJPEG(image, to: url, embedThumbnail: false) } catch { XCTFail("\(error)") }
+                do { try Self.writeJPEG(image, to: url, embedThumbnail: false) } catch { XCTFail("\(error)") }
             }
         }
         var urls: [URL] = []
@@ -206,7 +207,7 @@ final class ThumbnailTests: XCTestCase {
     /// decode runs anyway, its result is not cached.
     func testCancelledRequestDecodesNothingAndCachesNothing() async throws {
         let url = tempDir.appendingPathComponent("never-decoded.jpg")
-        try writeJPEG(syntheticImage(width: 600, height: 400), to: url, embedThumbnail: false)
+        try Self.writeJPEG(syntheticImage(width: 600, height: 400), to: url, embedThumbnail: false)
 
         // 1. Cancelled before the call: the decoder is never invoked.
         let calls = Counter()

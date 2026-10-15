@@ -21,6 +21,11 @@ final class PresetThumbnails {
     /// The latest strip and the photo it belongs to.
     private(set) var thumbnails: [String: Thumbnail] = [:]
     private(set) var url: URL?
+    /// The photo whose master could not be decoded on the last request for
+    /// it; the strip labels its cells instead of spinning. Cleared by the
+    /// next decode that succeeds.
+    private(set) var failed: URL?
+
 
     private var master: CIImage?
     private var masterURL: URL?
@@ -54,14 +59,21 @@ final class PresetThumbnails {
             guard let self else { return }
             self.rendering = false
             if let master = out.0 {
+                self.failed = nil
                 self.master = master
                 self.masterURL = job.url
                 self.url = job.url
                 self.thumbnails = Dictionary(uniqueKeysWithValues: out.1.map { ($0.name, $0) })
+            } else {
+                self.failed = job.url
             }
             self.pump()
         }
     }
+
+    /// True while a request is decoding or rendering (tests).
+    var isBusy: Bool { rendering || pending != nil }
+
 
     /// One thumbnail per preset, each `preset.apply(to: base)` rendered over
     /// `master` at `pixelSize`; the ms is the renderer's own whole-step time.
@@ -162,9 +174,16 @@ struct PresetStrip: View {
                 Color(nsColor: .underPageBackgroundColor)
                 if thumbnails.url == photo.url, let t = thumbnails.thumbnails[preset.name] {
                     Image(decorative: t.image, scale: 2).resizable().scaledToFit()
+                } else if thumbnails.failed == photo.url {
+                    Text("Could not open")
+                        .font(.caption2)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .padding(4)
                 } else {
                     ProgressView().controlSize(.mini)
                 }
+
             }
             .frame(width: 72, height: 72)
             .clipShape(RoundedRectangle(cornerRadius: 5))
