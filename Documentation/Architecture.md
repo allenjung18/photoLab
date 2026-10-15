@@ -99,15 +99,47 @@ on, which is all the Before button does.
 `Renderer.render` at `PresetThumbnails.cellPixelSize` from a master decoded
 at `PresetThumbnails.masterPixelSize`. Requests coalesce like the loupe's.
 The grid's thumbnails are not rendered at all: `Thumbnails` caches the same
-ImageIO downsample at `Thumbnails.pixelSize` and shows the original;
+ImageIO downsample at `Thumbnails.pixelSize`, keyed by `PhotoID`
+(`PhotoID.cacheKey`), and shows the original;
 `Thumbnails.thumbnail(for:)` forwards the cell's cancellation into its
 detached decode, so a cell scrolled past costs nothing, and its decoder is
-injected (a `Thumbnails.Decoder`) so a test can count or block it.
+injected (a `Thumbnails.Decoder`, a `PhotoID` in and an image out) so a
+test can count or block it. The loupe's master and the export decode the
+file the source names for the photo (`Library.originalFile(for:)`,
+`PhotoSource.originalFile(for:)`): a folder photo's own file, known at once
+(`Photo.fileURL`); `LoupeView` resolves it and hands it to the canvas, the
+panel and the strip.
 
 ## 2. Data model
 
-All of it is in `Adjustments.swift`, `Sidecar.swift`, `Presets.swift` and
-`Export.swift`.
+All of it is in `Adjustments.swift`, `Sidecar.swift`, `Presets.swift`,
+`Export.swift` and `PhotoSource.swift`.
+
+### `PhotoID`, `Photo` and `PhotoSource`
+
+A photo's identity is a `PhotoID` (`PhotoSource.swift`): `PhotoID.file`,
+the file URL of a photo in a folder, or `PhotoID.asset`, a library asset's
+identifier (`UUID/L0/001`). Every `Library` map (`recipes`, `marks`, the
+undo history, the selection) is keyed by it, and a `Photo` is the id, the
+display `name` the source gave it and `Photo.fileURL`, the file when the
+id is one (nil for an asset until its source produces a file). The three
+places the library shows a photo's name (Copy Settings, the Sync sheet,
+the sidecar error) read `Library.name(for:)`, never the id.
+
+Where photos come from is a `PhotoSource`: `title` (the window title),
+`photos()` (the grid's order), `sidecars` (the `SidecarStore` its edits
+persist to), `thumbnail(for:maxPixelSize:)` (a downsample of the
+unadjusted original, synchronous, run off the main thread by `Thumbnails`)
+and `originalFile(for:)` (the one file the loupe master and the export
+decode; async, since a source may have to fetch it). `FolderSource` is the
+folder: `Library.scan` lists it, `SidecarStore(folder:)` keeps the edits
+under `.photolab/`, `ImageLoading.downsampled` makes the thumbnails, and a
+photo's original is its own file. `Library.open(_:)` takes a source, or a
+URL that it wraps in a `FolderSource` (a folder, or a file whose folder
+opens with that photo in the loupe); `Library.source` is the open one and
+`Library.folder` its folder when it is a `FolderSource`. A source whose
+`photos()` throws is refused like a missing path: the open source stays and
+`openError` says why.
 
 ### `AdjustmentKind`
 
@@ -157,15 +189,26 @@ A `Sidecar` is the on-disk form of one photo's edit: `version`
 reading the directory), `updated` and `recipe`, plus two optional keys,
 `flag` and `rating`, the culling marks (`Marks`, below), absent when unset
 so a file written before they existed decodes unchanged. `SidecarStore` reads and
-writes the sidecars of one folder at `<folder>/.photolab/<file>.json`
-(`SidecarStore.directoryName`, `SidecarStore.fileExtension`); the file name
-keeps the original's extension, so `IMG_0001.JPG` and `IMG_0001.HEIC` never
-share one, and a photo in a subfolder keeps its relative path under
-`.photolab/`. The directory is hidden, so `Library.scan` (which skips hidden
-entries) never lists it, and deleting it wipes every edit in the folder.
+writes the sidecars of one source: a `directory` and a `SidecarStore.Naming`
+from a `PhotoID` to a file name in it (`SidecarStore.relativeName(for:)`).
+A folder's store, `SidecarStore(folder:)`, is `<folder>/.photolab/`
+(`SidecarStore.directoryName`, `SidecarStore.fileExtension`) with the
+folder naming, `<path relative to the folder>.json`: the file name keeps
+the original's extension, so `IMG_0001.JPG` and `IMG_0001.HEIC` never share
+one, and a photo in a subfolder keeps its relative path under `.photolab/`.
+The directory is hidden, so `Library.scan` (which skips hidden entries)
+never lists it, and deleting it wipes every edit in the folder. A source
+without a folder injects its own directory with the flat naming
+(`SidecarStore(directory:naming:)`, `SidecarStore.Naming.flat`):
+`<id with every / as _>.json`, so the asset `UUID/L0/001` is
+`UUID_L0_001.json` (`SidecarStore.flatName`). The JSON, the version gate and the backup rule
+are the same under both namings; every method takes a `PhotoID`, and the
+URL forms (`SidecarStore.url(for:)` of a file URL, and the rest) are
+`PhotoID.file` of it.
 
-- `SidecarStore.save(_:marks:for:now:)` writes the recipe and the marks
-  atomically (temp file and rename). The file is removed instead when there
+- `SidecarStore.save(_:marks:for:name:now:)` writes the recipe and the marks
+  atomically (temp file and rename); `name` is the `original` the file
+  records (the photo's name from its source; the id's own when not given). The file is removed instead when there
   is nothing to keep, the default recipe (`Recipe.isDefault`) and no marks,
   so a reset of an unmarked photo leaves no trace while a flag or rating on
   a default recipe keeps its file; a recipe that only differs by a disabled
@@ -277,14 +320,16 @@ passes true; tests never do).
 
 ## 3. The edit path
 
-`Library` (`Library.swift`) holds the open folder: its photos, the selection,
-and `recipes`, the edits of the folder keyed by photo id, mirrored to
-sidecars. `Library.open(_:)` fills it: a folder, or a file's folder with
-that file in the loupe; the folder is scanned and every sidecar read
-(`SidecarStore.loadAll`) before the first frame, and the selection, the
-open drag and the undo history are reset. A path that does not exist is
-refused: the current folder and selection stay and `openError` says why, so
-a mistyped launch argument never opens its parent or the working directory.
+`Library` (`Library.swift`) holds the open source (`Library.source`, a
+`PhotoSource`; a folder through `FolderSource`): its photos, the selection,
+and `recipes`, the edits of the source keyed by `PhotoID`, mirrored to the
+source's sidecars. `Library.open(_:)` fills it from a source, or from a URL
+(a folder, or a file's folder with that file in the loupe); the source is
+listed and every sidecar read (`SidecarStore.loadAll`) before the first
+frame, and the selection, the open drag and the undo history are reset. A
+path that does not exist, or a source whose listing fails, is refused: the
+current source and selection stay and `openError` says why, so a mistyped
+launch argument never opens its parent or the working directory.
 Every change to an edit goes through one method.
 
 ### `Library.setRecipe(_:for:)`
@@ -400,8 +445,8 @@ one photo:
 ## 5. The picture
 
 ```
-   original file (never written)
-        |
+   original file (never written; PhotoSource.originalFile(for:),
+        |          a folder photo's own file)
         |  ImageIO downsample                       CIImage(contentsOf:)
         |  Renderer.previewMaster                   Renderer.fullResolution
         v                                                  v

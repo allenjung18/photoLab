@@ -41,6 +41,15 @@ the pass.
   on disk; `Library.endEdit` closes whatever edit is open and `beginEdit` on
   another photo closes the first; `Library.open` of a missing path (or a
   flag-like argument) opens nothing and keeps the current folder.
+- `SourceTests.swift` — the `PhotoSource` seam: a fake source of three
+  assets opens in its own order with its names and title, a recipe on an
+  asset persists under the flat naming (`A/L0/001` as `A_L0_001.json` in
+  the injected directory) and reloads through a fresh `Library`, export
+  items and the loupe take their file from the source, a source whose
+  listing fails is refused and the open folder stays, a folder opens
+  through `FolderSource` with its sidecars at `.photolab/<relative
+  path>.json`, the two namings map ids to files, and `PhotoID` round trips
+  through JSON and keys one thumbnail cache.
 - `CullingTests.swift` — a flag and rating on a neutral recipe round trip
   through a fresh `Library` (the sidecar kept for the marks alone), Reset
   keeps the flag while an unmarked reset removes the file, marks never enter
@@ -164,7 +173,9 @@ place the app writes is injected:
   directory, never `PresetStore.defaultDirectory`.
 - `SidecarStore(folder:)` and `Library.open`: the photo folder is a
   temporary directory the test makes and fills with small synthetic images,
-  so its `.photolab/` sidecars are the test's own.
+  so its `.photolab/` sidecars are the test's own. A source without a
+  folder gets `SidecarStore(directory:naming:)` with a temporary directory
+  (the fake source in `SourceTests`).
 - `Library(rememberFolder: false)`: the opened folder stays out of
   UserDefaults.
 - `ExportQueue`: `init(remember:worker:)` leaves `remember:` off (the folder

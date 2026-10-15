@@ -47,7 +47,7 @@ final class CullingTests: XCTestCase {
         try XCTUnwrap(lib.photos.first { $0.name == name }, "no photo \(name)").id
     }
 
-    private func sidecarText(_ store: SidecarStore, _ photo: URL) throws -> String {
+    private func sidecarText(_ store: SidecarStore, _ photo: Photo.ID) throws -> String {
         try String(contentsOf: store.url(for: photo), encoding: .utf8)
     }
 
@@ -343,7 +343,7 @@ final class CullingTests: XCTestCase {
         XCTAssertEqual(rewritten.recipe, doc.recipe)
         XCTAssertEqual(rewritten.flag, .pick)
         XCTAssertNil(rewritten.rating)
-        let text = try sidecarText(store, photo)
+        let text = try sidecarText(store, .file(photo))
         XCTAssertTrue(text.contains("\"flag\" : \"pick\""))
         XCTAssertFalse(text.contains("\"rating\""))
 

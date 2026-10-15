@@ -107,6 +107,6 @@ struct PhotoLabApp: App {
     }
 
     private func export() {
-        exports.requestExport(library.exportItems(for: library.batchTargets))
+        exports.requestExport(from: library)
     }
 }

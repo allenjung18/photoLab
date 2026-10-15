@@ -35,6 +35,13 @@ enum ImageLoading {
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
+    /// The same for a photo id that is a file; nil for an asset, whose
+    /// thumbnail is its source's to produce.
+    static func downsampled(_ id: PhotoID, maxPixelSize: Int) -> NSImage? {
+        guard let url = id.fileURL else { return nil }
+        return downsampled(url, maxPixelSize: maxPixelSize)
+    }
+
     /// The thumbnail and where it came from; `downsampledCGImage` drops the
     /// source, tests and benchmarks read it.
     static func thumbnail(from source: CGImageSource, maxPixelSize: Int) -> (image: CGImage, source: Source)? {
@@ -80,31 +87,36 @@ enum ImageLoading {
 /// body checks it at its start: a cell scrolled past before its decode got a
 /// core costs nothing, and a decode that finishes for a cancelled request is
 /// not cached. The class itself is immutable (`decode` and the cache are
-/// `let`), so the shared instance is safe to use from any task.
+/// `let`), so the shared instance is safe to use from any task. The cache
+/// is keyed by `PhotoID` (`PhotoID.cacheKey`), so a folder photo and a
+/// library asset share one cache.
 final class Thumbnails: @unchecked Sendable {
-
-    typealias Decoder = @Sendable (URL, Int) -> NSImage?
+    typealias Decoder = @Sendable (PhotoID, Int) -> NSImage?
 
     static let shared = Thumbnails()
     static let pixelSize = 480
 
     private let decode: Decoder
-    private let cache: NSCache<NSURL, NSImage> = {
-        let c = NSCache<NSURL, NSImage>()
+    private let cache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
         c.countLimit = 3000
         return c
     }()
 
-    /// `decode` is `ImageLoading.downsampled` in the app; tests inject one
-    /// that counts, blocks or reports what it saw.
+    /// `decode` is `ImageLoading.downsampled` in the app (a file's ImageIO
+    /// downsample; the `FolderSource` thumbnail); tests inject one that
+    /// counts, blocks or reports what it saw.
     init(decode: @escaping Decoder = { ImageLoading.downsampled($0, maxPixelSize: $1) }) {
         self.decode = decode
     }
 
-    func cached(_ url: URL) -> NSImage? { cache.object(forKey: url as NSURL) }
+    func cached(_ id: PhotoID) -> NSImage? { cache.object(forKey: id.cacheKey as NSString) }
+    func cached(_ url: URL) -> NSImage? { cached(.file(url)) }
 
-    func thumbnail(for url: URL) async -> NSImage? {
-        if let hit = cached(url) { return hit }
+    func thumbnail(for url: URL) async -> NSImage? { await thumbnail(for: .file(url)) }
+
+    func thumbnail(for id: PhotoID) async -> NSImage? {
+        if let hit = cached(id) { return hit }
         // Already scrolled past before the decode was queued: nothing to do.
         if Task.isCancelled { return nil }
         let decode = decode
@@ -112,7 +124,7 @@ final class Thumbnails: @unchecked Sendable {
         let handle = Task.detached(priority: .userInitiated) { () -> NSImage? in
             // Cancelled while waiting for a core (forwarded below): skip the decode.
             if Task.isCancelled { return nil }
-            return decode(url, pixelSize)
+            return decode(id, pixelSize)
         }
         let image = await withTaskCancellationHandler {
             await handle.value
@@ -120,7 +132,7 @@ final class Thumbnails: @unchecked Sendable {
             handle.cancel()
         }
         guard let image, !Task.isCancelled else { return nil }
-        cache.setObject(image, forKey: url as NSURL)
+        cache.setObject(image, forKey: id.cacheKey as NSString)
         return image
     }
 }

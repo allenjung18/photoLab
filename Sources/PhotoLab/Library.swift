@@ -3,12 +3,6 @@ import AppKit
 import Observation
 import UniformTypeIdentifiers
 
-struct Photo: Identifiable, Hashable {
-    let url: URL
-    var id: URL { url }
-    var name: String { url.lastPathComponent }
-}
-
 /// What the Sync / Paste Settings sheet shows: a source recipe, where it
 /// came from, and the photos it goes onto.
 struct SyncRequest: Identifiable {
@@ -53,14 +47,18 @@ enum PhotoFilter: Hashable, CaseIterable {
     }
 }
 
-/// The library is a folder. Originals are never written to: every edit is a
-/// recipe, held in memory for the open folder and persisted as a sidecar
-/// (`SidecarStore`) the moment it changes.
+/// The library is one `PhotoSource` (a folder, through `FolderSource`).
+/// Originals are never written to: every edit is a recipe, held in memory
+/// for the open source and persisted as a sidecar (`SidecarStore`, the
+/// source's) the moment it changes.
 @MainActor
 @Observable
 final class Library {
-    var folder: URL?
-
+    /// The open source; nil shows the Welcome view.
+    private(set) var source: (any PhotoSource)?
+    /// The open folder when the source is one (`FolderSource`); nil for any
+    /// other source and when nothing is open.
+    var folder: URL? { (source as? FolderSource)?.folder }
     var photos: [Photo] = []
     /// The grid's filter. Changing it drops hidden photos from the selection
     /// and moves a hidden anchor to the nearest visible photo.
@@ -138,9 +136,31 @@ final class Library {
             openError = "No such file or folder: \(url.path)"
             return
         }
-        openError = nil
         let dir = isDir.boolValue ? url : url.deletingLastPathComponent()
-        folder = dir
+        open(FolderSource(dir))
+        guard openError == nil else { return }
+        if rememberFolder { UserDefaults.standard.set(dir.path, forKey: Self.lastFolderKey) }
+        if !isDir.boolValue, let hit = photos.first(where: { $0.fileURL?.standardizedFileURL == url.standardizedFileURL }) {
+            selection = hit.id
+            loupe = true
+        }
+    }
+
+    /// Opens a source: its photos are listed and every sidecar of theirs
+    /// read before the first frame, so a photo opens with its edit; the
+    /// selection, the open drag and the undo history are reset. A source
+    /// whose listing fails is refused the same way as a missing path: the
+    /// current source stays and `openError` says why.
+    func open(_ source: any PhotoSource) {
+        let listed: [Photo]
+        do {
+            listed = try source.photos()
+        } catch {
+            openError = error.localizedDescription
+            return
+        }
+        openError = nil
+        self.source = source
         selection = nil
         loupe = false
         showBefore = false
@@ -148,25 +168,33 @@ final class Library {
         history = [:]
         sidecarError = nil
         filter = .all
-        photos = Self.scan(dir)
-        let store = SidecarStore(folder: dir)
+        photos = listed
+        let store = source.sidecars
         self.store = store
-        let loaded = store.loadAll(for: photos.map(\.url))
+        let loaded = store.loadAll(for: photos.map(\.id))
         recipes = loaded.recipes
         marks = loaded.marks
         unreadableSidecars = Set(loaded.unreadable)
         if let first = loaded.unreadable.first {
-            sidecarError = "Could not read the edit saved for \(first.lastPathComponent)"
-        }
-        if rememberFolder { UserDefaults.standard.set(dir.path, forKey: Self.lastFolderKey) }
-        if !isDir.boolValue, let hit = photos.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) {
-            selection = hit.id
-            loupe = true
+            sidecarError = "Could not read the edit saved for \(name(for: first))"
         }
     }
 
+    /// The photo's display name as its source gave it (the file name for a
+    /// folder); the id's own name for a photo not in the listing.
+    func name(for id: Photo.ID) -> String {
+        photos.first { $0.id == id }?.name ?? id.defaultName
+    }
+
+    /// The file holding the photo's original pixels, from the open source
+    /// (a folder photo's own file; an asset's may have to be fetched).
+    func originalFile(for id: Photo.ID) async throws -> URL {
+        guard let source else { throw PhotoSourceError.notInThisSource(id) }
+        return try await source.originalFile(for: id)
+    }
+
     func restoreLastFolder() {
-        guard folder == nil,
+        guard source == nil,
               let path = UserDefaults.standard.string(forKey: Self.lastFolderKey),
               FileManager.default.fileExists(atPath: path) else { return }
         open(URL(fileURLWithPath: path))
@@ -380,7 +408,7 @@ final class Library {
 
     /// Copy Settings: remembers the photo's recipe for Paste Settings.
     func copySettings(from id: Photo.ID) {
-        copiedSettings = (recipe(for: id), id.lastPathComponent)
+        copiedSettings = (recipe(for: id), name(for: id))
     }
 
     /// Asks the window for the Sync Settings sheet: the anchor's recipe onto
@@ -389,7 +417,7 @@ final class Library {
         guard let anchor = selection else { return }
         let targets = batchTargets.filter { $0 != anchor }
         guard !targets.isEmpty else { return }
-        syncRequest = SyncRequest(source: recipe(for: anchor), sourceName: anchor.lastPathComponent,
+        syncRequest = SyncRequest(source: recipe(for: anchor), sourceName: name(for: anchor),
                                   targets: targets, mask: lastSyncMask)
     }
 
@@ -401,9 +429,14 @@ final class Library {
                                   targets: batchTargets, mask: lastSyncMask)
     }
 
-    /// The (photo, recipe) pairs an export of `ids` writes.
-    func exportItems(for ids: [Photo.ID]) -> [ExportQueue.Item] {
-        ids.map { ExportQueue.Item(source: $0, recipe: recipe(for: $0)) }
+    /// The (file, recipe) pairs an export of `ids` writes, each file the
+    /// source's original (`originalFile(for:)`).
+    func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
+        var items: [ExportQueue.Item] = []
+        for id in ids {
+            items.append(ExportQueue.Item(source: try await originalFile(for: id), recipe: recipe(for: id)))
+        }
+        return items
     }
 
     /// Marks the start of a continuous edit (a slider drag) on `id`. At most
@@ -484,11 +517,11 @@ final class Library {
     private func persist(_ id: Photo.ID) {
         guard let store else { return }
         do {
-            try store.save(recipe(for: id), marks: marks(for: id), for: id)
+            try store.save(recipe(for: id), marks: marks(for: id), for: id, name: name(for: id))
             unreadableSidecars.remove(id)
             sidecarError = nil
         } catch {
-            sidecarError = "Could not save the edit for \(id.lastPathComponent): \(error.localizedDescription)"
+            sidecarError = "Could not save the edit for \(name(for: id)): \(error.localizedDescription)"
         }
     }
 
@@ -515,20 +548,20 @@ final class Library {
     /// Every regular file under `folder` whose type conforms to `public.image`:
     /// JPEG, HEIC, PNG, TIFF and every RAW format ImageIO knows. Hidden
     /// entries are skipped, which keeps `.photolab/` out of the grid.
-    static func scan(_ folder: URL) -> [Photo] {
+    nonisolated static func scan(_ folder: URL) -> [Photo] {
         let keys: Set<URLResourceKey> = [.contentTypeKey, .isRegularFileKey]
         guard let e = FileManager.default.enumerator(
             at: folder, includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
-        var out: [Photo] = []
+        var out: [URL] = []
         for case let url as URL in e {
             guard let v = try? url.resourceValues(forKeys: keys),
                   v.isRegularFile == true,
                   let type = v.contentType, type.conforms(to: .image) else { continue }
-            out.append(Photo(url: url))
+            out.append(url)
         }
         return out.sorted {
-            $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending
-        }
+            $0.path.localizedStandardCompare($1.path) == .orderedAscending
+        }.map(Photo.init(url:))
     }
 }

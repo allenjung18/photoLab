@@ -1,13 +1,17 @@
 import Foundation
 
-/// The on-disk form of one photo's edit: `<folder>/.photolab/<filename>.json`.
+/// The on-disk form of one photo's edit: `<folder>/.photolab/<filename>.json`
+/// for a photo in a folder (`SidecarStore.Naming.folder`), or
+/// `<directory>/<id with / as _>.json` for a photo of a source without a
+/// folder (`SidecarStore.Naming.flat`).
 ///
-/// Sidecars live in a hidden per-folder directory rather than beside each
-/// original so a folder of photos stays uncluttered, the library scan (which
-/// skips hidden entries) never sees them, and deleting `.photolab/` wipes
-/// every edit in a folder. The file name keeps the original's extension
-/// (`IMG_0001.JPG.json`, `IMG_0001.HEIC.json`), so two originals that differ
-/// only by extension never share a sidecar. The original is never written to.
+/// A folder's sidecars live in a hidden per-folder directory rather than
+/// beside each original so a folder of photos stays uncluttered, the library
+/// scan (which skips hidden entries) never sees them, and deleting
+/// `.photolab/` wipes every edit in a folder. The file name keeps the
+/// original's extension (`IMG_0001.JPG.json`, `IMG_0001.HEIC.json`), so two
+/// originals that differ only by extension never share a sidecar. The
+/// original is never written to.
 struct Sidecar: Codable, Equatable {
     static let currentVersion = 1
 
@@ -53,100 +57,143 @@ struct Marks: Hashable {
     var isEmpty: Bool { flag == nil && rating == 0 }
 }
 
-/// Reads and writes the sidecars of one folder.
-struct SidecarStore {
+/// Reads and writes the sidecars of one source: a directory and a naming
+/// rule (`Naming`) from a photo's id to a file in it. A folder's store
+/// (`init(folder:)`) is `<folder>/.photolab/` with the folder naming; a
+/// source without a folder injects its own directory with the flat naming.
+struct SidecarStore: Sendable {
+    /// How a photo id maps to a file name under `directory`.
+    enum Naming: Hashable, Sendable {
+        /// `<path relative to the folder>.json` for a photo in the folder
+        /// (`sub/a.jpg` maps to `sub/a.jpg.json`), its file name for one
+        /// outside it; an asset id takes the flat form.
+        case folder(URL)
+        /// `<id with every / as _>.json` (`UUID/L0/001` maps to
+        /// `UUID_L0_001.json`); a file's path, slashes replaced, likewise.
+        case flat
+    }
+
     static let directoryName = ".photolab"
     static let fileExtension = "json"
 
-    let folder: URL
+    let directory: URL
+    let naming: Naming
 
-    var directory: URL { folder.appendingPathComponent(Self.directoryName, isDirectory: true) }
-
-    /// `<folder>/.photolab/<name>.json` for a photo in this folder. A photo in
-    /// a subfolder keeps its relative path, so `sub/a.jpg` maps to
-    /// `.photolab/sub/a.jpg.json`.
-    func url(for photo: URL) -> URL {
-        let rel = relativePath(of: photo)
-        return directory.appendingPathComponent(rel + "." + Self.fileExtension, isDirectory: false)
+    init(directory: URL, naming: Naming) {
+        self.directory = directory
+        self.naming = naming
     }
 
-    func exists(for photo: URL) -> Bool {
-        FileManager.default.fileExists(atPath: url(for: photo).path)
+    /// The store of one folder: `<folder>/.photolab/` with the folder naming.
+    init(folder: URL) {
+        self.init(directory: folder.appendingPathComponent(Self.directoryName, isDirectory: true),
+                  naming: .folder(folder))
     }
 
-    /// The recipe saved for `photo`, or nil when there is no sidecar. A
+    /// The folder this store belongs to, when its naming is a folder's.
+    var folder: URL? {
+        if case .folder(let url) = naming { return url }
+        return nil
+    }
+
+    /// The sidecar file for a photo: `<directory>/<name>.json` per `naming`.
+    func url(for id: PhotoID) -> URL {
+        directory.appendingPathComponent(relativeName(for: id) + "." + Self.fileExtension, isDirectory: false)
+    }
+
+    func exists(for id: PhotoID) -> Bool {
+        FileManager.default.fileExists(atPath: url(for: id).path)
+    }
+
+    /// The recipe saved for the photo, or nil when there is no sidecar. A
     /// sidecar that cannot be decoded throws, so the caller can tell "no
     /// edit" from "an edit this build cannot read" and leave the file alone.
-    func load(for photo: URL) throws -> Recipe? {
-        try read(for: photo)?.recipe
+    func load(for id: PhotoID) throws -> Recipe? {
+        try read(for: id)?.recipe
     }
 
-    /// The whole sidecar saved for `photo` (recipe and marks), or nil when
+    /// The whole sidecar saved for the photo (recipe and marks), or nil when
     /// there is none; throws when the file cannot be decoded.
-    func read(for photo: URL) throws -> Sidecar? {
-        let file = url(for: photo)
+    func read(for id: PhotoID) throws -> Sidecar? {
+        let file = url(for: id)
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         let data = try Data(contentsOf: file)
         return try Self.decode(data)
     }
 
-    /// Writes the recipe for `photo`, keeping whatever marks the sidecar
+    /// Writes the recipe for the photo, keeping whatever marks the sidecar
     /// already holds (a recipe-only caller never loses a flag or rating).
-    func save(_ recipe: Recipe, for photo: URL, now: Date = Date()) throws {
-        let kept = (try? read(for: photo))?.marks ?? .none
-        try save(recipe, marks: kept, for: photo, now: now)
+    func save(_ recipe: Recipe, for id: PhotoID, name: String? = nil, now: Date = Date()) throws {
+        let kept = (try? read(for: id))?.marks ?? .none
+        try save(recipe, marks: kept, for: id, name: name, now: now)
     }
 
-    /// Writes the sidecar for `photo`: the recipe and the marks. The file is
+    /// Writes the sidecar for the photo: the recipe and the marks. The file is
     /// removed instead when there is nothing to keep — the default recipe
     /// AND no marks — so a reset of an unmarked photo leaves no trace while
     /// a flag or rating on a default recipe keeps its file. A recipe that
     /// only differs by a disabled entry is still written (`Recipe.isDefault`,
     /// not `isNeutral`). Unset marks are omitted from the JSON, not written
-    /// as null. The write is atomic (temp file + rename).
-    func save(_ recipe: Recipe, marks: Marks, for photo: URL, now: Date = Date()) throws {
-        let file = url(for: photo)
+    /// as null. The write is atomic (temp file + rename). `name` is the
+    /// `original` the file records; the id's own name when not given.
+    func save(_ recipe: Recipe, marks: Marks, for id: PhotoID, name: String? = nil, now: Date = Date()) throws {
+        let file = url(for: id)
         try Self.backUpIfUnreadable(file, now: now)
         if recipe.isDefault && marks.isEmpty {
-            try remove(for: photo)
+            try remove(for: id)
             return
         }
         try FileManager.default.createDirectory(
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let doc = Sidecar(original: photo.lastPathComponent, updated: now, recipe: recipe,
+        let doc = Sidecar(original: name ?? id.defaultName, updated: now, recipe: recipe,
                           flag: marks.flag, rating: marks.rating == 0 ? nil : marks.rating)
         let data = try Self.encoder.encode(doc)
         try data.write(to: file, options: .atomic)
     }
 
-    func remove(for photo: URL) throws {
-        let file = url(for: photo)
+    func remove(for id: PhotoID) throws {
+        let file = url(for: id)
         if FileManager.default.fileExists(atPath: file.path) {
             try FileManager.default.removeItem(at: file)
         }
     }
 
-    /// Every readable sidecar among `photos`: the non-default recipes and
-    /// the non-empty marks, each keyed by photo URL, plus the photos whose
+    /// Every readable sidecar among `ids`: the non-default recipes and
+    /// the non-empty marks, each keyed by photo id, plus the photos whose
     /// sidecar exists but could not be read.
-    func loadAll(for photos: [URL]) -> (recipes: [URL: Recipe], marks: [URL: Marks], unreadable: [URL]) {
+    func loadAll(for ids: [PhotoID]) -> (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks], unreadable: [PhotoID]) {
         guard FileManager.default.fileExists(atPath: directory.path) else { return ([:], [:], []) }
-        var recipes: [URL: Recipe] = [:]
-        var marks: [URL: Marks] = [:]
-        var unreadable: [URL] = []
-        for photo in photos {
+        var recipes: [PhotoID: Recipe] = [:]
+        var marks: [PhotoID: Marks] = [:]
+        var unreadable: [PhotoID] = []
+        for id in ids {
             do {
-                guard let doc = try read(for: photo) else { continue }
-                if !doc.recipe.isDefault { recipes[photo] = doc.recipe }
-                if !doc.marks.isEmpty { marks[photo] = doc.marks }
+                guard let doc = try read(for: id) else { continue }
+                if !doc.recipe.isDefault { recipes[id] = doc.recipe }
+                if !doc.marks.isEmpty { marks[id] = doc.marks }
             } catch {
-                unreadable.append(photo)
+                unreadable.append(id)
             }
         }
         return (recipes, marks, unreadable)
     }
 
-    private func relativePath(of photo: URL) -> String {
+    /// The file name (without the extension) for an id under `naming`.
+    func relativeName(for id: PhotoID) -> String {
+        switch (naming, id) {
+        case (.folder(let base), .file(let url)): return Self.relativePath(of: url, under: base)
+        case (.flat, .file(let url)): return Self.flatName(url.standardizedFileURL.path)
+        case (_, .asset(let identifier)): return Self.flatName(identifier)
+        }
+    }
+
+    /// Every `/` replaced by `_` (a leading one dropped), so an id with path
+    /// separators is one file name.
+    static func flatName(_ s: String) -> String {
+        s.split(separator: "/", omittingEmptySubsequences: true).joined(separator: "_")
+    }
+
+    private static func relativePath(of photo: URL, under folder: URL) -> String {
         let base = folder.standardizedFileURL.path
         let path = photo.standardizedFileURL.path
         if path.hasPrefix(base + "/") {
@@ -192,6 +239,31 @@ struct SidecarStore {
         d.dateDecodingStrategy = .iso8601
         return d
     }()
+}
+
+/// The same store addressed by a photo's file URL (a photo in a folder):
+/// each form is `.file(url)` of the one above.
+extension SidecarStore {
+    func url(for photo: URL) -> URL { url(for: .file(photo)) }
+    func exists(for photo: URL) -> Bool { exists(for: .file(photo)) }
+    func load(for photo: URL) throws -> Recipe? { try load(for: .file(photo)) }
+    func read(for photo: URL) throws -> Sidecar? { try read(for: .file(photo)) }
+    func save(_ recipe: Recipe, for photo: URL, now: Date = Date()) throws {
+        try save(recipe, for: .file(photo), now: now)
+    }
+    func save(_ recipe: Recipe, marks: Marks, for photo: URL, now: Date = Date()) throws {
+        try save(recipe, marks: marks, for: .file(photo), now: now)
+    }
+    func remove(for photo: URL) throws { try remove(for: .file(photo)) }
+
+    func loadAll(for photos: [URL]) -> (recipes: [URL: Recipe], marks: [URL: Marks], unreadable: [URL]) {
+        let all = loadAll(for: photos.map { PhotoID.file($0) })
+        var recipes: [URL: Recipe] = [:]
+        var marks: [URL: Marks] = [:]
+        for (id, r) in all.recipes { if let u = id.fileURL { recipes[u] = r } }
+        for (id, m) in all.marks { if let u = id.fileURL { marks[u] = m } }
+        return (recipes, marks, all.unreadable.compactMap(\.fileURL))
+    }
 }
 
 enum SidecarError: LocalizedError, Equatable {

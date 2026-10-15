@@ -8,7 +8,7 @@ struct ContentView: View {
         @Bindable var library = library
         @Bindable var exports = exports
         Group {
-            if library.folder == nil {
+            if library.source == nil {
                 WelcomeView()
             } else if library.loupe, let photo = library.selectedPhoto {
                 LoupeView(photo: photo)
@@ -56,12 +56,12 @@ struct ContentView: View {
             })
     }
 
-    private var title: String { library.folder?.lastPathComponent ?? "PhotoLab" }
+    private var title: String { library.source?.title ?? "PhotoLab" }
 
     /// Grid: "N photos", or "n of N shown" under a filter, plus the selection
     /// count. Loupe: the anchor's place among the visible photos and its marks.
     private var subtitle: String {
-        guard library.folder != nil else { return "" }
+        guard library.source != nil else { return "" }
         let total = library.photos.count
         let shown = library.visiblePhotos.count
         if library.loupe, let i = library.visibleIndex {
@@ -255,7 +255,7 @@ private struct BatchBar: View {
             .fixedSize()
             .disabled(presets.presets.isEmpty)
             .help("Apply a preset to every selected photo (one undo step)")
-            Button("Export…") { exports.requestExport(library.exportItems(for: library.batchTargets)) }
+            Button("Export…") { exports.requestExport(from: library) }
                 .disabled(exports.isRunning)
                 .help("Render every selected photo into a folder: format, quality, size and name in the sheet (⇧⌘E)")
             Button("Deselect") { library.collapseSelection() }
@@ -510,25 +510,38 @@ struct ThumbnailCell: View {
                 .foregroundStyle(selected ? .primary : .secondary)
         }
         .contentShape(Rectangle())
-        .task(id: photo.url) {
-            image = Thumbnails.shared.cached(photo.url)
-            if image == nil { image = await Thumbnails.shared.thumbnail(for: photo.url) }
+        .task(id: photo.id) {
+            image = Thumbnails.shared.cached(photo.id)
+            if image == nil { image = await Thumbnails.shared.thumbnail(for: photo.id) }
         }
     }
 }
 
+/// The loupe: the canvas and the panel, both fed the photo's original file
+/// from the open source (`Library.originalFile(for:)`). A folder photo's
+/// file is known at once (`Photo.fileURL`); another source's is fetched
+/// here, and the canvas shows the thumbnail until it arrives.
 struct LoupeView: View {
+    @Environment(Library.self) private var library
     let photo: Photo
     @State private var preview = PreviewModel()
+    @State private var file: URL?
 
     var body: some View {
         HStack(spacing: 0) {
-            PreviewCanvas(photo: photo, preview: preview)
+            PreviewCanvas(photo: photo, file: resolvedFile, preview: preview)
             Divider()
-            AdjustmentsPanel(photo: photo, preview: preview)
+            AdjustmentsPanel(photo: photo, file: resolvedFile, preview: preview)
                 .frame(width: 280)
         }
+        .task(id: photo.id) {
+            guard photo.fileURL == nil else { return }
+            file = nil
+            file = try? await library.originalFile(for: photo.id)
+        }
     }
+
+    private var resolvedFile: URL? { photo.fileURL ?? file }
 }
 
 /// The rendered frame, sized to the view. Every recipe or size change asks
@@ -537,6 +550,8 @@ private struct PreviewCanvas: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
     let photo: Photo
+    /// The photo's original file; nil until the source has it.
+    let file: URL?
     let preview: PreviewModel
     @State private var pixelSize = 0
 
@@ -546,12 +561,12 @@ private struct PreviewCanvas: View {
         GeometryReader { geo in
             ZStack {
                 Color.black
-                if let cg = preview.image, preview.imageURL == photo.url {
+                if let cg = preview.image, let file, preview.imageURL == file {
                     Image(decorative: cg, scale: displayScale)
                         .resizable()
                         .scaledToFit()
                         .padding(8)
-                } else if preview.failed == photo.url {
+                } else if let file, preview.failed == file {
                     VStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.title2)
@@ -559,8 +574,7 @@ private struct PreviewCanvas: View {
                             .font(.callout)
                     }
                     .foregroundStyle(.secondary)
-                } else if let thumb = Thumbnails.shared.cached(photo.url) {
-
+                } else if let thumb = Thumbnails.shared.cached(photo.id) {
                     Image(nsImage: thumb).resizable().scaledToFit().padding(8)
                         .overlay(ProgressView().controlSize(.regular))
                 } else {
@@ -579,7 +593,8 @@ private struct PreviewCanvas: View {
             .onChange(of: geo.size) { _, size in pixelSize = longestSide(size) }
         }
         .onTapGesture(count: 2) { library.loupe = false }
-        .onChange(of: photo.url, initial: true) { _, url in
+        .onChange(of: file, initial: true) { _, url in
+            guard let url else { return }
             preview.load(url)
             request()
         }
@@ -593,7 +608,8 @@ private struct PreviewCanvas: View {
     }
 
     private func request() {
-        preview.request(url: photo.url, recipe: recipe, maxPixelSize: pixelSize)
+        guard let file else { return }
+        preview.request(url: file, recipe: recipe, maxPixelSize: pixelSize)
     }
 }
 
@@ -605,6 +621,8 @@ private struct PreviewCanvas: View {
 struct AdjustmentsPanel: View {
     @Environment(Library.self) private var library
     let photo: Photo
+    /// The photo's original file; nil until the source has it.
+    let file: URL?
     let preview: PreviewModel
     @State private var expanded: Set<AdjustmentKind.Section> = [.basic]
     @State private var presetsExpanded = true
@@ -621,11 +639,11 @@ struct AdjustmentsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    HistogramView(histogram: preview.imageURL == photo.url ? preview.histogram : nil,
+                    HistogramView(histogram: file != nil && preview.imageURL == file ? preview.histogram : nil,
                                   showClipping: $library.showClipping)
                         .padding(.bottom, 6)
                     DisclosureGroup(isExpanded: $presetsExpanded) {
-                        PresetStrip(photo: photo)
+                        PresetStrip(photo: photo, file: file)
                             .padding(.top, 8)
                             .padding(.bottom, 4)
                     } label: {
@@ -715,10 +733,9 @@ struct AdjustmentsPanel: View {
     }
 
     private var footer: String {
-        guard preview.imageURL == photo.url, let cg = preview.image else {
-            return preview.failed == photo.url ? "Could not open" : "Loading…"
+        guard let file, preview.imageURL == file, let cg = preview.image else {
+            return file != nil && preview.failed == file ? "Could not open" : "Loading…"
         }
-
         let master = preview.masterSize
         return String(format: "render %.1f ms · %d×%d px of %.0f×%.0f master",
                       preview.renderMilliseconds, cg.width, cg.height, master.width, master.height)

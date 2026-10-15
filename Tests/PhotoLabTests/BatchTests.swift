@@ -365,12 +365,12 @@ final class BatchTests: XCTestCase {
         cropped.set(.cropLeft, to: 25)
         cropped.set(.cropRight, to: 25)
         lib.setRecipe(cropped, for: ids[2])
-        let originalBytes = try Data(contentsOf: ids[1])
+        let originalBytes = try Data(contentsOf: try XCTUnwrap(ids[1].fileURL))
         let entriesBefore = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
 
         let queue = ExportQueue()
         lib.selectAll()
-        queue.start(lib.exportItems(for: lib.batchTargets), into: outDir)
+        queue.start(try await lib.exportItems(for: lib.batchTargets), into: outDir)
         XCTAssertEqual(queue.state, .running)
         XCTAssertEqual(queue.total, 5)
         await queue.wait()
@@ -395,17 +395,17 @@ final class BatchTests: XCTestCase {
         let source = try XCTUnwrap(CGImageSourceCreateWithURL(outDir.appendingPathComponent("p1.jpg") as CFURL, nil))
         XCTAssertEqual(CGImageSourceGetType(source) as String?, UTType.jpeg.identifier)
 
-        XCTAssertEqual(try Data(contentsOf: ids[1]), originalBytes, "the original is untouched")
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ids[1].fileURL)), originalBytes, "the original is untouched")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), entriesBefore,
                        "nothing new in the photo folder")
 
         // A second export into the same folder never overwrites: " 2" names.
         queue.dismiss()
         XCTAssertEqual(queue.state, .idle)
-        queue.start(lib.exportItems(for: [ids[0]]), into: outDir)
+        queue.start(try await lib.exportItems(for: [ids[0]]), into: outDir)
         await queue.wait()
         XCTAssertEqual(queue.exported.map(\.lastPathComponent), ["p0 2.jpg"])
-        XCTAssertEqual(Exporter.destination(for: ids[0], in: outDir).lastPathComponent, "p0 3.jpg")
+        XCTAssertEqual(Exporter.destination(for: try XCTUnwrap(ids[0].fileURL), in: outDir).lastPathComponent, "p0 3.jpg")
     }
 
     /// Cancel stops the queue after the file in flight: with a worker that
@@ -426,7 +426,7 @@ final class BatchTests: XCTestCase {
             return .written(out)
         }
         lib.selectAll()
-        queue.start(lib.exportItems(for: lib.batchTargets), into: outDir)
+        queue.start(try await lib.exportItems(for: lib.batchTargets), into: outDir)
         XCTAssertEqual(queue.total, 10)
 
         // Wait for the first file, then cancel.
@@ -448,7 +448,7 @@ final class BatchTests: XCTestCase {
 
         // The queue is reusable after a cancel.
         queue.dismiss()
-        queue.start(lib.exportItems(for: Array(lib.batchTargets.prefix(2))), into: outDir)
+        queue.start(try await lib.exportItems(for: Array(lib.batchTargets.prefix(2))), into: outDir)
         await queue.wait()
         XCTAssertEqual(queue.state, .finished)
         XCTAssertEqual(queue.done, 2)
@@ -458,7 +458,7 @@ final class BatchTests: XCTestCase {
             if source.lastPathComponent == "p1.png" { throw Exporter.Failure.cannotDecode(source) }
             return .written(source)
         }
-        failing.start(lib.exportItems(for: Array(lib.batchTargets.prefix(3))), into: outDir)
+        failing.start(try await lib.exportItems(for: Array(lib.batchTargets.prefix(3))), into: outDir)
         await failing.wait()
         XCTAssertEqual(failing.state, .finished)
         XCTAssertEqual(failing.done, 2)

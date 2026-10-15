@@ -262,6 +262,17 @@ final class ExportQueue {
         request = Request(items: items)
     }
 
+    /// Opens the options sheet for the library's batch targets, each item's
+    /// file resolved through the open source (`Library.exportItems(for:)`;
+    /// a folder photo's file is its own, at once).
+    func requestExport(from library: Library) {
+        let ids = library.batchTargets
+        Task { @MainActor [weak self] in
+            guard let items = try? await library.exportItems(for: ids) else { return }
+            self?.requestExport(items)
+        }
+    }
+
     /// Keeps `folder` and `options` for the next run (and across launches
     /// when `remember` is on).
     func keep(folder: URL, options: ExportOptions) {

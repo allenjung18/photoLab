@@ -93,6 +93,8 @@ struct PresetStrip: View {
     @Environment(Library.self) private var library
     @Environment(PresetLibrary.self) private var presetLibrary
     let photo: Photo
+    /// The photo's original file; nil until the source has it.
+    let file: URL?
     @State private var thumbnails = PresetThumbnails()
     @State private var newName = ""
     @State private var renaming: Preset?
@@ -137,7 +139,7 @@ struct PresetStrip: View {
                 Text(error).font(.caption2).foregroundStyle(.red).lineLimit(3)
             }
         }
-        .onChange(of: photo.url, initial: true) { request() }
+        .onChange(of: file, initial: true) { request() }
         .onChange(of: presetLibrary.presets) { request() }
         .onChange(of: geometryKey) { request() }
         .alert("Save Preset", isPresented: $presetLibrary.saveRequested) {
@@ -172,9 +174,9 @@ struct PresetStrip: View {
         return VStack(spacing: 3) {
             ZStack {
                 Color(nsColor: .underPageBackgroundColor)
-                if thumbnails.url == photo.url, let t = thumbnails.thumbnails[preset.name] {
+                if let file, thumbnails.url == file, let t = thumbnails.thumbnails[preset.name] {
                     Image(decorative: t.image, scale: 2).resizable().scaledToFit()
-                } else if thumbnails.failed == photo.url {
+                } else if let file, thumbnails.failed == file {
                     Text("Could not open")
                         .font(.caption2)
                         .multilineTextAlignment(.center)
@@ -209,13 +211,14 @@ struct PresetStrip: View {
     }
 
     private func helpText(_ preset: Preset) -> String {
-        if let t = thumbnails.thumbnails[preset.name], thumbnails.url == photo.url {
+        if let t = thumbnails.thumbnails[preset.name], let file, thumbnails.url == file {
             return String(format: "%@ · thumbnail %.1f ms", preset.name, t.milliseconds)
         }
         return preset.name
     }
 
     private func request() {
-        thumbnails.request(url: photo.url, presets: presetLibrary.presets, base: current)
+        guard let file else { return }
+        thumbnails.request(url: file, presets: presetLibrary.presets, base: current)
     }
 }

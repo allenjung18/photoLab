@@ -386,7 +386,7 @@ final class ExportTests: XCTestCase {
         lib.open(folder)
         let ids = lib.photos.map(\.id)
         // p1 already exported once.
-        try Exporter.export(ids[1], recipe: .neutral, into: outDir)
+        try Exporter.export(try XCTUnwrap(ids[1].fileURL), recipe: .neutral, into: outDir)
 
         var o = ExportOptions()
         o.collision = .skip
@@ -395,7 +395,7 @@ final class ExportTests: XCTestCase {
         let queue = ExportQueue()
         lib.selectAll()
         // HEIC names do not collide with the JPEG: all three written.
-        queue.start(lib.exportItems(for: lib.batchTargets), into: outDir, options: o)
+        queue.start(try await lib.exportItems(for: lib.batchTargets), into: outDir, options: o)
         await queue.wait()
         XCTAssertEqual(queue.state, .finished)
         XCTAssertEqual(queue.done, 3)
@@ -404,7 +404,7 @@ final class ExportTests: XCTestCase {
 
         // The same run again with Skip: nothing written, three skipped.
         queue.dismiss()
-        queue.start(lib.exportItems(for: lib.batchTargets), into: outDir, options: o)
+        queue.start(try await lib.exportItems(for: lib.batchTargets), into: outDir, options: o)
         await queue.wait()
         XCTAssertEqual(queue.state, .finished)
         XCTAssertEqual(queue.done, 0)
@@ -416,7 +416,7 @@ final class ExportTests: XCTestCase {
         // JPEG with Skip: p1.jpg exists, the other two are written.
         o.format = .jpeg
         queue.dismiss()
-        queue.start(lib.exportItems(for: lib.batchTargets), into: outDir, options: o)
+        queue.start(try await lib.exportItems(for: lib.batchTargets), into: outDir, options: o)
         await queue.wait()
         XCTAssertEqual(queue.done, 2)
         XCTAssertEqual(queue.skipped.map(\.lastPathComponent), ["p1.jpg"])
@@ -425,7 +425,7 @@ final class ExportTests: XCTestCase {
         // The sheet's request and the kept options (no UserDefaults: remember is off).
         queue.dismiss()
         XCTAssertNil(queue.request)
-        queue.requestExport(lib.exportItems(for: [ids[0]]))
+        queue.requestExport(try await lib.exportItems(for: [ids[0]]))
         XCTAssertEqual(queue.request?.items.count, 1)
         var kept = ExportOptions()
         kept.resize = .percent(50)
