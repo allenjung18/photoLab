@@ -129,3 +129,42 @@ enum ExportMetadata {
         return p
     }
 }
+
+/// Where an export run goes: files in a folder, or new photos in the Photos
+/// library (optionally added to an album, created by title on first use).
+/// Both render through `Exporter.export`; the Photos target writes each
+/// file into a staging directory, hands it to a `PhotosWriter` and removes
+/// it. Every Photos export is a NEW asset, so the collision policy does not
+/// apply there; a photo opened from Photos comes back beside its original,
+/// which is not changed.
+enum ExportTarget: Hashable, Sendable {
+    case folder(URL)
+    /// nil = the library only, in no album.
+    case photosLibrary(album: String?)
+
+    /// The album the export sheet offers first.
+    static let defaultAlbum = "PhotoLab"
+
+    var folder: URL? {
+        if case .folder(let url) = self { return url }
+        return nil
+    }
+
+    var isPhotosLibrary: Bool { folder == nil }
+
+    /// What the export bar names as the destination: the folder's name,
+    /// or `Photos` / `Photos › <album>`.
+    var displayName: String {
+        switch self {
+        case .folder(let url): return url.lastPathComponent
+        case .photosLibrary(nil): return "Photos"
+        case .photosLibrary(let album?): return "Photos › \(album)"
+        }
+    }
+
+    /// The album field's text as an album: trimmed, and nil when empty.
+    static func album(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}

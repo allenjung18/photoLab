@@ -150,9 +150,17 @@ selection back to the anchor:
   folder, and neither is any other photo of the open library: an Overwrite
   that would land on one fails for that photo and the bar says why), whether the camera info travels (EXIF, GPS and IPTC are copied
   from the original with the orientation reset, since the render is
-  already upright), and the output folder. A bar at the bottom of the
-  window shows the count done, the file in flight and Cancel, which stops
-  after that file; what is written stays, a skipped file is counted.
+  already upright), and where it goes: a **Folder**, or the **Photos
+  library**. For Photos each photo is rendered with the same options and
+  added as a new photo, into an album (default **PhotoLab**, created the
+  first time; clear the field for the library only); there is no collision
+  choice, since every export is a new photo, and a photo opened from Photos
+  comes back as a new photo beside its original, which is not changed.
+  Photos needs the app bundle (`scripts/bundle.sh`) and your permission:
+  the sheet's **Allow Access…** is the only place it is asked. A bar at the
+  bottom of the window shows the count done, the file in flight and Cancel,
+  which stops after that file; what is written stays, a skipped file is
+  counted.
 
 Copy Settings (`⇧⌘C`) remembers one photo's settings; Paste Settings…
 (`⇧⌘V`) opens the same sheet onto whatever is selected, so a look can be
@@ -176,7 +184,8 @@ Everything the app writes, and nothing else:
 - **Photos sidecars** — `~/Library/Application Support/PhotoLab/photos-sidecars/<asset-id>.json`,
   one per edited, flagged or rated photo of a Photos album (the asset's
   identifier with its slashes as underscores), with the same rules as a
-  folder's sidecars. The Photos library itself is never written to.
+  folder's sidecars. The Photos library is written to only by an export
+  you send there (new photos, never an existing one).
 - **Originals cache** — `~/Library/Caches/PhotoLab/originals/<asset-id>.<ext>`,
   a copy of each Photos original the loupe or an export has opened (an
   iCloud-only original is downloaded into it once). A cache: delete the
@@ -184,11 +193,13 @@ Everything the app writes, and nothing else:
   is lost.
 - **Preferences** — in the app's UserDefaults: the last opened source (a
   folder's path, or a Photos album's identifier), the
-  last export folder and the last export options (format, quality, size,
-  suffix, collision policy, metadata), so the next export sheet opens with
-  them.
+  last export folder, target (Folder or Photos) and Photos album, and the
+  last export options (format, quality, size, suffix, collision policy,
+  metadata), so the next export sheet opens with them.
 - **Exports** — the files you ask for, in the folder you choose, written
-  through a hidden partial file and moved into place when complete.
+  through a hidden partial file and moved into place when complete. An
+  export to Photos renders each file into `$TMPDIR/PhotoLab-export/<run>/`,
+  hands it to Photos and removes it; the run's folder goes when it ends.
 - **The release bundle** — `build/PhotoLab.app`, made by `scripts/bundle.sh`
   (signed with `PHOTOLAB_SIGN_IDENTITY`, default ad hoc; `swift build` puts
   debug builds under `.build/`).

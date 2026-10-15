@@ -43,7 +43,8 @@ struct ContentView: View {
             SyncSheet(request: request)
         }
         .sheet(item: $exports.request) { request in
-            ExportSheet(request: request, options: exports.options, folder: exports.folder)
+            ExportSheet(request: request, options: exports.options, folder: exports.folder,
+                        album: exports.album, toPhotos: exports.prefersPhotos)
         }
         .sheet(isPresented: $library.photosSheet) {
             PhotosAlbumSheet()
@@ -399,7 +400,8 @@ struct SyncSheet: View {
 }
 
 /// The export progress at the bottom of the window: count done of total,
-/// the file in flight, Cancel; then the result with Show in Finder.
+/// the file in flight, Cancel; then the result with Show in Finder (a
+/// folder run) or Open Photos (a Photos run).
 private struct ExportBar: View {
     @Environment(ExportQueue.self) private var exports
 
@@ -430,10 +432,19 @@ private struct ExportBar: View {
                     Text(first.message).font(.caption).foregroundStyle(.red).lineLimit(1)
                 }
                 Spacer()
-                if let folder = exports.folder {
+                switch exports.target {
+                case .folder(let folder)?:
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting(exports.exported.isEmpty ? [folder] : exports.exported)
                     }
+                case .photosLibrary?:
+                    Button("Open Photos") {
+                        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Photos") {
+                            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+                        }
+                    }
+                case nil:
+                    EmptyView()
                 }
                 Button("Done") { exports.dismiss() }
             case .idle:
@@ -447,7 +458,7 @@ private struct ExportBar: View {
     }
 
     private var result: String {
-        let folder = exports.folder?.lastPathComponent ?? ""
+        let folder = exports.target?.displayName ?? ""
         var s = exports.state == .cancelled
             ? "Cancelled: \(exports.done) of \(exports.total) exported to \(folder)"
             : "Exported \(exports.done) of \(exports.total) to \(folder)"

@@ -76,6 +76,8 @@ enum PhotosError: LocalizedError, Equatable {
     case assetMissing(String)
     /// The asset has no original resource to write out.
     case noOriginal(String)
+    /// Photos did not create an asset from the exported file.
+    case cannotImport(String)
 
     var errorDescription: String? {
         switch self {
@@ -83,6 +85,7 @@ enum PhotosError: LocalizedError, Equatable {
         case .notAuthorized: return "Photos access is not allowed. Allow it in System Settings › Privacy & Security › Photos."
         case .assetMissing(let id): return "The photo \(id) is no longer in the library."
         case .noOriginal(let id): return "The photo \(id) has no original to open."
+        case .cannotImport(let name): return "Photos could not import \(name)."
         }
     }
 }
@@ -206,8 +209,63 @@ struct PhotoKitLive: PhotoKitClient {
     }
 
     /// A result slot for a synchronous callback.
-    private final class Box<T>: @unchecked Sendable {
+    fileprivate final class Box<T>: @unchecked Sendable {
         var value: T?
+    }
+}
+
+// MARK: - Export back into Photos
+
+/// What an export to the Photos library asks of PhotoKit: the status and
+/// the user's Allow click (the export sheet's, never a test's), and the
+/// import of one rendered file. `PhotoKitLive` is the real one; tests use a
+/// fake (`ExportTests`).
+protocol PhotosWriter: Sendable {
+    /// The current status, never a prompt.
+    func authorizationStatus() -> PhotosAuthorization
+    /// Shows the system dialog: only from the export sheet's button.
+    func requestAuthorization() async -> PhotosAuthorization
+    /// Imports the image file at `url` as a NEW asset and, when `album` is
+    /// given, adds it to the regular album of that title, created when there
+    /// is none. Returns the new asset's `localIdentifier`. The file is read
+    /// during the call; the caller removes it afterwards.
+    func importImage(at url: URL, intoAlbum album: String?) async throws -> String
+}
+
+extension PhotoKitLive: PhotosWriter {
+    /// One `performChanges`: `creationRequestForAssetFromImage(atFileURL:)`,
+    /// then the placeholder added to the album (the existing one by title,
+    /// or a `creationRequestForAssetCollection(withTitle:)`).
+    func importImage(at url: URL, intoAlbum album: String?) async throws -> String {
+        let status = authorizationStatus()
+        guard status.canRead else { throw PhotosError.notAuthorized(status) }
+        let existingID = album.flatMap(Self.regularAlbum(titled:))?.localIdentifier
+        let created = Box<String>()
+        try await PHPhotoLibrary.shared().performChanges {
+            guard let request = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: url),
+                  let placeholder = request.placeholderForCreatedAsset else { return }
+            created.value = placeholder.localIdentifier
+            guard let album else { return }
+            let existing = existingID.flatMap {
+                PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [$0], options: nil).firstObject
+            }
+            let albumRequest = existing.flatMap { PHAssetCollectionChangeRequest(for: $0) }
+                ?? PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: album)
+            albumRequest.addAssets([placeholder] as NSArray)
+        }
+        guard let id = created.value else { throw PhotosError.cannotImport(url.lastPathComponent) }
+        return id
+    }
+
+    /// The first regular album whose title is `title` (titles are not
+    /// unique in Photos; the first wins, as in a Lightroom publish service).
+    static func regularAlbum(titled title: String) -> PHAssetCollection? {
+        let regular = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumRegular, options: nil)
+        var found: PHAssetCollection?
+        regular.enumerateObjects { collection, _, stop in
+            if collection.localizedTitle == title { found = collection; stop.pointee = true }
+        }
+        return found
     }
 }
 

@@ -400,8 +400,9 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
 - **The request.** `ExportQueue.requestExport(_:)` (`Batch.swift`) takes
   the `ExportQueue.Item` list from `Library.exportItems(for:)` (each a
   source URL and its recipe) and sets `ExportQueue.request`; `ContentView`
-  presents `ExportSheet(request:options:folder:)` for it with the last
-  options and folder. Ignored while a run is going.
+  presents `ExportSheet(request:options:folder:album:toPhotos:)` for it with
+  the last options, folder, album and target kind. Ignored while a run is
+  going.
 - **The sheet.** `ExportSheet` (`ExportSheet.swift`) edits one
   `ExportOptions`: **Format** (`ExportOptions.Format`: JPEG, HEIC, TIFF)
   with a quality slider for the lossy two; **Size** as edited, an exact
@@ -409,11 +410,20 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   nil for as edited; never upscaled); **File**: a name suffix with a live
   preview from `ExportOptions.fileName(for:)`, what to do when the file
   exists (`ExportOptions.Collision`: add a number, skip, overwrite) and
-  **Keep camera info** (`keepMetadata`); **Folder**: **Choose…** is
+  **Keep camera info** (`keepMetadata`); **Export to**: **Folder** or
+  **Photos library** (`ExportTarget`; Photos disabled under a bare binary,
+  which has no bundle for TCC). For a folder, **Choose…** is
   `ExportPanel.chooseFolder(count:format:from:)`, an `NSOpenPanel` that can
-  create directories. **Export n Photos** (also **Return**) is enabled once a
-  folder is chosen; it calls `ExportQueue.keep(folder:options:)` and then
-  `ExportQueue.start(_:into:options:)`.
+  create directories. For Photos, an **Album** field (default "PhotoLab",
+  created if missing; empty = the library only), the line that every export
+  is a new photo and a Photos-sourced one comes back beside its original,
+  the collision picker hidden, and the access row from
+  `ExportQueue.photos.authorizationStatus()`: **Allow Access…**
+  (`requestAuthorization()`, the only prompt) when not yet asked, **Open
+  System Settings** and **Check Again** when denied. **Export n Photos**
+  (also **Return**) is enabled once a folder is chosen, or for Photos once
+  reading is allowed; it calls `ExportQueue.keep(target:options:)` and then
+  `ExportQueue.start(_:to:options:)`.
 - **The run.** `ExportQueue.start` hands each item to `Exporter.export`
   (`Batch.swift`) one at a time off the main thread: the full-resolution
   decode, the one render chain with the resize last, the format's writer
@@ -423,7 +433,9 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   the open library, `Exporter.Failure.isALibraryOriginal`, matched by
   `Exporter.isSameFile` against the item's `protected` set) are in
   `Exporter.destination(for:in:options:)` and `Exporter.export`. A refused
-  photo counts as failed and the bar shows its message.
+  photo counts as failed and the bar shows its message. A Photos run
+  writes each file into its staging directory the same way, hands it to
+  `PhotosWriter.importImage(at:intoAlbum:)` and removes it.
 - **The bar.** `ExportBar` (`ContentView.swift`) appears at the bottom of
   the window while `ExportQueue.state` is not idle: a progress bar,
   "Exporting i of n", the file in flight (`ExportQueue.current`) and
@@ -431,12 +443,15 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   written stays). When the run finishes or is cancelled it shows the count
   written (`done`), skipped (`skipped`) and failed (`failures`, the first
   message under it), **Show in Finder** on the written files
-  (`ExportQueue.exported`) or the folder, and **Done** (`ExportQueue.dismiss()`).
+  (`ExportQueue.exported`) or the folder for a folder run, **Open Photos**
+  for a Photos run (`ExportQueue.target`), and **Done** (`ExportQueue.dismiss()`).
 
 Writes: the output files in the chosen folder, through `Exporter.export`;
 and, because `PhotoLabApp` makes its queue with `ExportQueue(remember: true)`,
-the last folder and options in `UserDefaults` under `exportFolder` and
-`exportOptions`, read back at launch so the next sheet opens the same way.
+the last folder, options, target kind and album in `UserDefaults` under
+`exportFolder`, `exportOptions`, `exportTarget` and `exportPhotosAlbum`,
+read back at launch so the next sheet opens the same way. A Photos run
+writes new assets into the library (and the album) and nothing else.
 A queue made without `remember:` (every test) keeps them in memory only.
 
 ## Menus and shortcuts

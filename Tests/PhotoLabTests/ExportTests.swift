@@ -2,13 +2,15 @@ import XCTest
 import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
+import Photos
 @testable import PhotoLab
 
 /// Export options on the one `Exporter.export` path: JPEG quality moves the
 /// file size, resize gives an exact long side and never upscales, the
 /// source's camera EXIF travels with the orientation reset to upright, HEIC
 /// and TIFF round-trip, the collision policy holds and the original is
-/// never written. Every folder is a temp directory.
+/// never written. Every folder is a temp directory. The Photos target runs
+/// against `FakePhotosWriter`; one real import is opt-in.
 @MainActor
 final class ExportTests: XCTestCase {
     private var base: URL!
@@ -671,5 +673,180 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: jpg), jpgBytes)
         XCTAssertTrue(Exporter.isSameFile(link, jpg))
         XCTAssertFalse(Exporter.isSameFile(png, jpg))
+    }
+}
+
+// MARK: - Export back into Photos
+
+/// A `PhotosWriter` that imports nothing: it reads each file it is handed
+/// (so a test sees what `Exporter.export` wrote), notes how many files sat
+/// beside it in the staging directory, and returns `fake-<n>`. `failOn`
+/// holds the 1-based import calls that throw.
+final class FakePhotosWriter: PhotosWriter, @unchecked Sendable {
+    struct Import: Equatable {
+        let id: String
+        let album: String?
+        let name: String
+        let pixelWidth: Int
+        /// Files in the staging directory at the import, the one handed over included.
+        let staged: Int
+    }
+
+    struct Refused: LocalizedError {
+        var errorDescription: String? { "the fake writer refused it" }
+    }
+
+    private let lock = NSLock()
+    private var log: [Import] = []
+    private var calls = 0
+    let status: PhotosAuthorization
+    let failOn: Set<Int>
+
+    init(status: PhotosAuthorization = .authorized, failOn: Set<Int> = []) {
+        self.status = status
+        self.failOn = failOn
+    }
+
+    var imports: [Import] { lock.lock(); defer { lock.unlock() }; return log }
+
+    func authorizationStatus() -> PhotosAuthorization { status }
+
+    func requestAuthorization() async -> PhotosAuthorization {
+        XCTFail("a test never prompts")
+        return status
+    }
+
+    func importImage(at url: URL, intoAlbum album: String?) async throws -> String {
+        let width = CGImageSourceCreateWithURL(url as CFURL, nil)
+            .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }?[kCGImagePropertyPixelWidth] as? Int ?? -1
+        let staged = (try? FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path).count) ?? -1
+        return try record(album: album, name: url.lastPathComponent, pixelWidth: width, staged: staged)
+    }
+
+    private func record(album: String?, name: String, pixelWidth: Int, staged: Int) throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        calls += 1
+        if failOn.contains(calls) { throw Refused() }
+        let id = "fake-\(calls)"
+        log.append(Import(id: id, album: album, name: name, pixelWidth: pixelWidth, staged: staged))
+        return id
+    }
+}
+
+extension ExportTests {
+    private func photosRun(_ writer: FakePhotosWriter, album: String?, options: ExportOptions = .default,
+                           count: Int = 3) async throws -> (ExportQueue, URL) {
+        for i in 0..<count { try writeSource("p\(i).png", gray(0.3, width: 16, height: 16)) }
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        lib.selectAll()
+        let staging = base.appendingPathComponent("staging", isDirectory: true)
+        let queue = ExportQueue(photos: writer, stagingDirectory: staging)
+        queue.start(try await lib.exportItems(for: lib.batchTargets), to: .photosLibrary(album: album), options: options)
+        await queue.wait()
+        return (queue, staging)
+    }
+
+    private func stagedFiles(_ staging: URL) -> [String] {
+        let fm = FileManager.default
+        guard let e = fm.enumerator(atPath: staging.path) else { return [] }
+        return e.compactMap { $0 as? String }
+    }
+
+    func testAPhotosRunImportsEveryItemIntoTheNamedAlbumAndLeavesNothingStaged() async throws {
+        let writer = FakePhotosWriter()
+        var o = ExportOptions()
+        o.resize = .longSide(8)
+        o.suffix = "-edit"
+        o.collision = .skip // ignored for Photos: every import is new
+        let (queue, staging) = try await photosRun(writer, album: "Holiday", options: o)
+
+        XCTAssertEqual(queue.state, .finished)
+        XCTAssertEqual(queue.done, 3)
+        XCTAssertEqual(queue.imported, ["fake-1", "fake-2", "fake-3"])
+        XCTAssertEqual(writer.imports.map(\.id), queue.imported)
+        XCTAssertEqual(writer.imports.map(\.album), ["Holiday", "Holiday", "Holiday"], "all in the named album")
+        XCTAssertEqual(writer.imports.map(\.name), ["p0-edit.jpg", "p1-edit.jpg", "p2-edit.jpg"], "rendered by Exporter.export per the options")
+        XCTAssertEqual(writer.imports.map(\.pixelWidth), [8, 8, 8], "the resize reached the file")
+        XCTAssertEqual(writer.imports.map(\.staged), [1, 1, 1], "each staged file goes before the next is written")
+        XCTAssertTrue(queue.exported.isEmpty)
+        XCTAssertTrue(queue.skipped.isEmpty)
+        XCTAssertTrue(queue.failures.isEmpty)
+        XCTAssertEqual(stagedFiles(staging), [], "the staging directory is left empty")
+        XCTAssertEqual(queue.target, .photosLibrary(album: "Holiday"))
+        XCTAssertNil(queue.folder, "a Photos run sets no folder")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outDir.path), "nothing written outside staging")
+    }
+
+    func testAWriterFailureCountsAsAFailureAndTheRunContinues() async throws {
+        let writer = FakePhotosWriter(failOn: [2])
+        let (queue, staging) = try await photosRun(writer, album: ExportTarget.defaultAlbum)
+
+        XCTAssertEqual(queue.state, .finished)
+        XCTAssertEqual(queue.done, 2)
+        XCTAssertEqual(queue.imported, ["fake-1", "fake-3"])
+        XCTAssertEqual(queue.failures.map(\.source.lastPathComponent), ["p1.png"])
+        XCTAssertEqual(queue.failures.first?.message, "the fake writer refused it")
+        XCTAssertEqual(queue.completed, 3)
+        XCTAssertEqual(writer.imports.map(\.album), ["PhotoLab", "PhotoLab"])
+        XCTAssertEqual(stagedFiles(staging), [], "the refused file is removed too")
+    }
+
+    func testNoAlbumMeansTheLibraryOnlyAndKeepRemembersTheTarget() async throws {
+        let writer = FakePhotosWriter()
+        let (queue, staging) = try await photosRun(writer, album: nil, count: 1)
+        XCTAssertEqual(writer.imports.map(\.album), [nil])
+        XCTAssertEqual(queue.imported, ["fake-1"])
+        XCTAssertEqual(stagedFiles(staging), [])
+
+        // The album field: trimmed, empty = none; the bar's names.
+        XCTAssertNil(ExportTarget.album(from: "  \n"))
+        XCTAssertEqual(ExportTarget.album(from: " Trips "), "Trips")
+        XCTAssertEqual(ExportTarget.photosLibrary(album: nil).displayName, "Photos")
+        XCTAssertEqual(ExportTarget.photosLibrary(album: "Trips").displayName, "Photos › Trips")
+        XCTAssertEqual(ExportTarget.folder(outDir).displayName, "export")
+
+        // keep: a Photos target keeps the album and the kind, never the folder.
+        XCTAssertEqual(queue.album, ExportTarget.defaultAlbum)
+        XCTAssertFalse(queue.prefersPhotos)
+        queue.dismiss()
+        queue.keep(folder: outDir, options: .default)
+        queue.keep(target: .photosLibrary(album: "Trips"), options: .default)
+        XCTAssertEqual(queue.album, "Trips")
+        XCTAssertTrue(queue.prefersPhotos)
+        XCTAssertEqual(queue.folder, outDir, "the folder stays for the next folder run")
+        queue.keep(folder: outDir, options: .default)
+        XCTAssertFalse(queue.prefersPhotos)
+        XCTAssertEqual(queue.album, "Trips")
+        XCTAssertNil(UserDefaults.standard.object(forKey: "exportPhotosAlbum"), "a test queue never writes defaults")
+        XCTAssertNil(UserDefaults.standard.object(forKey: "exportTarget"))
+    }
+
+    // MARK: The real library (opt-in: authorized AND PHOTOLAB_PHOTOS_WRITE=1)
+
+    /// Adds a real photo to the library, so it runs only when asked for and
+    /// never prompts: an `xctest` host is not authorized and skips.
+    func testRealImportAddsA16PixelJPEGToTheTestAlbum() async throws {
+        guard ProcessInfo.processInfo.environment["PHOTOLAB_PHOTOS_WRITE"] == "1" else {
+            throw XCTSkip("set PHOTOLAB_PHOTOS_WRITE=1 (from an authorized bundle) to import a real photo")
+        }
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized else {
+            throw XCTSkip("Photos access is \(status.rawValue), not authorized, for this test host")
+        }
+        let file = base.appendingPathComponent("photolab-test.jpg")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(file as CFURL, UTType.jpeg.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, gray(0.5, width: 16, height: 16), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+
+        let id = try await PhotoKitLive().importImage(at: file, intoAlbum: "PhotoLab Tests")
+        let asset = try XCTUnwrap(PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject)
+        XCTAssertEqual(asset.pixelWidth, 16)
+        let album = try XCTUnwrap(PhotoKitLive.regularAlbum(titled: "PhotoLab Tests"))
+        let inAlbum = PHAsset.fetchAssets(in: album, options: nil)
+        var ids: [String] = []
+        inAlbum.enumerateObjects { a, _, _ in ids.append(a.localIdentifier) }
+        XCTAssertTrue(ids.contains(id), "the new asset is in the album")
     }
 }

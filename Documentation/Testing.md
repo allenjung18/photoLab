@@ -122,7 +122,18 @@ not only the pass.
   rendered at loupe size and `Renderer.fullResolution` exported as a TIFF,
   on a Display P3 HEIC and an sRGB JPEG under one recipe that moves every
   channel, have the same mean colour to within 1/255 (the "one render path"
-  claim, pinned).
+  claim, pinned). The Photos target runs against `FakePhotosWriter`, which
+  reads each file it is handed and counts the files staged beside it:
+  three items give three imported ids, all in the named album, rendered per
+  the options (name suffix, long side), one staged file at a time and an
+  empty staging directory after; a writer failure is a failure and the run
+  goes on, the refused file removed too; no album means the library only,
+  and `keep(target:options:)` remembers the album and the kind but never
+  touches the folder. `testRealImportAddsA16PixelJPEGToTheTestAlbum` imports
+  a real 16 px JPEG into an album "PhotoLab Tests" and SKIPS unless
+  `PHOTOLAB_PHOTOS_WRITE=1` AND the status is already `.authorized` (it
+  adds a photo to the library, so it never runs by accident; under
+  `swift test` the host is not authorized and it skips).
 - `ThumbnailTests.swift` — the embedded-preview size rule (a small embedded
   thumbnail is refused and the image decoded; a request at or under its
   size is served from it), the timed folder of synthetic JPEGs, the

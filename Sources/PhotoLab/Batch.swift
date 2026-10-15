@@ -207,11 +207,14 @@ enum Exporter {
 
 
 /// The export queue: a list of (photo, recipe) pairs written one after the
-/// other into one folder with one `ExportOptions`, with progress the window
-/// shows and a Cancel that stops after the file in flight. One queue per
-/// app; a run cannot start while another is going. It also keeps the
-/// options and the output folder between runs (UserDefaults when
-/// `remember` is on; tests leave it off).
+/// other to one `ExportTarget` with one `ExportOptions`, with progress the
+/// window shows and a Cancel that stops after the file in flight. A folder
+/// target gets the files; a Photos target gets each file rendered into a
+/// per-run staging directory, imported through the `PhotosWriter` as a new
+/// asset and removed. One queue per app; a run cannot start while another
+/// is going. It also keeps the options, the output folder and the Photos
+/// album between runs (UserDefaults when `remember` is on; tests leave it
+/// off).
 @MainActor
 @Observable
 final class ExportQueue {
@@ -249,6 +252,8 @@ final class ExportQueue {
     private(set) var done = 0
     private(set) var failures: [Failure] = []
     private(set) var exported: [URL] = []
+    /// New Photos assets (`localIdentifier`s) of a Photos run.
+    private(set) var imported: [String] = []
     /// Files left alone because they existed (collision policy Skip).
     private(set) var skipped: [URL] = []
     /// The photo being written right now.
@@ -258,25 +263,51 @@ final class ExportQueue {
     private(set) var folder: URL?
     /// The options the sheet offers first (the last run's).
     private(set) var options: ExportOptions = .default
+    /// The album the sheet offers first for a Photos export (nil = none).
+    private(set) var album: String? = ExportTarget.defaultAlbum
+    /// Whether the sheet opens on the Photos target (the last run's kind).
+    private(set) var prefersPhotos = false
+    /// The running or last run's target, which the export bar names.
+    private(set) var target: ExportTarget?
     /// Set by `requestExport`; the window shows the options sheet for it.
     var request: Request?
 
     private var task: Task<Void, Never>?
     private let worker: Worker
     private let remember: Bool
+    /// Imports a Photos run's files; the live PhotoKit in the app.
+    let photos: any PhotosWriter
+    /// Where a Photos run renders its files before the import; each run
+    /// uses its own subdirectory and removes it at the end.
+    let stagingDirectory: URL
 
     private static let folderKey = "exportFolder"
     private static let optionsKey = "exportOptions"
+    private static let albumKey = "exportPhotosAlbum"
+    private static let targetKey = "exportTarget"
+
+    /// `<tmp>/PhotoLab-export/`.
+    nonisolated static var defaultStagingDirectory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("PhotoLab-export", isDirectory: true)
+    }
 
     init(remember: Bool = false,
+         photos: any PhotosWriter = PhotoKitLive(),
+         stagingDirectory: URL = ExportQueue.defaultStagingDirectory,
          worker: @escaping Worker = { try Exporter.export($0, recipe: $1, into: $2, options: $3, protected: $4) }) {
         self.worker = worker
         self.remember = remember
+        self.photos = photos
+        self.stagingDirectory = stagingDirectory
         guard remember else { return }
         let defaults = UserDefaults.standard
         if let path = defaults.string(forKey: Self.folderKey), FileManager.default.fileExists(atPath: path) {
             folder = URL(fileURLWithPath: path, isDirectory: true)
         }
+        if defaults.object(forKey: Self.albumKey) != nil {
+            album = ExportTarget.album(from: defaults.string(forKey: Self.albumKey) ?? "")
+        }
+        prefersPhotos = defaults.string(forKey: Self.targetKey) == "photos"
         if let data = defaults.data(forKey: Self.optionsKey),
            let saved = try? JSONDecoder().decode(ExportOptions.self, from: data) {
             options = saved
@@ -307,39 +338,92 @@ final class ExportQueue {
     /// Keeps `folder` and `options` for the next run (and across launches
     /// when `remember` is on).
     func keep(folder: URL, options: ExportOptions) {
-        self.folder = folder
+        keep(target: .folder(folder), options: options)
+    }
+
+    /// Keeps the target (its folder, or its album and that Photos was
+    /// chosen) and `options` for the next run (and across launches when
+    /// `remember` is on). A Photos run leaves the remembered folder as it is.
+    func keep(target: ExportTarget, options: ExportOptions) {
         self.options = options
+        switch target {
+        case .folder(let folder):
+            self.folder = folder
+            prefersPhotos = false
+        case .photosLibrary(let album):
+            self.album = album
+            prefersPhotos = true
+        }
         guard remember else { return }
         let defaults = UserDefaults.standard
-        defaults.set(folder.path, forKey: Self.folderKey)
+        if let folder = target.folder { defaults.set(folder.path, forKey: Self.folderKey) }
+        if case .photosLibrary(let album) = target { defaults.set(album ?? "", forKey: Self.albumKey) }
+        defaults.set(target.isPhotosLibrary ? "photos" : "folder", forKey: Self.targetKey)
         if let data = try? JSONEncoder().encode(options) { defaults.set(data, forKey: Self.optionsKey) }
     }
 
     /// Starts writing `items` into `folder` per `options`. Ignored while a
     /// run is going.
     func start(_ items: [Item], into folder: URL, options: ExportOptions = .default) {
+        start(items, to: .folder(folder), options: options)
+    }
+
+    /// What one item came to.
+    private enum Done: Sendable {
+        case written(URL), skipped(URL), imported(String)
+    }
+
+    /// Starts sending `items` to `target` per `options`. Ignored while a run
+    /// is going. A Photos target numbers names in its staging directory
+    /// whatever the collision policy (every import is a new asset).
+    func start(_ items: [Item], to target: ExportTarget, options: ExportOptions = .default) {
         guard !isRunning, !items.isEmpty else { return }
         state = .running
         total = items.count
         done = 0
         failures = []
         exported = []
+        imported = []
         skipped = []
         current = nil
-        self.folder = folder
+        self.target = target
+        if let folder = target.folder { self.folder = folder }
+        var options = options
+        if target.isPhotosLibrary { options.collision = .number }
+        let runOptions = options
         let worker = self.worker
+        let photos = self.photos
+        let staging = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         task = Task { [weak self] in
+            defer {
+                if target.isPhotosLibrary { try? FileManager.default.removeItem(at: staging) }
+            }
             for item in items {
                 if Task.isCancelled { break }
                 self?.current = item.source
-                let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Exporter.Outcome, Error> in
-                    Result { try worker(item.source, item.recipe, folder, options, item.protected) }
+                let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Done, Error> in
+                    switch target {
+                    case .folder(let folder):
+                        return Result {
+                            switch try worker(item.source, item.recipe, folder, runOptions, item.protected) {
+                            case .written(let url): return .written(url)
+                            case .skipped(let url): return .skipped(url)
+                            }
+                        }
+                    case .photosLibrary(let album):
+                        return await Self.importIntoPhotos(item.source, recipe: item.recipe, staging: staging,
+                                                           protected: item.protected, album: album, options: runOptions,
+                                                           worker: worker, photos: photos)
+                    }
                 }.value
                 guard let self else { return }
                 switch outcome {
                 case .success(.written(let url)):
                     self.done += 1
                     self.exported.append(url)
+                case .success(.imported(let id)):
+                    self.done += 1
+                    self.imported.append(id)
                 case .success(.skipped(let url)):
                     self.skipped.append(url)
                 case .failure(let error):
@@ -349,6 +433,24 @@ final class ExportQueue {
             guard let self else { return }
             self.current = nil
             self.state = Task.isCancelled ? .cancelled : .finished
+        }
+    }
+
+    /// One item of a Photos run: rendered by the worker (`Exporter.export`,
+    /// the one path for format, quality, size and metadata) into `staging`,
+    /// imported, and the staged file removed whether or not the import
+    /// worked.
+    nonisolated private static func importIntoPhotos(_ source: URL, recipe: Recipe, staging: URL,
+                                                     protected: Set<URL>, album: String?,
+                                                     options: ExportOptions, worker: Worker,
+                                                     photos: any PhotosWriter) async -> Result<Done, Error> {
+        do {
+            let outcome = try worker(source, recipe, staging, options, protected)
+            guard case .written(let file) = outcome else { return .success(.skipped(outcome.url)) }
+            defer { try? FileManager.default.removeItem(at: file) }
+            return .success(.imported(try await photos.importImage(at: file, intoAlbum: album)))
+        } catch {
+            return .failure(error)
         }
     }
 

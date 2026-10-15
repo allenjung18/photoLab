@@ -2,8 +2,11 @@ import SwiftUI
 import AppKit
 
 /// Export…: the options for one run (format, quality, size, name, collision,
-/// metadata) and the output folder, offered as last time, then the run
-/// starts through `ExportQueue.start`.
+/// metadata) and the target (a folder, or the Photos library with an
+/// album), offered as last time, then the run starts through
+/// `ExportQueue.start(_:to:options:)`. For Photos the collision policy is
+/// hidden (every export is a new asset) and the access status is shown,
+/// with the Allow button as the only prompt.
 struct ExportSheet: View {
     @Environment(ExportQueue.self) private var exports
     @Environment(\.dismiss) private var dismiss
@@ -14,13 +17,20 @@ struct ExportSheet: View {
     @State private var sizeMode: SizeMode
     @State private var longSide: Int
     @State private var percent: Int
+    @State private var destination: Destination
+    @State private var albumText: String
+    @State private var photosStatus: PhotosAuthorization?
 
     private enum SizeMode: Hashable { case original, longSide, percent }
+    private enum Destination: Hashable { case folder, photos }
 
-    init(request: ExportQueue.Request, options: ExportOptions, folder: URL?) {
+    init(request: ExportQueue.Request, options: ExportOptions, folder: URL?,
+         album: String? = ExportTarget.defaultAlbum, toPhotos: Bool = false) {
         self.request = request
         _options = State(initialValue: options)
         _folder = State(initialValue: folder)
+        _destination = State(initialValue: toPhotos && PhotosAccess.hasBundle ? .photos : .folder)
+        _albumText = State(initialValue: album ?? "")
         switch options.resize {
         case .longSide(let n):
             _sizeMode = State(initialValue: .longSide); _longSide = State(initialValue: n); _percent = State(initialValue: 50)
@@ -94,22 +104,50 @@ struct ExportSheet: View {
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle)
                     }
-                    Picker("If the file exists", selection: $options.collision) {
-                        ForEach(ExportOptions.Collision.allCases, id: \.self) { Text($0.label).tag($0) }
+                    if destination == .folder {
+                        Picker("If the file exists", selection: $options.collision) {
+                            ForEach(ExportOptions.Collision.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
                     }
                     Toggle("Keep camera info (EXIF, GPS, IPTC) from the original", isOn: $options.keepMetadata)
                 }
-                Section("Folder") {
-                    HStack {
-                        Text(folder?.path(percentEncoded: false) ?? "No folder chosen")
-                            .foregroundStyle(folder == nil ? .secondary : .primary)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer()
-                        Button("Choose…") {
-                            if let picked = ExportPanel.chooseFolder(count: count, format: options.format, from: folder) {
-                                folder = picked
+                Section("Export to") {
+                    Picker("Export to", selection: $destination) {
+                        Text("Folder").tag(Destination.folder)
+                        Text("Photos library").tag(Destination.photos)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .disabled(!PhotosAccess.hasBundle)
+                    switch destination {
+                    case .folder:
+                        HStack {
+                            Text(folder?.path(percentEncoded: false) ?? "No folder chosen")
+                                .foregroundStyle(folder == nil ? .secondary : .primary)
+                                .lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            Button("Choose…") {
+                                if let picked = ExportPanel.chooseFolder(count: count, format: options.format, from: folder) {
+                                    folder = picked
+                                }
                             }
                         }
+                        if !PhotosAccess.hasBundle {
+                            Text("Exporting to Photos needs the app bundle (scripts/bundle.sh).")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    case .photos:
+                        HStack {
+                            Text("Album")
+                            TextField("none", text: $albumText)
+                                .frame(width: 180)
+                            Text(albumText.isEmpty ? "(the library only)" : "(created if missing)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Text("Each export is a new photo in Photos. A photo opened from Photos comes back as a new photo beside its original, which is not changed.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        photosAccessRow
                     }
                 }
             }
@@ -121,11 +159,46 @@ struct ExportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Export \(count) \(noun)") { run() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(folder == nil)
+                    .disabled(!canExport)
             }
         }
         .padding(20)
         .frame(width: 520)
+        .onAppear { photosStatus = exports.photos.authorizationStatus() }
+    }
+
+    private var canExport: Bool {
+        switch destination {
+        case .folder: return folder != nil
+        case .photos: return photosStatus?.canRead == true
+        }
+    }
+
+    /// Nothing once access is allowed; otherwise what to do about it.
+    @ViewBuilder private var photosAccessRow: some View {
+        switch photosStatus {
+        case .notDetermined?:
+            HStack {
+                Text("PhotoLab needs your permission to add photos.")
+                    .font(.caption)
+                Spacer()
+                Button("Allow Access…") {
+                    Task { photosStatus = await exports.photos.requestAuthorization() }
+                }
+            }
+        case .denied?, .restricted?:
+            HStack {
+                Text("Photos access is not allowed.")
+                    .font(.caption).foregroundStyle(.red)
+                Spacer()
+                if photosStatus == .denied {
+                    Button("Open System Settings") { NSWorkspace.shared.open(PhotosBrowser.settingsURL) }
+                    Button("Check Again") { photosStatus = exports.photos.authorizationStatus() }
+                }
+            }
+        case .authorized?, .limited?, nil:
+            EmptyView()
+        }
     }
 
     private var namePreview: String {
@@ -144,11 +217,18 @@ struct ExportSheet: View {
         return o
     }
 
+    private var target: ExportTarget? {
+        switch destination {
+        case .folder: return folder.map { .folder($0) }
+        case .photos: return .photosLibrary(album: ExportTarget.album(from: albumText))
+        }
+    }
+
     private func run() {
-        guard let folder else { return }
+        guard canExport, let target else { return }
         let o = resolved
-        exports.keep(folder: folder, options: o)
-        exports.start(request.items, into: folder, options: o)
+        exports.keep(target: target, options: o)
+        exports.start(request.items, to: target, options: o)
         dismiss()
     }
 }

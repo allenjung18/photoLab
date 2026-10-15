@@ -404,9 +404,17 @@ One value per export run, carried unchanged through the queue to every item:
   `overwrite` (section 4).
 - `keepMetadata`, whether the source's camera metadata travels.
 
-`ExportQueue` keeps the last run's folder and options between runs, and in
-UserDefaults across launches when it was made with `remember` on (the app
-passes true; tests never do).
+`ExportQueue` keeps the last run's folder, target kind, Photos album and
+options between runs, and in UserDefaults across launches when it was made
+with `remember` on (the app passes true; tests never do).
+
+### `ExportTarget`
+
+`ExportTarget` (`Export.swift`) is where a run goes: `.folder(URL)` or
+`.photosLibrary(album: String?)` (nil = the library only;
+`ExportTarget.defaultAlbum` is "PhotoLab"). `album(from:)` turns the sheet's
+field into an album (trimmed, empty = nil) and `displayName` is what the
+export bar names.
 
 ## 3. The edit path
 
@@ -491,8 +499,10 @@ options sheet for a list of `ExportQueue.Item` (a source URL, its recipe and
 which snapshots the recipes at that moment: an edit made while the sheet is
 up or the queue runs does not change what is written for a photo already in
 it; `protected` is every photo's own file plus the files resolved for the
-export, so a Photos original's cached copy is in it too); the sheet calls `keep(folder:options:)`
-and then `ExportQueue.start(_:into:options:)`. `start` runs the items in
+export, so a Photos original's cached copy is in it too); the sheet calls
+`keep(target:options:)` and then `ExportQueue.start(_:to:options:)`
+(`keep(folder:options:)` and `start(_:into:options:)` are the folder
+forms, kept as wrappers). `start` runs the items in
 order in one task: each item is handed to the `Worker` on a detached task
 off the main thread, one at a time, and `Task.isCancelled` is checked before
 each item, so `cancel()` stops after the file in flight and what is written
@@ -503,6 +513,32 @@ its source and message), `current` (the photo in flight) and `state`
 `idle`). The default `Worker` is `Exporter.export`, handed each item's
 source, recipe and `protected` set; it is injected so a test can count or
 slow jobs without rendering.
+
+A Photos target runs the same `Worker` (so format, quality, resize and
+metadata take the one path) into a per-run directory under
+`stagingDirectory` (`$TMPDIR/PhotoLab-export/` by default), with the
+collision policy forced to `.number`; each written file is handed to the
+queue's `PhotosWriter` and removed whether or not the import worked, and
+the run's directory is removed when the run ends. A new asset's
+`localIdentifier` is appended to `imported` and counted in `done`; a
+writer error is a `Failure` and the run goes on. `target` is the run's,
+which the export bar names (Show in Finder for a folder, Open Photos for
+Photos).
+
+### `PhotosWriter`
+
+`PhotosWriter` (`Photos.swift`) is everything an export to Photos asks of
+PhotoKit: `authorizationStatus()`, `requestAuthorization()` (the export
+sheet's Allow Access… button, the only prompt) and
+`importImage(at:intoAlbum:)`, which returns the new asset's identifier.
+`PhotoKitLive` implements it with one `performChanges`:
+`PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL:)`, and the
+placeholder added through `PHAssetCollectionChangeRequest` to the first
+regular album with that title (`regularAlbum(titled:)`) or to one created
+with `creationRequestForAssetCollection(withTitle:)`. It throws
+`PhotosError.notAuthorized` before touching the library when reading is not
+allowed. Every export is a NEW asset: a Photos-sourced photo comes back
+beside its original, which is never changed.
 
 ### `Exporter.export`
 
