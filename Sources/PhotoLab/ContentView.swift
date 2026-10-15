@@ -249,8 +249,8 @@ private struct PreviewCanvas: View {
     }
 }
 
-/// The adjustment sliders in sections (Basic, Color, Tone Curve, HSL,
-/// Detail, Effects, Crop & Rotate), each with an enable checkbox, plus a
+/// The preset strip, then the adjustment sliders in sections (Basic, Color,
+/// Tone Curve, HSL, Detail, Effects, Crop & Rotate), each with an enable checkbox, plus a
 /// hold-to-compare button, undo / redo / reset, and the live render time
 /// of the last frame. The HSL section shows one channel (hue, saturation or
 /// luminance) of the eight bands at a time, like Lightroom's panel.
@@ -259,6 +259,7 @@ struct AdjustmentsPanel: View {
     let photo: Photo
     let preview: PreviewModel
     @State private var expanded: Set<AdjustmentKind.Section> = [.basic]
+    @State private var presetsExpanded = true
     @State private var hslChannel: AdjustmentKind.HSLChannel = .hue
 
     private var recipe: Binding<Recipe> {
@@ -272,6 +273,13 @@ struct AdjustmentsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
+                    DisclosureGroup(isExpanded: $presetsExpanded) {
+                        PresetStrip(photo: photo)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                    } label: {
+                        Text("Presets").font(.callout.weight(.semibold))
+                    }
                     ForEach(AdjustmentKind.Section.allCases, id: \.self) { section in
                         DisclosureGroup(isExpanded: isExpanded(section)) {
                             VStack(alignment: .leading, spacing: 14) {

@@ -131,6 +131,12 @@ final class Library {
     /// Everything back to neutral: one undo step, and the sidecar is removed.
     func resetRecipe(for id: Photo.ID) { setRecipe(.neutral, for: id) }
 
+    /// Applies a preset to one photo: its look over the photo's own rotation
+    /// and crop, through `setRecipe` (one undo step, the sidecar written).
+    func apply(_ preset: Preset, to id: Photo.ID) {
+        setRecipe(preset.apply(to: recipe(for: id)), for: id)
+    }
+
     /// Marks the start of a continuous edit (a slider drag) on `id`.
     func beginEdit(_ id: Photo.ID) {
         guard openEdit == nil else { return }

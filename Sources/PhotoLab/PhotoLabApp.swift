@@ -4,6 +4,7 @@ import AppKit
 @main
 struct PhotoLabApp: App {
     @State private var library = Library()
+    @State private var presets = PresetLibrary()
 
     init() {
         // Running from `swift run` has no bundle; make the process a real
@@ -15,6 +16,7 @@ struct PhotoLabApp: App {
         WindowGroup("PhotoLab") {
             ContentView()
                 .environment(library)
+                .environment(presets)
                 .frame(minWidth: 900, minHeight: 600)
                 .onAppear {
                     NSApp.activate(ignoringOtherApps: true)
@@ -48,6 +50,19 @@ struct PhotoLabApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(library.selection.map { !library.isEdited($0) } ?? true)
+            }
+            // Presets: save the selected photo's look, or apply one by name.
+            CommandMenu("Presets") {
+                Button("Save Preset…") { presets.saveRequested = true }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    .disabled(!library.loupe || library.selection == nil)
+                Divider()
+                ForEach(presets.presets) { preset in
+                    Button(preset.name) {
+                        if let id = library.selection { library.apply(preset, to: id) }
+                    }
+                    .disabled(library.selection == nil)
+                }
             }
         }
     }

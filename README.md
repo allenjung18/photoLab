@@ -23,7 +23,7 @@ or run locally.
 
 `⌘O` open folder · `G` grid · `E` or `Return` loupe · `Esc` back ·
 `←` `→` previous / next photo · double-click a thumbnail to open it ·
-`\` before / after (or hold the Before button).
+`\` before / after (or hold the Before button) · `⇧⌘P` save preset.
 
 ## Adjustments
 
@@ -63,6 +63,23 @@ To wipe every edit in a folder, delete its `.photolab/` directory. The
 original is never written to, so a folder that is read-only still opens;
 the panel then says the edit could not be saved.
 
+## Presets
+
+A preset is a named look: every slider except rotate and crop. The loupe's
+panel opens with a **Presets** strip, each preset drawn live on the current
+photo through the same renderer as the main view (about 1 ms each). Click
+one to apply it (one undo step, the sidecar is written; the photo keeps its
+own rotation and crop), right-click for Apply, Update with Current Settings,
+Rename and Delete. **Save…** (or `⇧⌘P`, or Presets › Save Preset…) saves
+the current look under a name; a preset of the same name is replaced. The
+Presets menu lists them all for the selected photo.
+
+Presets are files you can copy between Macs:
+`~/Library/Application Support/PhotoLab/presets/<name>.json`. A fresh
+install starts with six looks (Neutral, Warm Film, Cool Matte, High-Contrast
+B&W, Faded, Punchy); delete or change them freely, and the strip's `…` menu
+has Restore Starter Presets and Show Presets Folder in Finder.
+
 ## Design
 
 - **Edits are data.** Each photo gets a sidecar JSON: an ordered list of
@@ -81,5 +98,8 @@ the panel then says the edit could not be saved.
   Kinds apply in a fixed order (geometry, exposure and white balance, tone,
   color, HSL, detail, effects) whatever order the sidecar lists them in.
   (Chunk 4.)
-- **A preset is a named recipe.** Applying it to a selection writes into the
-  sidecars, with per-adjustment checkboxes. (Chunks 5 and 6.)
+- **A preset is a named recipe.** One JSON file per preset in a user-level
+  folder, carrying every kind but geometry; applying one writes the photo's
+  sidecar through the same `setRecipe` path as a slider, so it undoes like
+  one. The strip's thumbnails are the same chain at 160 px. (Chunk 5.)
+  Batch apply to a selection, with per-adjustment checkboxes, is chunk 6.

@@ -11,6 +11,18 @@
   output folder. `Library.setRecipe` is the only path that changes an edit:
   it records the undo step and writes the sidecar. A slider drag wraps its
   changes in `beginEdit` / `endEdit` so the drag is one step and one write.
+- Presets (`Presets.swift`): `Preset` is a named recipe with the geometry
+  kinds (`AdjustmentKind.geometryKinds`) neutral; `Preset.apply(to:)` keeps
+  the target photo's own rotate and crop. `PresetStore(directory:)` is one
+  JSON per preset under `PresetStore.defaultDirectory`
+  (`~/Library/Application Support/PhotoLab/presets/`); the directory is
+  injected, so every test points it at a temp directory and never at the
+  user's folder. The starter set is `Preset.starters` (a data table in
+  Swift, not a resource bundle: `scripts/bundle.sh` copies only the binary),
+  seeded only when the directory does not exist. Applying goes through
+  `Library.apply(_:to:)` -> `setRecipe`, never by writing a sidecar.
+  `PresetThumbnails.render` is the strip; `Tests/PhotoLabTests/PresetTests.swift`
+  has the round-trip, apply-after-reopen and 50 ms thumbnail gate.
 - Photo ids are the URLs `Library.scan` returns, which resolve symlinks
   (`/var/...` comes back as `/private/var/...`); key recipes by those ids,
   never by a URL you built yourself. `Tests/PhotoLabTests/SidecarTests.swift`
@@ -33,8 +45,8 @@
   sRGB gamma space on purpose (wrap with `linearToSRGBToneCurve` /
   `sRGBToneCurveToLinear`, or `colorCubeWithColorSpace`). Spatial radii are
   fractions of the long side so preview and export match.
-- `swift test` runs the recipe/chain tests and two timed renders (the basic
-  sweep, and every slider over an everything-on recipe); set
+- `swift test` runs the recipe/chain tests and three timed renders (the basic
+  sweep, every slider over an everything-on recipe, the preset strip); set
   `PHOTOLAB_BENCH_IMAGE=<file>` to time a real photo through the loupe path.
   The timing tests are load-sensitive: a box with a load average above ~8
   (Spotlight indexing, other test runs) doubles every number; read `uptime`

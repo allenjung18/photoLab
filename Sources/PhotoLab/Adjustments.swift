@@ -124,6 +124,9 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         var kinds: [AdjustmentKind] { AdjustmentKind.allCases.filter { $0.section == self } }
     }
 
+    /// Rotate and the four crop edges: the kinds a preset never carries.
+    static let geometryKinds: [AdjustmentKind] = allCases.filter { $0.section == .geometry }
+
     var section: Section {
         switch self {
         case .rotate, .cropLeft, .cropTop, .cropRight, .cropBottom: return .geometry
@@ -256,6 +259,12 @@ struct Recipe: Codable, Hashable {
     func effective(_ kind: AdjustmentKind) -> Double {
         let a = self[kind]
         return a.isNoop ? kind.neutral : a.value
+    }
+
+    /// Every kind present once, in chain order: the canonical form, so two
+    /// recipes that render the same compare equal whatever a sidecar listed.
+    var normalized: Recipe {
+        Recipe(adjustments: AdjustmentKind.allCases.map { self[$0] })
     }
 
     mutating func set(_ kind: AdjustmentKind, to value: Double) { self[kind].value = value }

@@ -415,17 +415,7 @@ final class ToneSetTests: XCTestCase {
     /// `PHOTOLAB_BENCH_IMAGE` if set, else a synthetic 6000×4000 JPEG.
     func testEverySliderStepRenderTimeOn24MP() throws {
         let env = ProcessInfo.processInfo.environment
-        let url: URL
-        if let path = env["PHOTOLAB_BENCH_IMAGE"] {
-            url = URL(fileURLWithPath: path)
-        } else {
-            url = FileManager.default.temporaryDirectory.appendingPathComponent("photolab-bench-24mp.jpg")
-            if !FileManager.default.fileExists(atPath: url.path) {
-                let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil))
-                CGImageDestinationAddImage(dest, syntheticImage(width: 6000, height: 4000), nil)
-                XCTAssertTrue(CGImageDestinationFinalize(dest))
-            }
-        }
+        let url = try bench24MPImageURL()
         let master = try XCTUnwrap(Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize))
         let target = Int(env["PHOTOLAB_BENCH_TARGET"] ?? "2600") ?? 2600
         let steps = 12

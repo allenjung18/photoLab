@@ -1,5 +1,6 @@
 import XCTest
 import CoreImage
+import ImageIO
 @testable import PhotoLab
 
 /// Mean RGB of a CGImage (RGBA8), sampling every `stride`-th pixel.
@@ -54,4 +55,20 @@ func syntheticImage(width: Int, height: Int) -> CGImage {
         ctx.fill(CGRect(x: 0, y: CGFloat(i) * bandH, width: CGFloat(width), height: bandH * 0.8))
     }
     return ctx.makeImage()!
+}
+
+/// The 24 MP photo the timing tests decode: `PHOTOLAB_BENCH_IMAGE` when set
+/// (a real file), else a synthetic 6000×4000 JPEG written once to the temp
+/// directory.
+func bench24MPImageURL() throws -> URL {
+    if let path = ProcessInfo.processInfo.environment["PHOTOLAB_BENCH_IMAGE"] {
+        return URL(fileURLWithPath: path)
+    }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("photolab-bench-24mp.jpg")
+    if !FileManager.default.fileExists(atPath: url.path) {
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, syntheticImage(width: 6000, height: 4000), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+    }
+    return url
 }
