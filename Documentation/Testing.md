@@ -96,9 +96,23 @@ beside the verdict; read it, not only the pass.
 - `ThumbnailTests.swift` — the embedded-preview size rule (a small embedded
   thumbnail is refused and the image decoded; a request at or under its
   size is served from it), the timed folder of synthetic JPEGs, the
-  real-RAW timing (skipped unless asked for), and the cancellation proof: a
+  real-RAW timing (skipped unless asked for), the cancellation proof (a
   request cancelled before its decode decodes nothing, one cancelled in
-  flight sees the cancellation inside the decode and caches nothing.
+  flight sees the cancellation inside the decode and caches nothing), and
+  the edited thumbnails: an exposure +2 recipe gives a thumbnail brighter
+  than the plain one at the same size from one decode and one render with
+  the plain entry still the base, the same (photo, recipe) comes back as the
+  same object with no second render while another recipe is its own entry,
+  the neutral recipe and a disabled-only one never call the renderer and
+  share the plain entry, a cancelled edited request renders and caches
+  nothing, and the timed render from the cached base.
+- `HistogramTests.swift` — a frame with a 25 % white block reports a quarter
+  of its pixels blown and none crushed, the warning lights above a tenth of
+  a percent and not at it, the bins sum to the pixel count and match a
+  plain-Swift count, one clipped channel counts the pixel, the timed
+  preview-sized frame, and the overlay flags exactly the clipped pixels of a
+  frame holding every 8-bit level and of a rendered frame, agreeing with
+  that frame's histogram.
 - `TestImages.swift` — no tests; the shared helpers. `syntheticImage(width:height:space:)`
   draws the photo every pixel test reads (a luminance ramp with coloured
   bands, so both neutral and saturated pixels are present; sRGB unless a
@@ -145,8 +159,8 @@ not a direction test; fix the test before the code.
 
 ## The timed renders
 
-Four tests time the render path and one the thumbnails; each prints a
-`BENCH` line and fails above a bound.
+The timed tests cover the render path, the thumbnails and the histogram;
+each prints a `BENCH` line and fails above a bound.
 
 - `testSliderStepRenderTimeOn24MP` (`RendererTests`): a sweep of exposure
   steps at loupe size over a 24 MP master; the median step must fit one
@@ -163,6 +177,12 @@ Four tests time the render path and one the thumbnails; each prints a
   a folder of synthetic JPEGs thumbnailed cold and concurrently, and a real
   camera RAW through its embedded preview. The RAW test throws `XCTSkip`
   unless `PHOTOLAB_BENCH_RAW` names a file.
+- `testEditedThumbnailRendersUnder20msFromTheCachedBase` (`ThumbnailTests`):
+  an exposure recipe rendered over the cached 480 px plain thumbnail, the
+  real decoder and renderer; the process's first render warms Core Image
+  and is printed beside the gated number, not gated.
+- `testPreviewSizedFrameUnderTwentyMilliseconds` (`HistogramTests`): the
+  histogram of a preview-sized frame after one warm-up.
 
 The source for the render timings is `PHOTOLAB_BENCH_IMAGE` when set (a real
 photo, through the loupe's own master decode), else a synthetic 6000×4000
@@ -171,8 +191,8 @@ JPEG written once to the temporary directory (`bench24MPImageURL()`).
 
 **Load sensitivity.** These numbers double on a busy box (a sibling build,
 Spotlight, another test run). Every timed test reads the 1-minute load
-average and prints it beside its number. The thumbnail timings scale their
-bound above a load of 8 (`loadFactor`). The three render gates (the two
+average and prints it beside its number. The thumbnail and histogram timings scale
+their bound above a load of 8 (`loadFactor`). The three render gates (the two
 slider steps and the strip) go through `assertFrameBudget`: the bound is as
 written up to a load of 4 (a clean box idles at 2–4; on 2026-10-15 every red
 of the 16 ms gate came at a load of 7.3 or more from sibling builds and every
@@ -205,8 +225,9 @@ place the app writes is injected:
   and options stay in memory) and takes a `ExportQueue.Worker`, so a test
   can count, slow or fail jobs without rendering; exports that do render go
   into a temporary output directory.
-- `Thumbnails`: `init(decode:)` takes the decoder, so a test can count calls,
-  block a decode or report what it saw.
+- `Thumbnails`: `init(decode:render:)` takes the decoder and the renderer,
+  so a test can count calls, block a decode or report what it saw, and prove
+  a neutral recipe never renders.
 
 Each class makes its directories in `setUpWithError` under
 `FileManager.default.temporaryDirectory` and removes them in

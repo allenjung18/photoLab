@@ -31,6 +31,7 @@ in Xcode works too.
 | `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
+| `J` | Toggle the clipping warning (blown pixels red, crushed pixels blue; or click a histogram triangle) |
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
 | `⌘A` | Select All Photos (grid only) |

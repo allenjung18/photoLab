@@ -160,7 +160,8 @@ struct GridView: View {
                             ThumbnailCell(photo: photo, selected: library.selectedIDs.contains(photo.id),
                                           anchor: photo.id == library.selection,
                                           edited: library.isEdited(photo.id),
-                                          marks: library.marks(for: photo.id))
+                                          marks: library.marks(for: photo.id),
+                                          recipe: library.recipe(for: photo.id))
                                 .id(photo.id)
                                 .onTapGesture(count: 2) {
                                     library.selection = photo.id
@@ -449,6 +450,9 @@ struct ThumbnailCell: View {
     var edited = false
     /// The flag corner (top-left) and the stars (bottom-left) over the image.
     var marks = Marks.none
+    /// The photo's recipe: the cell shows the edit (rendered from the cached
+    /// plain thumbnail), so a change to it re-keys the cell's task.
+    var recipe = Recipe.neutral
     @State private var image: NSImage?
 
     var body: some View {
@@ -510,9 +514,17 @@ struct ThumbnailCell: View {
                 .foregroundStyle(selected ? .primary : .secondary)
         }
         .contentShape(Rectangle())
-        .task(id: photo.id) {
-            image = Thumbnails.shared.cached(photo.id)
-            if image == nil { image = await Thumbnails.shared.thumbnail(for: photo.id) }
+        .task(id: Thumbnails.Key(photo.id, recipe: recipe)) {
+            // The entry for this photo and recipe when it is there; else the
+            // plain thumbnail first (or whatever the cell already shows, the
+            // previous recipe's image, stays up) and the rendered one when it
+            // lands. A neutral recipe needs no second step.
+            let key = Thumbnails.Key(photo.id, recipe: recipe)
+            if let hit = Thumbnails.shared.cached(key) { image = hit; return }
+            if image == nil, let plain = await Thumbnails.shared.thumbnail(for: photo.id) { image = plain }
+            if !key.isPlain, let rendered = await Thumbnails.shared.thumbnail(for: photo.id, recipe: recipe) {
+                image = rendered
+            }
         }
     }
 }
@@ -574,7 +586,7 @@ private struct PreviewCanvas: View {
                             .font(.callout)
                     }
                     .foregroundStyle(.secondary)
-                } else if let thumb = Thumbnails.shared.cached(photo.id) {
+                } else if let thumb = Thumbnails.shared.cached(photo.id, recipe: recipe) ?? Thumbnails.shared.cached(photo.id) {
                     Image(nsImage: thumb).resizable().scaledToFit().padding(8)
                         .overlay(ProgressView().controlSize(.regular))
                 } else {

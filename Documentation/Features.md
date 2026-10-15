@@ -79,22 +79,33 @@ selected. Selecting a photo scrolls it into view.
   the next visible photo in folder order (else the previous one, else none,
   which also leaves the loupe), so rejecting under Picks shows the next
   candidate.
-- **A cell.** `ThumbnailCell` (photo, selected, anchor, edited, marks) draws
-  the thumbnail (a spinner until it arrives), a ring when selected, heavier
-  for the anchor, a sliders badge when `Library.isEdited` says the photo has
-  a saved edit, a flag in the top corner (a filled flag for a pick, a cross
-  for a reject, which also dims the cell), the stars along the bottom when
-  the photo is rated, and the file name. It asks `Thumbnails.shared` from a
-  `.task(id:)`: `Thumbnails.cached(_:)` first, else
-  `Thumbnails.thumbnail(for:)`.
-- **Thumbnails.** `Thumbnails` (`ImageLoading.swift`) is an `NSCache` of
-  `NSImage` at `Thumbnails.pixelSize` on the long side. `thumbnail(for:)`
-  runs the decode on a detached task and forwards the cell's cancellation
-  into it (`withTaskCancellationHandler`), checking it before and inside the
-  decode, so a cell scrolled past before its turn costs nothing and a result
-  for a cancelled request is never cached. The decoder is injected
-  (`Thumbnails.Decoder`, `init(decode:)`); the app's is
-  `ImageLoading.downsampled`.
+- **A cell.** `ThumbnailCell` (photo, selected, anchor, edited, marks,
+  recipe) draws the thumbnail as the photo's recipe shows it (a spinner
+  until it arrives), a ring when selected, heavier for the anchor, a sliders
+  badge when `Library.isEdited` says the photo has a saved edit, a flag in
+  the top corner (a filled flag for a pick, a cross for a reject, which also
+  dims the cell), the stars along the bottom when the photo is rated, and
+  the file name. It asks `Thumbnails.shared` from a `.task(id:)` keyed by
+  `Thumbnails.Key` (the photo and its recipe): the entry for that key when
+  cached, else the plain thumbnail first and the rendered one when it lands
+  (`Thumbnails.thumbnail(for:recipe:)`). Because the key carries the recipe,
+  a slider release, a batch apply, a sync, an undo or a redo re-keys the
+  visible cells and they show the new edit; the badge stays.
+- **Thumbnails.** `Thumbnails` (`ImageLoading.swift`) is one `NSCache` of
+  `NSImage` at `Thumbnails.pixelSize` on the long side, keyed by
+  `Thumbnails.Key`: a `PhotoID` and a recipe, stored by its render identity
+  (anything `Recipe.isNeutral` is keyed as `Recipe.neutral`). The plain
+  entry is the ImageIO decode, made once and kept as the photo's base; an
+  edited entry is that cached base rendered through `Renderer.render` at the
+  same size (`Thumbnails.Render`, the one chain, a couple of milliseconds at
+  480 px), cached under its own key. A neutral recipe never reaches the
+  renderer. Decode and render each run on a detached task with the cell's
+  cancellation forwarded in (`withTaskCancellationHandler`) and checked
+  inside, so a cell scrolled past before its turn costs nothing and a result
+  for a cancelled request is never cached. The decoder and the renderer are
+  injected (`Thumbnails.Decoder`, `Thumbnails.Render`,
+  `init(decode:render:)`); the app's are `ImageLoading.downsampled` and
+  `Renderer.shared`.
 - **The decode.** `ImageLoading.thumbnail(from:maxPixelSize:)` asks the
   container for its embedded preview first
   (`ImageLoading.embeddedPreview(from:maxPixelSize:)`,
@@ -207,8 +218,9 @@ Nothing else; the copied settings live in memory.
   times the display scale). When the photo changes it calls
   `PreviewModel.load(_:)`; when the recipe or its own pixel size changes it
   calls `PreviewModel.request(url:recipe:maxPixelSize:)`. Until the first
-  frame of a photo arrives it shows the grid's cached thumbnail under a
-  spinner. `PreviewModel` (`Preview.swift`) decodes the master once at
+  frame of a photo arrives it shows the grid's cached thumbnail (the edited
+  one when the grid has rendered it, else the plain one) under a spinner.
+  `PreviewModel` (`Preview.swift`) decodes the master once at
   `PreviewModel.masterPixelSize` through `Renderer.previewMaster`, renders
   through `Renderer.render` off the main thread, and coalesces requests
   (latest wins, at most one render in flight). Double-click the photo to go
@@ -228,11 +240,25 @@ Writes: nothing. The loupe only reads the recipe.
 
 ## Adjustments panel
 
-`AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the Presets strip,
-one `DisclosureGroup` per `AdjustmentKind.Section` in declaration order
-(Basic open by default), each with a dot when any of its kinds is not a
-no-op (`Adjustment.isNoop`), then a footer with Before, undo, redo, Reset,
-the render time and any sidecar error.
+`AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the histogram, the
+Presets strip, one `DisclosureGroup` per `AdjustmentKind.Section` in
+declaration order (Basic open by default), each with a dot when any of its
+kinds is not a no-op (`Adjustment.isNoop`), then a footer with Before, undo,
+redo, Reset, the render time and any sidecar error.
+
+- **Histogram and clipping.** `HistogramView` (`HistogramView.swift`) at the
+  top of the panel draws `PreviewModel.histogram`, a `Histogram`
+  (`Histogram.swift`) of the latest rendered frame: 256 bins of red, green,
+  blue and luminance, computed off the main thread after each frame. Its two
+  corner triangles are the clipping warnings, lit when more than a tenth of
+  a percent of the frame's pixels are blown (any channel ≥ 254,
+  `Histogram.highlightLevel`) or crushed (any channel ≤ 1,
+  `Histogram.shadowLevel`). Either triangle, or **J**, toggles
+  `Library.showClipping`: the loupe paints the blown pixels red and the
+  crushed ones blue (`ClippingOverlay.compose(over:context:)`, one stage over
+  the finished frame, so the overlay marks exactly the pixels the triangles
+  count); `PreviewModel.setClipping(_:)` re-composes the kept frame without
+  a render. Nothing of this touches the recipe.
 
 - **A row.** `AdjustmentRow(kind:recipe:onEditingChanged:)` is one
   adjustment: a checkbox bound to `Recipe.setEnabled(_:_:)` (off dims the
@@ -393,8 +419,9 @@ Two places define keys; the README's Keys table is the user's list.
   work whatever has focus. **G** leaves the loupe; **E** and **Return** enter it
   (selecting the first photo when none is); **Esc** leaves the loupe or, in
   the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
-  `\` toggles `Library.showBefore`; **P** / **X** / **U** flag and **0**–**5**
-  rate the batch targets (`Library.setFlag(_:for:)`,
+  `\` toggles `Library.showBefore`; **J** toggles `Library.showClipping`
+  (the clipping overlay, see Adjustments panel); **P** / **X** / **U** flag
+  and **0**–**5** rate the batch targets (`Library.setFlag(_:for:)`,
   `Library.setRating(_:for:)`). Add a new focus-free key there, and a
   menu key in `PhotoLabApp`.
 - **Toolbar**: **Open Folder** and the **Grid / Loupe** segmented picker

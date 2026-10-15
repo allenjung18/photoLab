@@ -50,7 +50,7 @@ to run it, the timing tests, adding an adjustment).
   the same call. (Architecture 3, Batch.)
 - **Injected directories.** `PresetStore(directory:)`,
   `SidecarStore(folder:)`, `Library(rememberFolder:)`, `ExportQueue`'s
-  `Worker` and `remember:`, `Thumbnails`' decoder. Every test points them at
+  `Worker` and `remember:`, `Thumbnails`' decoder and renderer. Every test points them at
   a temporary directory and never at a user folder or UserDefaults; the app
   alone passes the real ones. (Testing, Injected directories.)
 - **Photo ids are the URLs `Library.scan` returns** (symlinks resolved:
@@ -58,8 +58,19 @@ to run it, the timing tests, adding an adjustment).
   never by a URL you built yourself. (Features, Grid.)
 - **Keep ImageIO for thumbnails** (fast, orientation-aware, reads RAW and
   HEIC). The embedded-preview size rule and the cancellation forwarding are
-  in `ImageLoading.swift`; do not route a thumbnail through the renderer.
-  (Features, Grid.)
+  in `ImageLoading.swift`. An edited photo's cell is that same cached 480 px
+  decode run through `Renderer.render` (`Thumbnails.thumbnail(for:recipe:)`,
+  one cache keyed by photo and recipe; a recipe that is `Recipe.isNeutral`
+  never renders): never a fresh decode through the renderer, never a second
+  chain. (Features, Grid.)
+- **Clipping is counted on the frame's own bytes.** `Histogram`
+  (`Histogram.swift`) is computed from the rendered 8-bit preview frame,
+  never a second render: a pixel is blown when any channel is at or above
+  `Histogram.highlightLevel` (254) and crushed when any channel is at or
+  below `Histogram.shadowLevel` (1), and `ClippingOverlay.compose(over:context:)`
+  paints exactly those pixels (red, blue) over the finished frame, so the
+  two triangles and the J overlay count the same pixels. Change the rule in
+  both or neither. (Architecture 1, The histogram and the clipping overlay.)
 - **Cube builds allocate nothing.** The tone and HSL lookups are built in
   `ColorCubes.swift` on a reusable workspace; a debug build pays for every
   fresh array in that hot path. (Architecture 1, The chain.)
@@ -78,7 +89,7 @@ to run it, the timing tests, adding an adjustment).
   one; `PHOTOLAB_BENCH_IMAGE` times a real photo. (Testing, The timed
   renders.)
 - **Keyboard shortcuts** that work whatever has focus (G / E / arrows /
-  Esc / Return / backslash / P X U / 0–5) are hidden buttons in
+  Esc / Return / backslash / J / P X U / 0–5) are hidden buttons in
   `HiddenShortcuts` (`ContentView.swift`); menu keys are the `.commands` of
   `PhotoLabApp`. Add new ones there. (Features, Menus and shortcuts.)
 - No AI attribution lines in commit messages.

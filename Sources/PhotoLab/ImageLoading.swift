@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CoreImage
 import ImageIO
 
 /// Downsampled decodes through ImageIO: fast, honours EXIF orientation, and
@@ -77,62 +78,131 @@ enum ImageLoading {
     }
 }
 
-/// In-memory thumbnail cache. NSCache is thread-safe; decodes run off the main
-/// thread and only visible grid cells ask, so no explicit concurrency cap.
+/// In-memory thumbnail cache. NSCache is thread-safe; decodes and renders
+/// run off the main thread and only visible grid cells ask, so no explicit
+/// concurrency cap.
+///
+/// One cache, keyed by `Key`: a `PhotoID` and the recipe the cell shows. The
+/// plain entry (the neutral recipe) is the ImageIO downsample at `pixelSize`,
+/// decoded once and kept as the photo's base; an edited photo's entry is that
+/// cached base run through the one chain (`Renderer.render`, injected as
+/// `render`) and cached under its own key, so the grid shows the edit and a
+/// slider release, a batch apply, a sync, an undo or a redo re-keys the
+/// visible cells without a decode. A recipe that renders as identity
+/// (`Recipe.isNeutral`) is keyed as the plain entry and never rendered.
 ///
 /// A request is cancellable: `ThumbnailCell` asks from `.task(id:)`, which
 /// SwiftUI cancels when the cell leaves the screen. `Task.detached` does not
 /// inherit that cancellation, so it is forwarded by hand
 /// (`withTaskCancellationHandler` cancels the detached handle) and the decode
-/// body checks it at its start: a cell scrolled past before its decode got a
-/// core costs nothing, and a decode that finishes for a cancelled request is
-/// not cached. The class itself is immutable (`decode` and the cache are
-/// `let`), so the shared instance is safe to use from any task. The cache
-/// is keyed by `PhotoID` (`PhotoID.cacheKey`), so a folder photo and a
-/// library asset share one cache.
+/// or render body checks it at its start: a cell scrolled past before its
+/// turn costs nothing, and a result that finishes for a cancelled request is
+/// not cached. The class itself is immutable (`decode`, `render` and the
+/// cache are `let`), so the shared instance is safe to use from any task.
 final class Thumbnails: @unchecked Sendable {
     typealias Decoder = @Sendable (PhotoID, Int) -> NSImage?
+    /// The chain over a cached plain thumbnail: `Renderer.shared.render` at
+    /// the thumbnail's own size in the app; tests inject one that counts.
+    typealias Render = @Sendable (CGImage, Recipe) -> CGImage?
+
+    /// What a cell asks for: the photo and the recipe it shows. The recipe is
+    /// stored by its render identity, `Recipe.neutral` for anything
+    /// `Recipe.isNeutral`, so a disabled-only edit shares the plain entry.
+    /// The photo half is the one place the cache's photo key type lives.
+    struct Key: Hashable, Sendable {
+        let id: PhotoID
+        let recipe: Recipe
+
+        init(_ id: PhotoID, recipe: Recipe = .neutral) {
+            self.id = id
+            self.recipe = recipe.isNeutral ? .neutral : recipe
+        }
+
+        /// The plain (unrendered) entry of the photo.
+        var isPlain: Bool { recipe == .neutral }
+    }
+
+    /// NSCache wants an object key; equality and hash are the `Key`'s.
+    private final class CacheKey: NSObject {
+        let key: Key
+        init(_ key: Key) { self.key = key }
+        override var hash: Int { key.hashValue }
+        override func isEqual(_ object: Any?) -> Bool { (object as? CacheKey)?.key == key }
+    }
 
     static let shared = Thumbnails()
     static let pixelSize = 480
 
     private let decode: Decoder
-    private let cache: NSCache<NSString, NSImage> = {
-        let c = NSCache<NSString, NSImage>()
+    private let render: Render
+    private let cache: NSCache<CacheKey, NSImage> = {
+        let c = NSCache<CacheKey, NSImage>()
         c.countLimit = 3000
         return c
     }()
 
     /// `decode` is `ImageLoading.downsampled` in the app (a file's ImageIO
-    /// downsample; the `FolderSource` thumbnail); tests inject one that
-    /// counts, blocks or reports what it saw.
-    init(decode: @escaping Decoder = { ImageLoading.downsampled($0, maxPixelSize: $1) }) {
+    /// downsample; the `FolderSource` thumbnail) and `render` is
+    /// `Renderer.shared.render` over the cached base; tests inject ones that
+    /// count, block or report what they saw.
+    init(decode: @escaping Decoder = { ImageLoading.downsampled($0, maxPixelSize: $1) },
+         render: @escaping Render = { Renderer.shared.render(CIImage(cgImage: $0), recipe: $1)?.image }) {
         self.decode = decode
+        self.render = render
     }
 
-    func cached(_ id: PhotoID) -> NSImage? { cache.object(forKey: id.cacheKey as NSString) }
+    func cached(_ key: Key) -> NSImage? { cache.object(forKey: CacheKey(key)) }
+    func cached(_ id: PhotoID, recipe: Recipe = .neutral) -> NSImage? { cached(Key(id, recipe: recipe)) }
     func cached(_ url: URL) -> NSImage? { cached(.file(url)) }
 
     func thumbnail(for url: URL) async -> NSImage? { await thumbnail(for: .file(url)) }
 
-    func thumbnail(for id: PhotoID) async -> NSImage? {
-        if let hit = cached(id) { return hit }
-        // Already scrolled past before the decode was queued: nothing to do.
-        if Task.isCancelled { return nil }
+    /// The thumbnail of `id` as `recipe` shows it: the plain decode for a
+    /// neutral recipe, else that decode rendered through the chain. Nil when
+    /// the request was cancelled or the photo cannot be decoded or rendered.
+    func thumbnail(for id: PhotoID, recipe: Recipe = .neutral) async -> NSImage? {
+        let key = Key(id, recipe: recipe)
+        if let hit = cached(key) { return hit }
+        guard let base = await plain(id) else { return nil }
+        if key.isPlain { return base }
+        let render = render
+        let image = await detached { () -> NSImage? in
+            guard let cg = base.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                  let out = render(cg, key.recipe) else { return nil }
+            return NSImage(cgImage: out, size: NSSize(width: out.width, height: out.height))
+        }
+        guard let image else { return nil }
+        cache.setObject(image, forKey: CacheKey(key))
+        return image
+    }
+
+    /// The photo's plain entry: the cached decode, else one decode, cached.
+    private func plain(_ id: PhotoID) async -> NSImage? {
+        let key = Key(id)
+        if let hit = cached(key) { return hit }
         let decode = decode
         let pixelSize = Thumbnails.pixelSize
-        let handle = Task.detached(priority: .userInitiated) { () -> NSImage? in
-            // Cancelled while waiting for a core (forwarded below): skip the decode.
+        guard let image = await detached({ decode(id, pixelSize) }) else { return nil }
+        cache.setObject(image, forKey: CacheKey(key))
+        return image
+    }
+
+    /// Runs `work` on a detached task with the caller's cancellation
+    /// forwarded into it, and drops a result that lands after a cancel.
+    private func detached<T: Sendable>(_ work: @escaping @Sendable () -> T?) async -> T? {
+        // Already scrolled past before the work was queued: nothing to do.
+        if Task.isCancelled { return nil }
+        let handle = Task.detached(priority: .userInitiated) { () -> T? in
+            // Cancelled while waiting for a core (forwarded below): skip the work.
             if Task.isCancelled { return nil }
-            return decode(id, pixelSize)
+            return work()
         }
-        let image = await withTaskCancellationHandler {
+        let value = await withTaskCancellationHandler {
             await handle.value
         } onCancel: {
             handle.cancel()
         }
-        guard let image, !Task.isCancelled else { return nil }
-        cache.setObject(image, forKey: id.cacheKey as NSString)
-        return image
+        guard let value, !Task.isCancelled else { return nil }
+        return value
     }
 }

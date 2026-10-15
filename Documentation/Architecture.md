@@ -91,6 +91,29 @@ stale frames. `PreviewCanvas` (`ContentView.swift`) is the view: it calls
 size changes, and substitutes `Recipe.neutral` while `Library.showBefore` is
 on, which is all the Before button does.
 
+### The histogram and the clipping overlay
+
+`Histogram` (`Histogram.swift`) is read off the finished 8-bit preview
+frame, never a second render. `Histogram.compute(_:)` runs vImage over the
+frame's bytes off the main thread and returns 256 bins per channel (`red`,
+`green`, `blue`) and for Rec. 709 luminance (`luminance`), exact integer
+counts that sum to `pixelCount`, with two fractions: `highlightClipping`,
+the share of pixels with any channel at or above `Histogram.highlightLevel`
+(254), and `shadowClipping`, the share with any channel at or below
+`Histogram.shadowLevel` (1). `highlightsClipped` and `shadowsClipped` light
+the two triangles above `Histogram.warningThreshold` (a tenth of a percent
+of the pixels). `PreviewModel` publishes `histogram` after each frame, one
+compute in flight and the newest frame winning. The J overlay is one stage
+over the same frame: `ClippingOverlay.compose(over:context:)` paints
+`ClippingOverlay.blown` (red) over the pixels the highlight rule counts and
+`ClippingOverlay.crushed` (blue) over the shadow rule's, every other pixel
+byte-identical, so the triangles and the overlay agree pixel for pixel.
+`PreviewModel.setClipping(_:)` re-composes the kept plain frame without a
+render, and a frame rendered while `showClipping` is on carries the overlay
+in the same hop. `HistogramView` (`HistogramView.swift`) draws it at the top
+of the adjustments panel; its triangles are buttons on
+`Library.showClipping`, the flag `J` toggles.
+
 ### The preset strip
 
 `PresetThumbnails.render(master:presets:base:pixelSize:renderer:)`
@@ -98,13 +121,22 @@ on, which is all the Before button does.
 `Preset.apply(to:)` over the photo's current recipe, rendered through
 `Renderer.render` at `PresetThumbnails.cellPixelSize` from a master decoded
 at `PresetThumbnails.masterPixelSize`. Requests coalesce like the loupe's.
-The grid's thumbnails are not rendered at all: `Thumbnails` caches the same
-ImageIO downsample at `Thumbnails.pixelSize`, keyed by `PhotoID`
-(`PhotoID.cacheKey`), and shows the original;
-`Thumbnails.thumbnail(for:)` forwards the cell's cancellation into its
-detached decode, so a cell scrolled past costs nothing, and its decoder is
-injected (a `Thumbnails.Decoder`, a `PhotoID` in and an image out) so a
-test can count or block it. The loupe's master and the export decode the
+The grid's thumbnails take the same chain only when there is an edit to
+show: `Thumbnails` (`ImageLoading.swift`) is one `NSCache` keyed by
+`Thumbnails.Key`, a `PhotoID` and a recipe stored by its render identity
+(anything `Recipe.isNeutral` is keyed as `Recipe.neutral`). The plain entry
+is the ImageIO downsample at `Thumbnails.pixelSize`, decoded once and kept
+as the photo's base; `Thumbnails.thumbnail(for:recipe:)` renders a
+non-neutral recipe over that cached base through `Renderer.render` at the
+same size and caches the result under its own key, so a slider release, a
+batch apply, a sync, an undo or a redo re-keys the visible cells and each
+shows its edit after a render of a few milliseconds, without a decode. A
+neutral recipe never reaches the renderer. The cell's cancellation is
+forwarded into the detached decode and the detached render alike, so a
+cell scrolled past costs nothing and nothing is cached for it; the decoder
+and the renderer are injected (`Thumbnails.Decoder`, a `PhotoID` in and an
+image out; `Thumbnails.Render`, a base image and a recipe in) so a test
+can count or block either. The loupe's master and the export decode the
 file the source names for the photo (`Library.originalFile(for:)`,
 `PhotoSource.originalFile(for:)`): a folder photo's own file, known at once
 (`Photo.fileURL`); `LoupeView` resolves it and hands it to the canvas, the

@@ -248,6 +248,157 @@ final class ThumbnailTests: XCTestCase {
         XCTAssertNotNil(image)
         XCTAssertNotNil(blocking.cached(url))
     }
+
+    // MARK: Edited thumbnails
+
+    /// The neutral recipe with exposure at `ev`; `enabled: false` keeps the
+    /// value but switches the entry off (neutral to the renderer, an edit
+    /// to the library).
+    private static func exposure(_ ev: Double, enabled: Bool = true) -> Recipe {
+        var r = Recipe.neutral
+        r.set(.exposure, to: ev)
+        if !enabled { r.setEnabled(.exposure, false) }
+        return r
+    }
+
+    /// A 2400×1600 synthetic JPEG in the temp dir, as a `PhotoID`.
+    private func editedFixture() throws -> PhotoID {
+        let url = tempDir.appendingPathComponent("edited.jpg")
+        try Self.writeJPEG(syntheticImage(width: 2400, height: 1600), to: url, embedThumbnail: false)
+        return .file(url)
+    }
+
+    /// A `Thumbnails` over the real decoder and the real renderer that
+    /// counts how often each is called.
+    private static func counting() -> (thumbs: Thumbnails, decodes: Counter, renders: Counter) {
+        let decodes = Counter(), renders = Counter()
+        let thumbs = Thumbnails(decode: { id, size in
+            decodes.increment()
+            return ImageLoading.downsampled(id, maxPixelSize: size)
+        }, render: { cg, recipe in
+            renders.increment()
+            return Renderer.shared.render(CIImage(cgImage: cg), recipe: recipe)?.image
+        })
+        return (thumbs, decodes, renders)
+    }
+
+    private static func cgImage(_ image: NSImage) throws -> CGImage {
+        try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    }
+
+    private static func luma(_ m: (r: Double, g: Double, b: Double)) -> Double {
+        0.2126 * m.r + 0.7152 * m.g + 0.0722 * m.b
+    }
+
+    /// An exposure +2 recipe yields a thumbnail brighter than the plain one,
+    /// at the same size, rendered from the cached plain decode (one decode,
+    /// one render) which stays in the cache as the base.
+    func testExposurePlusTwoThumbnailIsBrighterThanThePlainOneFromTheCachedBase() async throws {
+        let id = try editedFixture()
+        let (thumbs, decodes, renders) = Self.counting()
+
+        let plainResult = await thumbs.thumbnail(for: id)
+        let plain = try XCTUnwrap(plainResult)
+        let editedResult = await thumbs.thumbnail(for: id, recipe: Self.exposure(2))
+        let edited = try XCTUnwrap(editedResult)
+
+        let plainCG = try Self.cgImage(plain), editedCG = try Self.cgImage(edited)
+        XCTAssertEqual(plainCG.bitsPerPixel, 32, "meanRGB reads 4 bytes per pixel")
+        XCTAssertEqual(editedCG.bitsPerPixel, 32)
+        let plainLuma = Self.luma(meanRGB(plainCG)), editedLuma = Self.luma(meanRGB(editedCG))
+        print(String(format: "EDITED-THUMB mean luma plain %.1f → exposure +2 %.1f", plainLuma, editedLuma))
+        XCTAssertGreaterThan(editedLuma, plainLuma + 20, "exposure +2 brightens the thumbnail")
+        XCTAssertEqual(max(editedCG.width, editedCG.height), Thumbnails.pixelSize, "rendered at the thumbnail's size")
+        XCTAssertEqual(editedCG.width, plainCG.width)
+        XCTAssertEqual(editedCG.height, plainCG.height)
+
+        XCTAssertEqual(decodes.value, 1, "the edit is rendered from the cached plain decode, not a second decode")
+        XCTAssertEqual(renders.value, 1)
+        XCTAssertTrue(thumbs.cached(id) === plain, "the plain decode stays the cache's base image")
+        XCTAssertTrue(thumbs.cached(id, recipe: Self.exposure(2)) === edited)
+    }
+
+    /// The same (photo, recipe) is served from the cache; a different recipe
+    /// is its own entry; the neutral recipe and a neutral-but-disabled one
+    /// never call the renderer and share the plain entry; a cancelled edited
+    /// request renders nothing and caches nothing.
+    func testSamePhotoAndRecipeIsCachedAndANeutralRecipeNeverRenders() async throws {
+        let id = try editedFixture()
+        let (thumbs, decodes, renders) = Self.counting()
+        let recipe = Self.exposure(2)
+
+        // 1. The same key twice: one render, the same object back.
+        let firstResult = await thumbs.thumbnail(for: id, recipe: recipe)
+        let first = try XCTUnwrap(firstResult)
+        let secondResult = await thumbs.thumbnail(for: id, recipe: recipe)
+        let second = try XCTUnwrap(secondResult)
+        XCTAssertTrue(first === second, "the same (photo, recipe) is served from the cache")
+        XCTAssertEqual(renders.value, 1)
+        XCTAssertTrue(thumbs.cached(id, recipe: recipe) === first)
+
+        // 2. Another recipe is another entry (and no new decode).
+        let otherResult = await thumbs.thumbnail(for: id, recipe: Self.exposure(1))
+        let other = try XCTUnwrap(otherResult)
+        XCTAssertFalse(other === first, "a different recipe is its own entry")
+        XCTAssertEqual(renders.value, 2)
+        XCTAssertEqual(decodes.value, 1)
+
+        // 3. Neutral never renders: the default recipe, and a recipe whose
+        //    only edit is switched off, both come back as the plain entry.
+        let plain = try XCTUnwrap(thumbs.cached(id), "the plain decode was cached as the base")
+        let neutralResult = await thumbs.thumbnail(for: id, recipe: .neutral)
+        let neutral = try XCTUnwrap(neutralResult)
+        let disabledResult = await thumbs.thumbnail(for: id, recipe: Self.exposure(2, enabled: false))
+        let disabled = try XCTUnwrap(disabledResult)
+        XCTAssertTrue(neutral === plain)
+        XCTAssertTrue(disabled === plain, "a disabled-only recipe is neutral to the renderer")
+        XCTAssertEqual(renders.value, 2, "a neutral recipe never calls the renderer")
+        XCTAssertTrue(thumbs.cached(id, recipe: Self.exposure(2, enabled: false)) === plain, "and is keyed as the plain entry")
+        XCTAssertTrue(Thumbnails.Key(id, recipe: Self.exposure(2, enabled: false)).isPlain)
+        XCTAssertFalse(Thumbnails.Key(id, recipe: recipe).isPlain)
+
+        // 4. Cancelled before the render is queued: nothing rendered, nothing cached.
+        let fresh = Self.exposure(-1)
+        let cancelled = Task { () -> NSImage? in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await thumbs.thumbnail(for: id, recipe: fresh)
+        }
+        let none = await cancelled.value
+        XCTAssertNil(none)
+        XCTAssertEqual(renders.value, 2, "a cancelled request renders nothing")
+        XCTAssertNil(thumbs.cached(id, recipe: fresh), "and caches nothing")
+        XCTAssertEqual(decodes.value, 1)
+    }
+
+    /// An edited 480 px thumbnail renders in under 20 ms from the cached
+    /// base (the real decoder and renderer). The first render in a process
+    /// warms the Core Image pipeline and is printed, not gated; the bound
+    /// scales above a load of 8.
+    func testEditedThumbnailRendersUnder20msFromTheCachedBase() async throws {
+        let id = try editedFixture()
+        let thumbs = Thumbnails()
+        let plainResult = await thumbs.thumbnail(for: id)
+        let plain = try XCTUnwrap(plainResult, "the base is decoded and cached first")
+        XCTAssertTrue(thumbs.cached(id) === plain)
+        let load = Self.loadAverage()
+
+        var t0 = DispatchTime.now().uptimeNanoseconds
+        let warmResult = await thumbs.thumbnail(for: id, recipe: Self.exposure(1))
+        _ = try XCTUnwrap(warmResult)
+        let warmMs = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
+
+        t0 = DispatchTime.now().uptimeNanoseconds
+        let editedResult = await thumbs.thumbnail(for: id, recipe: Self.exposure(2))
+        let edited = try XCTUnwrap(editedResult)
+        let ms = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
+
+        let cg = try Self.cgImage(edited)
+        XCTAssertEqual(max(cg.width, cg.height), Thumbnails.pixelSize)
+        let bound = 20 * Self.loadFactor(load)
+        print(String(format: "BENCH-THUMB-EDITED %d px exposure render from the cached base: %.2f ms (first render in the process %.1f ms) — bound %.0f ms, load %.2f",
+                     Thumbnails.pixelSize, ms, warmMs, bound, load))
+        XCTAssertLessThan(ms, bound, String(format: "edited thumbnail took %.2f ms at load %.2f", ms, load))
+    }
 }
 
 private final class Counter: @unchecked Sendable {
