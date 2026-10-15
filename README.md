@@ -6,26 +6,48 @@ Native Swift, SwiftUI and Core Image. Originals are never written to.
 
 ## Run
 
-    swift run PhotoLab            # debug build, last folder (or ⌘O)
+    swift build                   # debug build
+    swift run PhotoLab            # opens the last folder (or ⌘O)
     swift run PhotoLab ~/Pictures # open a folder directly
     swift run PhotoLab ~/Pictures/DSC01.ARW   # open one photo in the loupe
-    swift test                    # recipe, chain and render-time tests
+    swift test                    # the test suite
     scripts/bundle.sh --open      # release build as build/PhotoLab.app
 
-Needs macOS 14+ and Xcode (free). On macOS 27 the bare Command Line Tools
-cannot build SwiftUI (the SDK needs a macro plugin only Xcode ships), so
-select Xcode once: `sudo xcodebuild -license accept` then
-`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`. Opening
-`Package.swift` in Xcode works too. No developer account is needed to build
-or run locally.
+Needs macOS 14 or later (the `platforms` line in `Package.swift`) and Xcode
+(free; no developer account is needed to build or run locally). On macOS 27
+the bare Command Line Tools cannot build SwiftUI (the SDK needs a macro
+plugin only Xcode ships), so select Xcode once: `sudo xcodebuild -license
+accept`, then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`;
+`xcode-select -p` must print a path inside Xcode.app. Opening `Package.swift`
+in Xcode works too.
 
 ## Keys
 
-`⌘O` open folder · `G` grid · `E` or `Return` loupe · `Esc` back (in the
-grid: back to one selected photo) · `←` `→` previous / next photo ·
-double-click a thumbnail to open it · click, `⇧`-click and `⌘`-click to
-select several, `⌘A` all · `\` before / after (or hold the Before button) ·
-`⇧⌘P` save preset · `⇧⌘C` / `⇧⌘V` copy / paste settings · `⇧⌘E` export.
+| Key | Does |
+| --- | --- |
+| `⌘O` | Open Folder… |
+| `G` | Grid |
+| `E` or `Return` | Loupe (the selected photo, or the first) |
+| `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
+| `←` `→` | Previous / next photo |
+| `\` | Toggle before / after (or hold the **Before** button) |
+| `⌘A` | Select All Photos (grid only) |
+| `⌘Z` / `⇧⌘Z` | Undo / Redo |
+| `⇧⌘R` | Reset Photo (back to the original) |
+| `⇧⌘P` | Save Preset… (in the loupe) |
+| `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
+| `⇧⌘E` | Export… (the grid's selection, or the loupe's photo) |
+
+`Return` and `Esc` also confirm and cancel the welcome screen's Open Folder…,
+the Sync sheet and the Export sheet. Sync Settings… and the preset names in
+the Presets menu have no key.
+
+With the mouse, in the grid: click selects one photo, `⇧`-click selects
+every photo between the anchor and it (the anchor kept), `⌘`-click adds or
+removes one (the anchor moves to a photo added), double-click opens it in
+the loupe. In the loupe: double-click the photo to go back to the grid,
+double-click an adjustment's name to reset it, hold **Before** to see the
+original.
 
 ## Adjustments
 
@@ -48,8 +70,8 @@ the last frame.
   cropped to the largest same-shape rectangle, so no empty corners) and a
   crop from each edge in percent of the frame.
 
-Every slider is one entry in the photo's recipe, so the sidecar, undo and
-the presets to come treat them all alike. Spatial effects (clarity,
+Every slider is one entry in the photo's recipe, so the sidecar, undo,
+presets and batch apply treat them all alike. Spatial effects (clarity,
 sharpening, grain, vignette) are sized relative to the image, so the preview
 and an export look the same.
 
@@ -69,12 +91,12 @@ the panel then says the edit could not be saved.
 
 A preset is a named look: every slider except rotate and crop. The loupe's
 panel opens with a **Presets** strip, each preset drawn live on the current
-photo through the same renderer as the main view (about 1 ms each). Click
-one to apply it (one undo step, the sidecar is written; the photo keeps its
-own rotation and crop), right-click for Apply, Update with Current Settings,
-Rename and Delete. **Save…** (or `⇧⌘P`, or Presets › Save Preset…) saves
-the current look under a name; a preset of the same name is replaced. The
-Presets menu lists them all for the selected photo.
+photo through the same renderer as the main view. Click one to apply it
+(one undo step, the sidecar is written; the photo keeps its own rotation
+and crop), right-click for Apply, Update with Current Settings, Rename and
+Delete. **Save…** (or `⇧⌘P`, or Presets › Save Preset…) saves the current
+look under a name; a preset of the same name is replaced. The Presets menu
+lists them all for the selected photo.
 
 Presets are files you can copy between Macs:
 `~/Library/Application Support/PhotoLab/presets/<name>.json`. A fresh
@@ -86,7 +108,8 @@ has Restore Starter Presets and Show Presets Folder in Finder.
 
 Select several photos in the grid (`⇧`-click a range, `⌘`-click to add or
 remove, `⌘A` for all; the heavier frame is the anchor, the photo the loupe
-shows). A bar appears under the grid:
+shows). A bar appears under the grid, with **Deselect** to collapse the
+selection back to the anchor:
 
 - **Sync Settings…** copies the anchor's settings onto the other selected
   photos. The sheet has a checkbox per adjustment (sections fold open; HSL
@@ -119,36 +142,53 @@ slider move: one sidecar per photo, written at once, and the whole batch is
 **one undo step**: `⌘Z` on any photo of the batch takes them all back
 (a photo you edited again since keeps its later edit; undo that first).
 
+## On disk
+
+Everything the app writes, and nothing else:
+
+- **Sidecars** — `<folder>/.photolab/<file>.json`, one per edited photo,
+  next to the photos. Removed when the photo is reset to the original.
+- **Presets** — `~/Library/Application Support/PhotoLab/presets/<name>.json`,
+  one per preset; the six starter looks are written there when that folder
+  does not exist yet.
+- **Preferences** — in the app's UserDefaults: the last opened folder, the
+  last export folder and the last export options (format, quality, size,
+  suffix, collision policy, metadata), so the next export sheet opens with
+  them.
+- **Exports** — the files you ask for, in the folder you choose, written
+  through a hidden partial file and moved into place when complete.
+- **The release bundle** — `build/PhotoLab.app`, made by `scripts/bundle.sh`
+  (ad-hoc signed; `swift build` puts debug builds under `.build/`).
+
+The original photo is never written to, under any of these.
+
 ## Design
 
 - **Edits are data.** Each photo gets a sidecar JSON: an ordered list of
   adjustments, each with parameters and an enabled flag. Toggles, undo,
   presets and batch apply are all edits to that list. Undo is a stack of
-  whole recipes per photo, kept for the open folder. (Chunk 3.)
-- **One render path.** `Renderer.apply` is the Core Image filter chain for a
-  recipe; the loupe feeds it a 3200 px ImageIO master, the export will feed
-  it the full-resolution decode, so the two cannot drift in color. A slider
-  step re-renders at the view's pixel size (about 4 ms for a 24 MP JPEG,
-  9 ms for a RAW, on an M4, with the six basic sliders; about 12 ms with
-  every section switched on). (Chunk 2, chunk 4.)
+  whole recipes per photo, kept for the open folder.
+- **One render path.** The `apply(_:to:)` method of `Renderer` is the Core Image
+  filter chain for a recipe; the loupe feeds it a 3200 px ImageIO master, the export feeds it
+  the full-resolution decode, so the two cannot drift in color. A slider
+  step re-renders at the view's pixel size.
 - **Grouped stages.** The tone sliders and the curve are one per-channel
   lookup, the 24 HSL sliders one 3D color cube, both built on the CPU with
   Accelerate and cached by their values; the four crop edges are one crop.
   Kinds apply in a fixed order (geometry, exposure and white balance, tone,
   color, HSL, detail, effects) whatever order the sidecar lists them in.
-  (Chunk 4.)
 - **A preset is a named recipe.** One JSON file per preset in a user-level
   folder, carrying every kind but geometry; applying one writes the photo's
   sidecar through the same `setRecipe` path as a slider, so it undoes like
-  one. The strip's thumbnails are the same chain at 160 px. (Chunk 5.)
+  one. The strip's thumbnails are the same chain at 160 px.
 - **A batch is a sync mask over a selection.** Sync, Paste and Apply Preset
   are one operation: for each selected photo, the kinds in the mask are
   taken from the source recipe and the rest kept, written through
   `setRecipe` per photo. The undo steps of one batch share a tag, so undo
   from any photo of the batch takes back every photo whose latest step is
   that batch. The export queue feeds the full-resolution decode into the
-  same `Renderer.apply` as the loupe, one photo at a time, cancellable
-  between files. (Chunk 6.)
+  same `apply(_:to:)` of `Renderer` as the loupe, one photo at a time, cancellable
+  between files.
 - **Export options are one value on the one path.** `ExportOptions`
   (format, quality, size, suffix, collision policy, metadata) goes with
   every item through `Exporter.export`, which renders through `Renderer`
@@ -156,4 +196,4 @@ slider move: one sidecar per photo, written at once, and the whole batch is
   side after the crop), copies the source's ImageIO properties with the
   orientation and pixel dimensions made true for the output
   (`ExportMetadata`), writes to a hidden partial file and moves it into
-  place, so a failed or cancelled export leaves no half file. (Chunk 7.)
+  place, so a failed or cancelled export leaves no half file.
