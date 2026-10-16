@@ -305,6 +305,18 @@ not only the pass.
   weights, a Codable round trip, `of(master:recipe:)` equal to measuring the
   frame `Renderer` renders at `AutoTone.analysisPixelSize`, and the timed
   512 px measurement.
+- `LookMatchTests.swift` — `LookMatch` on a synthetic photo built in
+  memory (brightness down the frame, hue round the wheel across it,
+  saturation rising to the right, so no flat band sits on a grade-range
+  boundary): a known warm, contrasty, desaturated look as the target,
+  solved from the neutral photo, cuts the standard distance by at least
+  80 %, solves temperature and contrast up and saturation down, and brings
+  the frame's warmth (mean red − blue) within a quarter of the cast of the
+  target's, every value on its slider grid inside its range; the photo as
+  its own target solves to within one step of neutral; a second solve, and
+  one from the matched recipe, give the same values with a kind outside
+  the twelve kept; `base`, `applying` and `mask` cover exactly the twelve;
+  and the timed whole solve.
 - `CompareTests.swift` — compare mode in `PreviewModel`: Before and After
   come out at equal pixel size from one master, Before equal to the neutral
   render (maxDiff 0) and After to the recipe's; no second frame outside
@@ -955,6 +967,9 @@ each prints a `BENCH` line and fails above a bound.
 - `testMeasuresAnalysisFrameUnderTwentyMilliseconds` (`ImageStatsTests`):
   `ImageStats.measure` of a 512×341 frame (the analysis size) after one
   warm-up, printed as BENCH-IMAGESTATS.
+- `testWholeSolveUnderBudget` (`LookMatchTests`): one whole
+  `LookMatch.values` solve of a 768×512 photo (a 512 px analysis frame)
+  under 4 s, best of up to three, printed as BENCH-LOOKMATCH (about 2 s).
 - `testRegionStepRendersWithinTheFrameBudget` (`ZoomTests`): a sweep of
   exposure steps rendering a 2600×1600 1:1 window of the 24 MP
   full-resolution master with clarity, sharpening and vignette on; the

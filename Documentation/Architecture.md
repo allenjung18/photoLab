@@ -489,8 +489,34 @@ the saturation and chroma differences), zero to itself and symmetric.
 `ImageStats.of(master:recipe:)` renders the recipe as it stands through
 `Renderer.shared` at `AutoTone.analysisPixelSize`, as
 `AutoTone.histogram(of:recipe:)` does without its neutral base, and
-measures that frame. Nothing reads it yet: it has no UI and touches no
-`Library` state.
+measures that frame. It has no UI and touches no `Library` state.
+
+`LookMatch` (`LookMatch.swift`) is the first reader: the solver that finds
+the global values making a photo measure like a target `ImageStats`. Its
+twelve `LookMatch.kinds` are exposure, contrast, whites, blacks,
+temperature, tint, saturation, vibrance and the shadow and highlight grade
+hue and saturation (`LookMatch.mask`, a `SyncMask`, for applying them).
+`LookMatch.values(target:master:recipe:)` starts from `LookMatch.base`
+(the recipe with the twelve at neutral, as `AutoTone.base`, so a second
+run solves the same thing) and costs each candidate by rendering it
+through `ImageStats.of(master:recipe:)` at `AutoTone.analysisPixelSize` and
+taking `ImageStats.distance(to:weights:)` to the target: no slider's sign
+or strength is modelled, the chain is the truth, as in
+`WhiteBalance.neutralising`. The search is coarse, then compass: the tone
+kinds (`LookMatch.toneKinds`) swept one at a time over
+`LookMatch.coarseOffsets` on the tone term alone (`LookMatch.toneWeights`);
+temperature and saturation swept together (a warm cast raises every
+grey's saturation, so either alone reads a warm, desaturated look as a
+wrong turn), then tint and vibrance; each grade range's hue and saturation
+over `LookMatch.coarseHues` × `LookMatch.coarseGradeSats`; then a compass
+search on the full cost (`LookMatch.weights`, `ImageStats.Weights.standard`)
+from `LookMatch.compassStart` slider steps halving to one, a move only on a
+strictly lower cost and a hue under no saturation left alone. Every point
+is on the slider grid (`LookMatch.step(of:)`: 0.05 EV for exposure, else
+whole numbers) inside the kind's `range`, and a point is rendered once
+(the search memoises its stats). `LookMatch.applying(_:to:)` sets the
+values on a recipe. A whole solve takes about two seconds at 512 px
+(`LookMatchTests`); it is pure and synchronous, with no UI yet.
 
 `Library.autoTone` reads its photos in a task group of at most
 `Library.autoConcurrency`, each through `Library.autoMeasure` (off the main
