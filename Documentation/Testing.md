@@ -361,6 +361,32 @@ not only the pass.
   mouse-up, and undo goes back to a version-1 file. Shown to bite by a
   mutant (`normalized` dropping masks: 8 failures in 4 tests, the round
   trip and `isDefault` cases among them).
+- `MaskMathTests.swift` — `MaskMath.weight(of:at:in:)`, the mask weights
+  without Core Image: a linear gradient is 1 at the start, 0.5 half way, 0 at
+  the end and holds its end values beyond, constant along the perpendicular
+  in pixels on a 3:2 source (not the fraction-space one); a radial is 1
+  inside the inner ring, 0.5 half way through the feather, 0 at and outside
+  the outer ring, falling monotonically; equal radii are a circle on any
+  aspect; an ellipse turned 90 degrees equals one with its radii swapped,
+  and +45 runs its long axis top-left to bottom-right on screen; a hard
+  edge, a zero radius and a zero-length gradient; inverted is 1 - w, and a
+  brush weighs 0 until brushes render.
+- `MaskRenderTests.swift` — linear and radial masks through `Renderer`: +1 EV
+  over the top half lifts the top row, part-lifts the middle of the ramp
+  and leaves every row past the end within 1/255; a radial lifts the centre
+  and leaves the corners; an inverted one the reverse; the drawn mask
+  (`MaskRender.image(for:over:)`, read back unmatched) is `MaskMath`'s weight
+  within 0.02 for a linear, a turned ellipse and a circle; a radial drawn
+  over a red spot in the source frame is still centred on it (within 3 px)
+  after rotate 10 and a 20% crop; a disabled, all-neutral, adjustment-less,
+  brush or degenerate mask renders bit-identical to none; a 1:1 region
+  across a mask edge equals that window of the whole frame; a full-frame
+  mask equals the chain run in three parts with the mask's recipe between
+  HSL and clarity, and differs from it at the head or the tail; two +0.5 EV
+  masks over the same pixels are +1 EV. Shown to bite by mutants: the mask
+  skipping the geometry stages (the spot case, 27.8 px off), the radial's
+  angle turned the other way (the drawn-mask case), the stage moved before
+  grain (the three-part case, 58/255 off, and the anchor assertion).
 - `WhiteBalanceTests.swift` — the white-balance eyedropper
   (`WhiteBalance`, `Library.pickWhiteBalance`, `ZoomMath.point(forClick:)`):
   grey patches at three levels given six known casts (warm, cool, magenta,
@@ -554,6 +580,10 @@ each prints a `BENCH` line and fails above a bound.
   step changes the output size, and Core Image charges extra the first time
   it meets a size; those kinds are measured twice over the same sizes and
   gated on the second pass, the first printed beside it.
+  `testEverySliderStepRenderTimeOn24MPWithMasks` runs the same gate over
+  the everything-on recipe with a linear and a radial mask (each carrying
+  all of `LocalMask.kinds`), stepping every global kind and the first
+  mask's own seven.
 - `testPresetThumbnailsRenderUnder50msEachOn24MP` (`PresetTests`): the strip
   of starters over the current photo, each cell under its bound.
 - `test500SyntheticJPEGsThumbnailConcurrentlyUnder3s` and

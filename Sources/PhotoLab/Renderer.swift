@@ -90,10 +90,18 @@ final class Renderer: @unchecked Sendable {
     /// recipe's own order does not matter). Disabled and neutral entries are
     /// skipped, so the neutral recipe is the identity. Grouped kinds (crop,
     /// tone, HSL) are one stage each, applied where their first member sits.
+    /// The recipe's masks (local adjustments) are one stage too, just before
+    /// `maskStageBefore`: after HSL, before detail and effects, so clarity,
+    /// sharpening, grain and the vignette sit on top of local edits. Their
+    /// geometry is drawn over `image`'s extent (the source frame) and goes
+    /// through the recipe's rotate and crop (`MaskRender.compose`).
     func apply(_ recipe: Recipe, to image: CIImage) -> CIImage {
         var out = image
         var done: Set<AdjustmentKind.Group> = []
         for kind in AdjustmentKind.allCases {
+            if kind == Self.maskStageBefore, !recipe.masks.isEmpty {
+                out = MaskRender.compose(recipe, sourceExtent: image.extent, on: out, renderer: self)
+            }
             if let group = kind.group {
                 guard !done.contains(group) else { continue }
                 done.insert(group)
@@ -107,6 +115,9 @@ final class Renderer: @unchecked Sendable {
         }
         return out
     }
+
+    /// The first kind applied after the mask stage (the head of Detail).
+    static let maskStageBefore: AdjustmentKind = .clarity
 
     private func groupStage(_ group: AdjustmentKind.Group, _ recipe: Recipe, on image: CIImage) -> CIImage {
         let v = { (k: AdjustmentKind) in recipe.effective(k) / 100 }

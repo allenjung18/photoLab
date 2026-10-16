@@ -629,6 +629,8 @@ redo, Reset, the render time and any sidecar error.
   exposure, contrast, highlights, shadows, whites and blacks. Because the
   measured frame never carries the six, a second Auto reads the same
   histogram and sets the same values (`Library.sync` then skips the photo).
+  `AutoTone.base` keeps the photo's masks, so Auto measures the picture with
+  its local adjustments rendered; Auto never changes them, so that holds.
   The values go on through `Library.sync(_:mask:)` with `AutoTone.mask`:
   one batch tag for every photo given, so one `⌘Z` takes the lot back, and
   one sidecar write per photo changed. The command (`AppCommand.Name.autoTone`)
@@ -650,9 +652,11 @@ last preset error.
   renderer (`PresetThumbnails.render(master:presets:base:pixelSize:renderer:)`,
   each cell `Preset.apply(to:)` over the photo's current recipe). Requests
   coalesce like the loupe's. The strip re-requests when the photo changes,
-  when the preset list changes, and when the photo's geometry changes
+  when the preset list changes, when the photo's geometry changes
   (`geometryKey`: rotate and the crop edges are the only kinds an apply
-  keeps, so they are the only ones that change a preset's thumbnail).
+  keeps) and when its local adjustments change (`masksKey`: an apply keeps
+  the photo's masks, and they render), the only edits that change a
+  preset's thumbnail.
 - **A cell.** Click applies: `Library.apply(_:to:)`, one undo step, the
   sidecar written. The ring is heavier on the preset the photo already
   shows (`Preset.matches(_:)`). The context menu has **Apply**, **Update

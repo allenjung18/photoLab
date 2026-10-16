@@ -439,25 +439,73 @@ final class ToneSetTests: XCTestCase {
     /// `PHOTOLAB_BENCH_IMAGE` if set, else a synthetic 6000×4000 JPEG. The
     /// 16 ms gate is read against the load average (`assertFrameBudget`).
     func testEverySliderStepRenderTimeOn24MP() throws {
+        let steppers = AdjustmentKind.allCases.map { kind in
+            Stepper(name: kind.rawValue, range: kind.range, geometry: kind.group == .crop || kind == .rotate) {
+                $0.set(kind, to: $1)
+            }
+        }
+        try sliderStepGate(Self.everythingOn(), steppers, label: "everything on")
+    }
+
+    /// Two local adjustments (a linear and a radial mask, each carrying every
+    /// `LocalMask.kinds` value) over the everything-on recipe: the budget
+    /// holds with masks on, for every global slider and for the first mask's
+    /// own sliders.
+    static func everythingOnWithMasks() -> Recipe {
+        var r = everythingOn()
+        func local(_ shape: MaskShape) -> LocalMask {
+            LocalMask(shape: shape, adjustments: LocalMask.kinds.map {
+                Adjustment(kind: $0, value: $0 == .exposure ? 0.6 : 20)
+            })
+        }
+        r.masks = [
+            local(.linear(start: MaskPoint(x: 0.5, y: 0), end: MaskPoint(x: 0.5, y: 0.45))),
+            local(.radial(center: MaskPoint(x: 0.6, y: 0.55), radii: MaskRadii(x: 0.25, y: 0.15), angle: 20, feather: 0.5)),
+        ]
+        return r
+    }
+
+    func testEverySliderStepRenderTimeOn24MPWithMasks() throws {
+        var steppers = AdjustmentKind.allCases.map { kind in
+            Stepper(name: kind.rawValue, range: kind.range, geometry: kind.group == .crop || kind == .rotate) {
+                $0.set(kind, to: $1)
+            }
+        }
+        steppers += LocalMask.kinds.map { kind in
+            Stepper(name: "mask.\(kind.rawValue)", range: kind.range, geometry: false) { $0.masks[0].set(kind, to: $1) }
+        }
+        try sliderStepGate(Self.everythingOnWithMasks(), steppers, label: "everything on, a linear and a radial mask")
+    }
+
+    /// One slider of the timed gate: a name for the bench line, its range,
+    /// whether a step changes the output size, and how to set it.
+    struct Stepper {
+        let name: String
+        let range: ClosedRange<Double>
+        let geometry: Bool
+        let set: (inout Recipe, Double) -> Void
+    }
+
+    private func sliderStepGate(_ base: Recipe, _ steppers: [Stepper], label: String) throws {
         let env = ProcessInfo.processInfo.environment
         var load = loadAverage()
         let url = try bench24MPImageURL()
         let master = try XCTUnwrap(Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize))
         let target = Int(env["PHOTOLAB_BENCH_TARGET"] ?? "2600") ?? 2600
         let steps = 12
-        var worst: (AdjustmentKind, Double) = (.exposure, 0)
+        var worst: (String, Double) = ("", 0)
         var lines: [String] = []
-        var gated: [(AdjustmentKind, Double)] = []
+        var gated: [(String, Double)] = []
         // Warm the kernels once so the first kind does not pay the compile.
-        _ = renderer.render(master, recipe: Self.everythingOn(), maxPixelSize: target)
-        for kind in AdjustmentKind.allCases {
-            var r = Self.everythingOn()
-            let lo = kind.range.lowerBound, hi = kind.range.upperBound
+        _ = renderer.render(master, recipe: base, maxPixelSize: target)
+        for stepper in steppers {
+            var r = base
+            let lo = stepper.range.lowerBound, hi = stepper.range.upperBound
             // A crop or rotate step changes the output size, and Core Image
             // charges 5–15 ms the first time it meets a size (texture pool);
             // the same sizes revisited render at the chain's own cost. Both
             // are measured; the gate is the revisited pass for those kinds.
-            let passes = kind.group == .crop || kind == .rotate ? 2 : 1
+            let passes = stepper.geometry ? 2 : 1
             var medians: [Double] = []
             var minMax = (Double.infinity, 0.0)
             var attempts = 0
@@ -472,7 +520,7 @@ final class ToneSetTests: XCTestCase {
                     for i in 0..<steps {
                         // Sweep the middle 60% of the range (a 40% crop would be degenerate).
                         let t = 0.2 + 0.6 * Double(i) / Double(steps - 1)
-                        r.set(kind, to: lo + (hi - lo) * t)
+                        stepper.set(&r, lo + (hi - lo) * t)
                         let out = try XCTUnwrap(renderer.render(master, recipe: r, maxPixelSize: target))
                         times.append(out.milliseconds)
                     }
@@ -484,17 +532,17 @@ final class ToneSetTests: XCTestCase {
                 load = max(load, loadAverage())
             } while medians.last! >= frameBudgetBound(16, load: load) && attempts < 3
             let median = medians.last!
-            if median > worst.1 { worst = (kind, median) }
+            if median > worst.1 { worst = (stepper.name, median) }
             let firstSeen = passes == 2 ? String(format: " (first-seen sizes %.1f ms)", medians[0]) : ""
             let retried = attempts > 1 ? " (best of \(attempts) sweeps)" : ""
-            lines.append(String(format: "%@ median %.1f ms (min %.1f, max %.1f)%@%@", kind.rawValue, median, minMax.0, minMax.1, firstSeen, retried))
-            gated.append((kind, median))
+            lines.append(String(format: "%@ median %.1f ms (min %.1f, max %.1f)%@%@", stepper.name, median, minMax.0, minMax.1, firstSeen, retried))
+            gated.append((stepper.name, median))
         }
         load = max(load, loadAverage())
-        print("BENCH-ALL \(url.lastPathComponent): master \(Int(master.extent.width))×\(Int(master.extent.height)), preview \(target) px, \(steps) steps per kind, everything on; slowest \(worst.0.rawValue) \(String(format: "%.1f", worst.1)) ms, load \(String(format: "%.2f", load))")
+        print("BENCH-ALL \(url.lastPathComponent): master \(Int(master.extent.width))×\(Int(master.extent.height)), preview \(target) px, \(steps) steps per kind, \(label); slowest \(worst.0) \(String(format: "%.1f", worst.1)) ms, load \(String(format: "%.2f", load))")
         for line in lines { print("BENCH-KIND " + line) }
-        for (kind, median) in gated {
-            try assertFrameBudget(median, bound: 16, load: load, "a \(kind.rawValue) step must fit one 60 Hz frame")
+        for (name, median) in gated {
+            try assertFrameBudget(median, bound: 16, load: load, "a \(name) step (\(label)) must fit one 60 Hz frame")
         }
     }
 }

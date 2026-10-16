@@ -174,3 +174,68 @@ struct LocalMask: Codable, Hashable, Identifiable {
     /// recipe, which the renderer applies under the mask.
     var recipe: Recipe { Recipe(adjustments: adjustments) }
 }
+
+// MARK: - Mask weights: the maths the renderer draws
+
+/// The weight of a mask at a point, 0 (no effect) ... 1 (full effect): the
+/// pure statement of what `MaskRender` draws with Core Image, so the shapes
+/// are testable without a render and the on-canvas handles (a later chunk)
+/// can read them. Distances are measured in pixels of the source, scaled by
+/// its long side, so a perpendicular is perpendicular on screen and equal
+/// radii are a circle on any aspect ratio; hence the source `size`.
+enum MaskMath {
+    /// `mask`'s weight at `point` (source frame) over a source of `size`
+    /// pixels: the shape's weight, or 1 minus it when `inverted`. A brush
+    /// mask weighs 0 everywhere, inverted or not, until brushes render; a
+    /// disabled mask still has its weight (the renderer skips it).
+    static func weight(of mask: LocalMask, at point: MaskPoint, in size: CGSize) -> Double {
+        if case .brush = mask.shape { return 0 }
+        let w = weight(of: mask.shape, at: point, in: size)
+        return mask.inverted ? 1 - w : w
+    }
+
+    /// The shape's own weight (no inversion).
+    /// - linear: 1 at and before `start`, 0 at and beyond `end`, a straight
+    ///   ramp between, constant along the perpendicular to start -> end. A
+    ///   zero-length gradient weighs 0.
+    /// - radial: 1 inside the inner ellipse (radii x (1 - feather)), 0 at
+    ///   and outside the outer one (radii), a straight ramp in normalised
+    ///   radius between; the ellipse is turned clockwise on screen by
+    ///   `angle` degrees. A zero radius weighs 0.
+    /// - brush: 0 (rendered by a later chunk).
+    static func weight(of shape: MaskShape, at point: MaskPoint, in size: CGSize) -> Double {
+        let long = max(Double(size.width), Double(size.height))
+        guard long > 0 else { return 0 }
+        let sx = Double(size.width) / long, sy = Double(size.height) / long
+        let px = point.x * sx, py = point.y * sy
+        switch shape {
+        case .linear(let start, let end):
+            let ax = start.x * sx, ay = start.y * sy
+            let dx = end.x * sx - ax, dy = end.y * sy - ay
+            let len2 = dx * dx + dy * dy
+            guard len2 > 0 else { return 0 }
+            let t = ((px - ax) * dx + (py - ay) * dy) / len2
+            return min(max(1 - t, 0), 1)
+        case .radial(let center, let radii, let angle, let feather):
+            guard radii.x > 0, radii.y > 0 else { return 0 }
+            let d = ellipseRadius(px - center.x * sx, py - center.y * sy, radii: radii, angle: angle)
+            let f = min(max(feather, 0), 1)
+            if d >= 1 { return 0 }
+            if d <= 1 - f { return 1 }
+            return (1 - d) / f
+        case .brush:
+            return 0
+        }
+    }
+
+    /// The normalised radius of offset (dx, dy) (long-side units, y down)
+    /// in an ellipse of `radii` turned clockwise on screen by `angle`
+    /// degrees: 1 on the ellipse, below 1 inside.
+    static func ellipseRadius(_ dx: Double, _ dy: Double, radii: MaskRadii, angle: Double) -> Double {
+        let a = angle * .pi / 180
+        // Into the ellipse's own axes: turn the offset back by `angle`.
+        let u = dx * cos(a) + dy * sin(a)
+        let v = -dx * sin(a) + dy * cos(a)
+        return ((u / radii.x) * (u / radii.x) + (v / radii.y) * (v / radii.y)).squareRoot()
+    }
+}

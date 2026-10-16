@@ -52,6 +52,31 @@ sharpening radius, the grain cell, the vignette radius) is a fraction of the
 image's own long side, so a preview and an export of the same recipe look the
 same at their different sizes.
 
+The recipe's masks (`Recipe.masks`, local adjustments) are one more stage,
+run just before `Renderer.maskStageBefore` (clarity, the head of Detail):
+after the HSL group, so clarity, sharpening, grain and the vignette sit on
+top of local edits. `apply` makes one call, `MaskRender.compose`
+(`MaskRender.swift`), with the extent of its own input (the scaled source,
+the frame mask geometry is written in). For each mask that renders
+(`MaskRender.renders`: enabled, some adjustment not a no-op, and not a brush,
+which a later chunk renders), in list order, it draws the shape's mask over
+that extent (`MaskRender.image(for:over:)`: `CILinearGradient` from `start`
+to `end`, or `CIRadialGradient` on a unit circle with its inner ring at
+`1 - feather`, scaled to the radii in long-side pixels, turned clockwise on
+screen by `angle` and moved to the centre), runs it through the recipe's
+own geometry kinds (`AdjustmentKind.geometryKinds`, by `apply` itself, so
+rotate and crop are not written twice), applies the mask's adjustments to
+the picture so far through `apply(mask.recipe, to:)` (the same chain, so a
+mask's highlights and shadows come through the tone cube and `CubeCache`),
+and composes the two with `CIBlendWithMask`; an inverted mask swaps the two
+images, weight 1 - w. `MaskMath.weight(of:at:in:)` (`Masks.swift`) states
+the same weights without Core Image: a straight ramp along the gradient,
+constant along its perpendicular in pixels, and a straight ramp in
+normalised ellipse radius between the inner and outer rings. Because the
+mask is built over the whole source and placed by the same stages as the
+pixels, a 1:1 region needs nothing of its own: it reads a window of the
+same chain.
+
 ### The two inputs
 
 - `Renderer.previewMaster(_:maxPixelSize:)` is the loupe's input: an ImageIO
@@ -538,7 +563,8 @@ form, list order kept) include them; any mask makes a recipe not
 disabled or all-neutral mask renders as identity but is still an edit.
 `Recipe`'s `Codable` reads a missing `masks` key as none and writes the
 key only when there is a mask, so an unmasked recipe encodes exactly as it
-did before masks existed. Masks are not rendered yet.
+did before masks existed. Linear and radial masks render (§1, The chain);
+a brush mask is a no-op until brushes render.
 
 ### `Sidecar` and `SidecarStore`
 

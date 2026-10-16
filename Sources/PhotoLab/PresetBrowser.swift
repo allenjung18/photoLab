@@ -106,8 +106,10 @@ struct PresetStrip: View {
 
     private var current: Recipe { library.recipe(for: photo.id) }
     /// What the thumbnails depend on besides the photo and the presets: only
-    /// the geometry survives an apply, so only it re-renders the strip.
+    /// the geometry and the masks (local adjustments, which render) survive
+    /// an apply, so only they re-render the strip.
     private var geometryKey: [Adjustment] { AdjustmentKind.geometryKinds.map { current[$0] } }
+    private var masksKey: [LocalMask] { current.normalized.masks }
 
     var body: some View {
         @Bindable var presetLibrary = presetLibrary
@@ -158,6 +160,7 @@ struct PresetStrip: View {
         .onChange(of: file, initial: true) { request() }
         .onChange(of: presetLibrary.presets) { request() }
         .onChange(of: geometryKey) { request() }
+        .onChange(of: masksKey) { request() }
         .alert("Save Preset", isPresented: $presetLibrary.saveRequested) {
             TextField("Name", text: $newName)
             Button("Save") { presetLibrary.save(current, as: newName); newName = "" }
