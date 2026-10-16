@@ -389,6 +389,8 @@ final class Library {
     var openError: String?
     /// The Open Photos Library sheet the window should show.
     var photosSheet = false
+    /// The My Edits sheet (View › My Edits…, `MyEditsSheet`).
+    var myEditsSheet = false
     /// Photos whose sidecar exists but could not be decoded, or whose Photos
     /// adjustment data is PhotoLab's at a version this build does not read;
     /// their edits show as neutral and their sidecars are left alone until

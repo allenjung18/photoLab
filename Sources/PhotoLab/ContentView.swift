@@ -82,6 +82,9 @@ struct ContentView: View {
         .sheet(item: $library.syncRequest) { request in
             SyncSheet(request: request)
         }
+        .sheet(isPresented: $library.myEditsSheet) {
+            MyEditsSheet()
+        }
         .sheet(item: $library.matchLookRequest) { model in
             MatchLookSheet(model: model)
         }

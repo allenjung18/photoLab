@@ -41,7 +41,7 @@ struct AppCommand: Identifiable {
         case undo, redo, undoTrash, undoRename
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset, importLightroomPreset
-        case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
+        case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, myEdits, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, autoWhiteBalance, matchLook, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
@@ -296,6 +296,11 @@ struct AppCommand: Identifiable {
                        let lib = c.library
                        if lib.loupe { lib.showInfo.toggle() } else { lib.showInfo = true; enterLoupe(lib) }
                    }),
+        // My Edits…: a read-only sheet of the open source's edited photos
+        // and your habits (`MyEditsSheet`); no key.
+        AppCommand(name: .myEdits, title: "My Edits…", key: nil, placement: .view, section: 1,
+                   isEnabled: { c in c.library.source != nil && !c.library.myEditsSheet },
+                   perform: { $0.library.myEditsSheet = true }),
         AppCommand(name: .previous, title: "Previous Photo", key: .leftArrow, modifiers: [], placement: .view,
                    section: 2, isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { $0.library.select(offset: -1) }),

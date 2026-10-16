@@ -1277,6 +1277,22 @@ Lightroom presets: `XMPPreset.parse(_:fileName:)` (Architecture 2,
 approximated, unsupported and clamped settings an import sheet would show;
 no menu or sheet calls it yet.
 
+## My Edits
+
+**View › My Edits…** (`AppCommand.Name.myEdits`, no key, enabled with a source open)
+sets `Library.myEditsSheet` and shows `MyEditsSheet` (`MyEdits.swift`), read only.
+`Library.myEdits` builds it from `Library.photos` and `Library.recipes` of the open
+source only: `MyEditsRow.rows(photos:recipes:)` keeps a photo with at least one
+enabled, non-neutral slider (`Adjustment.isNoop` false) or mask (`LocalMask.isNoop`
+false), so an unedited photo and a disabled-only edit are absent, and a virtual copy
+is its own row (`Photo.caption`). Each row has the thumbnail
+(`Thumbnails.resolve` for the edited recipe), the sliders as
+`AdjustmentKind.format` grouped by `AdjustmentKind.Section.title`, and "n masks".
+Above the rows, `EditSummary(recipes:)` lists per kind the number of photos using it
+and the median value (`EditSummary.Habit`), most used first, ties in panel order; the
+sheet shows the first eight. Clicking a row runs `Library.openFromMyEdits(_:)`: select
+the photo, open the loupe, close the sheet. Nothing is written (`MyEditsTests`).
+
 ## Match Look
 
 **Photo › Match Look…** (`AppCommand.Name.matchLook`, no key, enabled with batch
@@ -1557,7 +1573,7 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
     **Show Original** **\\**, **Clipping Warning** **J**, **Show Mask Overlay**
     **O** (`Library.showMaskOverlay`, see Adjustments panel, Masks), **Filmstrip** **F**,
-    **Info** **⌘I** (`Library.showInfo`), **Previous Photo**
+    **Info** **⌘I** (`Library.showInfo`), **My Edits…** (`AppCommand.Name.myEdits`, no key, see My Edits), **Previous Photo**
     **←** and **Next Photo** **→** (the keys below); then **Show** (the
     filter) and **Sort By**, the `sort` placement's items with no keys:
     **Capture Date**, **Name**, **Rating**, **Edited** (one checked,

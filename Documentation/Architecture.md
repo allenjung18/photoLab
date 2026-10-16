@@ -1081,6 +1081,17 @@ throwing, and writes only through `PresetLibrary.save(_:as:)`; the moved sliders
 from `RecipeDiff.moved(from:to:)` (`Presets.swift`), a pure diff against a recipe that the
 look-match sheet reuses (`XMPImportTests`).
 
+### `EditSummary` and `MyEditsRow`: My Edits
+
+`MyEdits.swift`. Both are pure values over recipes. `MyEditsRow.rows(photos:recipes:)`
+filters `Library.photos` to those whose recipe has an enabled non-neutral entry or a
+non-noop mask and groups the entries by `AdjustmentKind.section`;
+`EditSummary(recipes:)` counts, per `AdjustmentKind`, the photos using it
+(`Adjustment.isNoop` false) and their median. `Library.myEdits` joins them over
+`Library.recipes`, `Library.myEditsSheet` shows `MyEditsSheet` from `ContentView`'s
+`.sheet(isPresented:)`, and `Library.openFromMyEdits(_:)` sets `selection` and `loupe`.
+No write path: it reads the already-loaded recipes (`MyEditsTests`).
+
 ### `MatchLookModel`: Match Look
 
 `Library.matchLook(reference:to:)` (`Library.swift`) measures one reference image
