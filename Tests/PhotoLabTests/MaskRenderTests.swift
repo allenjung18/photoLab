@@ -276,9 +276,12 @@ final class MaskRenderTests: XCTestCase {
         XCTAssertLessThanOrEqual(maxDiff(got, try chain([before, local.recipe, after])), 1, "between HSL and Detail")
         XCTAssertGreaterThan(maxDiff(got, try chain([local.recipe, before, after])), 4, "not at the head of the chain")
         XCTAssertGreaterThan(maxDiff(got, try chain([before, after, local.recipe])), 4, "not after Detail and Effects")
-        // The kind right after the HSL group is the stage's anchor.
-        let lastHSL = AdjustmentKind.allCases.lastIndex { $0.group == .hsl }!
-        XCTAssertEqual(AdjustmentKind.allCases[lastHSL + 1], Renderer.maskStageBefore)
+        // The kind right after the HSL group and the color grade (which
+        // follows HSL, ColorGradingTests) is the stage's anchor.
+        let lastGrade = AdjustmentKind.allCases.lastIndex { $0.group == .grade }!
+        XCTAssertEqual(AdjustmentKind.allCases.lastIndex { $0.group == .hsl }! + 1,
+                       AdjustmentKind.allCases.firstIndex { $0.group == .grade }!)
+        XCTAssertEqual(AdjustmentKind.allCases[lastGrade + 1], Renderer.maskStageBefore)
         XCTAssertEqual(Renderer.maskStageBefore.section, .detail)
     }
 

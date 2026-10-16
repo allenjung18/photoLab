@@ -36,6 +36,19 @@ not only the pass.
   `XCTExpectFailure`: contrast pivots at 0.5 in the linear working space
   (about sRGB 188), so +50 takes a flat sRGB 128 gray to 77 and −50 to 161;
   + contrast darkens a whole photo.
+- `ColorGradingTests.swift` — color grading: the ten kinds contiguous after
+  HSL and before clarity, rendered before the mask stage (a grade plus a
+  mask equals the grade then the mask's recipe, not the reverse), the
+  section between HSL and Detail; presets and
+  the look sync carry them; `ColorCubes.gradeWeights` sums to 1 and balance
+  moves the crossover; on a gray ramp a shadow, highlight or midtone tint
+  (hue 240, saturation 50) blues its own range, keeps its luma and leaves
+  the far end within 2 levels; each tint lands at its hue; balance +50 puts
+  a 25% gray on the highlight tint; each luminance slider moves its own
+  range; a grade that tints nothing (hue alone, balance alone) renders
+  bit-identical to neutral and its cube is the identity; the grade cube fits
+  the scratch pool (12 tests). Shown to bite by a mutant (the shadow weight zeroed in
+  `ColorCubes.gradeCube`'s tables: 6 failures).
 - `ToneSetTests.swift` — the direction tests for the whole tone set (below),
   the sidecar shape holding one entry per kind, the timed sweep of every
   slider over an everything-on recipe, and the load guard's own test
@@ -589,7 +602,7 @@ saturation.
 
 **Proving one bites.** Before trusting a direction test, show it can fail.
 Locally, never committed: in `Renderer.swift`, find the kind's branch in
-`stage` (or its parameters in `groupStage` for a crop, tone or HSL kind) and
+`stage` (or its parameters in `groupStage` for a crop, tone, HSL or grade kind) and
 flip the sign, or neutralise the branch by returning the input image. Run
 that kind's test alone:
 

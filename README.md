@@ -182,6 +182,12 @@ album is open (the last 100 steps per photo) and is not saved.
 - **HSL** — hue, saturation and luminance for eight bands (red, orange,
   yellow, green, aqua, blue, purple, magenta); pick the channel, then the
   band sliders. Grays are never touched.
+- **Color Grading** — split toning by brightness: a hue (0–360°), a
+  saturation (0–100) and a luminance (−100…+100) each for shadows, midtones
+  and highlights, plus **Balance**, which moves the line between shadows and
+  highlights (positive gives the highlights more of the picture). A tint
+  colours a grey and keeps its brightness; a hue with saturation 0 does
+  nothing. Applied after HSL and before local adjustments (masks).
 - **Detail** — clarity (local contrast), sharpening, grain.
 - **Effects** — vignette (negative darkens the corners).
 - **Crop & Rotate** — rotate (degrees, positive is clockwise; the frame is

@@ -1,11 +1,11 @@
 import Foundation
 import Accelerate
 
-/// Builds the 3D lookup tables (`CIColorCube` data) for the two grouped
+/// Builds the 3D lookup tables (`CIColorCube` data) for the three grouped
 /// color stages: the tone lookup (highlights, shadows, whites, blacks and the
-/// five curve points, one per-channel curve) and the per-band HSL cube. Both
-/// cubes are applied in sRGB (gamma) space, where tone and lightness read the
-/// way the sliders suggest.
+/// five curve points, one per-channel curve), the per-band HSL cube and the
+/// color-grading cube. All three are applied in sRGB (gamma) space, where
+/// tone and lightness read the way the sliders suggest.
 ///
 /// Everything is vectorized with Accelerate so a debug build rebuilds a cube
 /// in well under a millisecond: a slider step must stay inside one frame and
@@ -157,6 +157,112 @@ enum ColorCubes {
         }
         return tables
     }()
+
+    // MARK: Color grading
+
+    /// Luma (Rec. 709 weights on the gamma-encoded values) of a cube entry.
+    static let lumaWeights: (r: Float, g: Float, b: Float) = (0.2126, 0.7152, 0.0722)
+    /// Chroma a range's tint adds at saturation 100 and weight 1 (max − min
+    /// of the added RGB, 0…1).
+    static let gradeTintChroma = 0.3
+    /// Offset a range's luminance adds to every channel at ±100 and weight 1
+    /// (0…1 units: a quarter of the scale).
+    static let gradeLuminanceAmount = 0.25
+    private static let gradeTableSize = 1024
+
+    /// The shadow, midtone and highlight weights at `luma` (0…1) for a
+    /// `balance` of -1…1. Balance first bends the luma, t = luma^γ (or
+    /// 1 − (1 − luma)^γ below 0) with γ = 2^(−2.5·|balance|), which moves the
+    /// crossover (where the shadow and highlight weights are equal) from
+    /// luma 0.5 to about 0.19 at +50 and 0.81 at −50. The weights are the
+    /// quadratic Bernstein basis of t, (1−t)², 2t(1−t), t², so they sum to 1:
+    /// a shadow tint is full at black and gone at white, a highlight tint the
+    /// reverse, a midtone tint peaks at the crossover.
+    static func gradeWeights(luma: Double, balance: Double) -> (shadow: Double, midtone: Double, highlight: Double) {
+        let y = min(1, max(0, luma))
+        let gamma = pow(2, -2.5 * abs(balance))
+        let t = balance >= 0 ? pow(y, gamma) : 1 - pow(1 - y, gamma)
+        return ((1 - t) * (1 - t), 2 * t * (1 - t), t * t)
+    }
+
+    /// The RGB a tint at `hue` (degrees: 0 red, 120 green, 240 blue) adds per
+    /// unit of strength: the hue's direction about the gray axis with its
+    /// Rec. 709 luma taken out (so a tinted gray keeps its luma) and scaled
+    /// to a chroma (max − min) of 1.
+    static func tintDirection(hue: Double) -> (r: Double, g: Double, b: Double) {
+        let h = hue * .pi / 180
+        let r = cos(h), g = cos(h - 2 * .pi / 3), b = cos(h + 2 * .pi / 3)
+        let w = lumaWeights
+        let y = Double(w.r) * r + Double(w.g) * g + Double(w.b) * b
+        let chroma = max(r, g, b) - min(r, g, b)
+        return ((r - y) / chroma, (g - y) / chroma, (b - y) / chroma)
+    }
+
+    /// Cube data for the ten color-grading sliders: `hue` in degrees,
+    /// `sat` 0…1 and `lum` -1…1, each indexed by `AdjustmentKind.GradeRange`
+    /// order (shadow, midtone, highlight), and `balance` -1…1.
+    ///
+    /// Every entry is weighted into the three ranges by its own luma
+    /// (`gradeWeights`). Luminance first: the weighted sum of the three
+    /// luminance sliders is added to every channel (a lift or a cut, gray
+    /// staying gray, clipped to 0…1). Then the tint: the weighted sum of each range's
+    /// `tintDirection` times its saturation (`gradeTintChroma` at 100) is
+    /// added, carrying no luma, and scaled down per entry only as far as
+    /// keeps every channel inside 0…1, so the luma is kept exactly. A gray
+    /// takes color and keeps its tone; a hue with saturation 0 adds nothing.
+    static func gradeCube(hue: [Double], sat: [Double], lum: [Double], balance: Double) -> Data {
+        lock.lock(); defer { lock.unlock() }
+        let ws = Workspace.shared
+        ws.reset()
+        let id = Identity.shared
+        let (tintR, tintG, tintB, lift) = gradeTables(hue: hue, sat: sat, lum: lum, balance: balance)
+
+        // Per-entry luma, as an index into the tables (rounded).
+        let w = lumaWeights
+        let y = vadd(vadd(vsmul(id.r, w.r, ws), vsmul(id.g, w.g, ws), ws), vsmul(id.b, w.b, ws), ws)
+        let idx = vsadd(vsmul(y, Float(gradeTableSize - 1), ws), 0.5, ws)
+
+        // Luminance: the same offset on every channel, clipped.
+        let k = gather(lift, idx, ws)
+        func lifted(_ v: Buf) -> Buf { vclip(vadd(v, k, ws), 0, 1, ws) }
+        let r1 = lifted(id.r), g1 = lifted(id.g), b1 = lifted(id.b)
+
+        // Tint, scaled per entry by the largest f ≤ 1 keeping v + f·T in 0…1.
+        let tr = gather(tintR, idx, ws), tg = gather(tintG, idx, ws), tb = gather(tintB, idx, ws)
+        let eps: Float = 1e-6, big: Float = 1e6
+        func room(_ v: Buf, _ t: Buf) -> Buf {
+            let up = vdiv(vsadd(vsmul(v, -1, ws), 1, ws), vclip(t, eps, big, ws), ws)
+            let down = vdiv(v, vclip(vsmul(t, -1, ws), eps, big, ws), ws)
+            return vmin(up, down, ws)
+        }
+        let f = vclip(vmin(vmin(room(r1, tr), room(g1, tg), ws), room(b1, tb), ws), 0, 1, ws)
+        func tinted(_ v: Buf, _ t: Buf) -> Buf { vclip(vadd(v, vmul(f, t, ws), ws), 0, 1, ws) }
+        return interleave(tinted(r1, tr), tinted(g1, tg), tinted(b1, tb), ws.count)
+    }
+
+    /// The tint (per channel) and the luminance offset over luma, sampled at
+    /// `gradeTableSize` points: the range weights times each range's slider.
+    private static func gradeTables(hue: [Double], sat: [Double], lum: [Double], balance: Double)
+        -> ([Float], [Float], [Float], [Float]) {
+        let dirs = (0..<3).map { i -> (Double, Double, Double) in
+            let d = tintDirection(hue: hue[i])
+            let a = sat[i] * gradeTintChroma
+            return (d.r * a, d.g * a, d.b * a)
+        }
+        var tr = [Float](repeating: 0, count: gradeTableSize)
+        var tg = tr, tb = tr, lift = tr
+        for i in 0..<gradeTableSize {
+            let wt = gradeWeights(luma: Double(i) / Double(gradeTableSize - 1), balance: balance)
+            let ws = [wt.shadow, wt.midtone, wt.highlight]
+            var r = 0.0, g = 0.0, b = 0.0, k = 0.0
+            for j in 0..<3 {
+                r += ws[j] * dirs[j].0; g += ws[j] * dirs[j].1; b += ws[j] * dirs[j].2
+                k += ws[j] * lum[j] * gradeLuminanceAmount
+            }
+            tr[i] = Float(r); tg[i] = Float(g); tb[i] = Float(b); lift[i] = Float(k)
+        }
+        return (tr, tg, tb, lift)
+    }
 
     // MARK: Identity planes
 

@@ -645,6 +645,11 @@ redo, Reset, the render time and any sidecar error.
   picker (hue, saturation, luminance), then one row per
   `AdjustmentKind.HSLBand` for that channel, the kind looked up with
   `AdjustmentKind.hsl(_:_:)`, so eight rows stand in for twenty-four.
+  Color Grading (`AdjustmentKind.Section.grading`, between HSL and Detail)
+  is plain slider rows for now: hue (`format` in degrees, 0…360),
+  saturation (0…100) and luminance for Shadow, Midtone and Highlight
+  (`AdjustmentKind.GradeRange`), then Balance; the Sync sheet lists the
+  ten as checkboxes under Color Grading.
 - **Footer.** Undo and redo call `Library.undo()` and `Library.redo()`,
   enabled by `Library.canUndo` / `Library.canRedo`. **Reset** is
   `Library.resetRecipe(for:)` (one undo step; the sidecar is removed unless

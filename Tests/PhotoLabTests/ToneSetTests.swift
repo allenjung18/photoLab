@@ -122,8 +122,9 @@ final class ToneSetTests: XCTestCase {
 
     func testEveryKindHasExactlyOneRecipeEntryAndTheSidecarShapeIsUnchanged() throws {
         XCTAssertEqual(Recipe.neutral.adjustments.map(\.kind), AdjustmentKind.allCases)
-        XCTAssertEqual(AdjustmentKind.allCases.count, 48)
+        XCTAssertEqual(AdjustmentKind.allCases.count, 58)
         XCTAssertEqual(AdjustmentKind.members(of: .hsl).count, 24)
+        XCTAssertEqual(AdjustmentKind.members(of: .grade).count, 10)
         XCTAssertEqual(AdjustmentKind.members(of: .tone).count, 9)
         XCTAssertEqual(AdjustmentKind.members(of: .crop).count, 4)
         for kind in AdjustmentKind.allCases where kind.hsl != nil {
@@ -140,6 +141,12 @@ final class ToneSetTests: XCTestCase {
         let decoded = try JSONDecoder().decode(Recipe.self, from: Data(old.utf8))
         XCTAssertEqual(decoded.effective(.highlights), 0)
         XCTAssertEqual(decoded.effective(.hueRed), 0)
+        for kind in AdjustmentKind.members(of: .grade) { XCTAssertEqual(decoded.effective(kind), 0) }
+        // The written file lists every kind, the grade kinds included.
+        let written = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Recipe.neutral)) as! [String: Any]
+        let listed = (written["adjustments"] as! [[String: Any]]).map { $0["kind"] as! String }
+        XCTAssertEqual(listed, AdjustmentKind.allCases.map(\.rawValue))
+        XCTAssertTrue(listed.contains("gradeShadowHue") && listed.contains("gradeBalance"))
         var same = Recipe.neutral
         same.set(.exposure, to: 1.25); same.set(.temperature, to: -30)
         XCTAssertLessThanOrEqual(maxDiff(render(decoded), render(same)), 1)

@@ -89,12 +89,13 @@ final class Renderer: @unchecked Sendable {
     /// Applies `recipe` to `image` in `AdjustmentKind.allCases` order (the
     /// recipe's own order does not matter). Disabled and neutral entries are
     /// skipped, so the neutral recipe is the identity. Grouped kinds (crop,
-    /// tone, HSL) are one stage each, applied where their first member sits.
+    /// tone, HSL, grade) are one stage each, applied where their first member
+    /// sits: the color grade right after HSL.
     /// The recipe's masks (local adjustments) are one stage too, just before
-    /// `maskStageBefore`: after HSL, before detail and effects, so clarity,
-    /// sharpening, grain and the vignette sit on top of local edits. Their
-    /// geometry is drawn over `image`'s extent (the source frame) and goes
-    /// through the recipe's rotate and crop (`MaskRender.compose`).
+    /// `maskStageBefore`: after HSL and the grade, before detail and effects,
+    /// so clarity, sharpening, grain and the vignette sit on top of local
+    /// edits. Their geometry is drawn over `image`'s extent (the source frame)
+    /// and goes through the recipe's rotate and crop (`MaskRender.compose`).
     func apply(_ recipe: Recipe, to image: CIImage) -> CIImage {
         var out = image
         var done: Set<AdjustmentKind.Group> = []
@@ -145,6 +146,19 @@ final class Renderer: @unchecked Sendable {
             let lum = bands.map { v(.hsl(.luminance, $0)) }
             let data = cubes.cube(for: [1] + hue + sat + lum) {
                 ColorCubes.hslCube(hue: hue, sat: sat, lum: lum)
+            }
+            return Self.cube(data, on: image)
+        case .grade:
+            let ranges = AdjustmentKind.GradeRange.allCases
+            let hue = ranges.map { recipe.effective(.grade(.hue, $0)) }
+            let sat = ranges.map { v(.grade(.saturation, $0)) }
+            let lum = ranges.map { v(.grade(.luminance, $0)) }
+            // A hue without saturation, or balance alone, changes nothing:
+            // skip the cube so such a grade is exactly the identity.
+            guard sat.contains(where: { $0 != 0 }) || lum.contains(where: { $0 != 0 }) else { return image }
+            let balance = v(.gradeBalance)
+            let data = cubes.cube(for: [2] + hue + sat + lum + [balance]) {
+                ColorCubes.gradeCube(hue: hue, sat: sat, lum: lum, balance: balance)
             }
             return Self.cube(data, on: image)
         }
@@ -298,7 +312,10 @@ final class Renderer: @unchecked Sendable {
              .curveBlacks, .curveShadows, .curveMidtones, .curveHighlights, .curveWhites,
              .hueRed, .hueOrange, .hueYellow, .hueGreen, .hueAqua, .hueBlue, .huePurple, .hueMagenta,
              .satRed, .satOrange, .satYellow, .satGreen, .satAqua, .satBlue, .satPurple, .satMagenta,
-             .lumRed, .lumOrange, .lumYellow, .lumGreen, .lumAqua, .lumBlue, .lumPurple, .lumMagenta:
+             .lumRed, .lumOrange, .lumYellow, .lumGreen, .lumAqua, .lumBlue, .lumPurple, .lumMagenta,
+             .gradeShadowHue, .gradeShadowSat, .gradeShadowLum,
+             .gradeMidtoneHue, .gradeMidtoneSat, .gradeMidtoneLum,
+             .gradeHighlightHue, .gradeHighlightSat, .gradeHighlightLum, .gradeBalance:
             // Grouped kinds are rendered by `groupStage`.
             return image
         }

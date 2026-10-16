@@ -1,14 +1,15 @@
 import Foundation
 
 /// Every adjustment, listed in the order the chain applies them (geometry,
-/// then exposure and white balance, tone, color, per-band HSL, detail,
-/// effects). Values are user-facing units (EV for exposure, degrees for
+/// then exposure and white balance, tone, color, per-band HSL, color
+/// grading, detail, effects). Values are user-facing units (EV for exposure, degrees for
 /// rotate, percent of the frame for a crop edge, -100…100 or 0…100 for the
 /// rest); `Renderer` maps them onto Core Image parameters.
 ///
 /// Some kinds are applied together as one stage (`group`): the four crop
 /// edges are one crop, highlights / shadows / whites / blacks and the five
-/// curve points are one tone lookup, the 24 HSL sliders are one color cube.
+/// curve points are one tone lookup, the 24 HSL sliders are one color cube,
+/// the ten color-grading sliders are another.
 enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
     // Geometry
     case rotate, cropLeft, cropTop, cropRight, cropBottom
@@ -23,13 +24,19 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
     case hueRed, hueOrange, hueYellow, hueGreen, hueAqua, hueBlue, huePurple, hueMagenta
     case satRed, satOrange, satYellow, satGreen, satAqua, satBlue, satPurple, satMagenta
     case lumRed, lumOrange, lumYellow, lumGreen, lumAqua, lumBlue, lumPurple, lumMagenta
+    // Color grading (one cube): hue, saturation and luminance per luma
+    // range, then balance. Kept contiguous, right after HSL.
+    case gradeShadowHue, gradeShadowSat, gradeShadowLum
+    case gradeMidtoneHue, gradeMidtoneSat, gradeMidtoneLum
+    case gradeHighlightHue, gradeHighlightSat, gradeHighlightLum
+    case gradeBalance
     // Detail and effects
     case clarity, sharpening, grain, vignette
 
     var id: String { rawValue }
 
     /// Kinds the renderer applies as one stage.
-    enum Group: Hashable { case crop, tone, hsl }
+    enum Group: Hashable { case crop, tone, hsl, grade }
 
     var group: Group? {
         switch self {
@@ -39,6 +46,9 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .hueRed, .hueOrange, .hueYellow, .hueGreen, .hueAqua, .hueBlue, .huePurple, .hueMagenta,
              .satRed, .satOrange, .satYellow, .satGreen, .satAqua, .satBlue, .satPurple, .satMagenta,
              .lumRed, .lumOrange, .lumYellow, .lumGreen, .lumAqua, .lumBlue, .lumPurple, .lumMagenta: return .hsl
+        case .gradeShadowHue, .gradeShadowSat, .gradeShadowLum,
+             .gradeMidtoneHue, .gradeMidtoneSat, .gradeMidtoneLum,
+             .gradeHighlightHue, .gradeHighlightSat, .gradeHighlightLum, .gradeBalance: return .grade
         default: return nil
         }
     }
@@ -75,8 +85,10 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .sharpening: return "Sharpening"
         case .grain: return "Grain"
         case .vignette: return "Vignette"
+        case .gradeBalance: return "Balance"
         default:
             if let (_, band) = hsl { return band.label }
+            if let (channel, range) = grade { return "\(range.label) \(channel.title.lowercased())" }
             return rawValue
         }
     }
@@ -87,6 +99,8 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .rotate: return -45...45
         case .cropLeft, .cropTop, .cropRight, .cropBottom: return 0...40
         case .sharpening, .grain: return 0...100
+        case .gradeShadowHue, .gradeMidtoneHue, .gradeHighlightHue: return 0...360
+        case .gradeShadowSat, .gradeMidtoneSat, .gradeHighlightSat: return 0...100
         default: return -100...100
         }
     }
@@ -99,7 +113,9 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .exposure: return String(format: "%+.2f", value)
         case .rotate: return String(format: "%+.1f°", value)
         case .cropLeft, .cropTop, .cropRight, .cropBottom: return String(format: "%.0f%%", value)
-        case .sharpening, .grain: return String(format: "%.0f", value)
+        case .sharpening, .grain,
+             .gradeShadowSat, .gradeMidtoneSat, .gradeHighlightSat: return String(format: "%.0f", value)
+        case .gradeShadowHue, .gradeMidtoneHue, .gradeHighlightHue: return String(format: "%.0f°", value)
         default: return String(format: "%+.0f", value)
         }
     }
@@ -107,7 +123,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
     // MARK: Panel layout
 
     enum Section: CaseIterable {
-        case basic, color, curve, hsl, detail, effects, geometry
+        case basic, color, curve, hsl, grading, detail, effects, geometry
 
         var title: String {
             switch self {
@@ -115,6 +131,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
             case .color: return "Color"
             case .curve: return "Tone Curve"
             case .hsl: return "HSL"
+            case .grading: return "Color Grading"
             case .detail: return "Detail"
             case .effects: return "Effects"
             case .geometry: return "Crop & Rotate"
@@ -135,7 +152,9 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .curveBlacks, .curveShadows, .curveMidtones, .curveHighlights, .curveWhites: return .curve
         case .clarity, .sharpening, .grain: return .detail
         case .vignette: return .effects
-        default: return .hsl
+        default:
+            if group == .grade { return .grading }
+            return .hsl
         }
     }
 
@@ -197,6 +216,42 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
     private static let hslByKind: [AdjustmentKind: (HSLChannel, HSLBand)] = {
         var map: [AdjustmentKind: (HSLChannel, HSLBand)] = [:]
         for channel in HSLChannel.allCases { for band in HSLBand.allCases { map[hsl(channel, band)] = (channel, band) } }
+        return map
+    }()
+
+    // MARK: Color grading
+
+    /// The three luma ranges a color grade tints, darkest first.
+    enum GradeRange: CaseIterable {
+        case shadow, midtone, highlight
+        var label: String {
+            switch self {
+            case .shadow: return "Shadow"
+            case .midtone: return "Midtone"
+            case .highlight: return "Highlight"
+            }
+        }
+    }
+
+    /// The grading kind of one channel of one range (`.grade(.hue, .shadow)`
+    /// is `gradeShadowHue`).
+    static func grade(_ channel: HSLChannel, _ range: GradeRange) -> AdjustmentKind {
+        gradeTable[GradeRange.allCases.firstIndex(of: range)!][HSLChannel.allCases.firstIndex(of: channel)!]
+    }
+    private static let gradeTable: [[AdjustmentKind]] = [
+        [.gradeShadowHue, .gradeShadowSat, .gradeShadowLum],
+        [.gradeMidtoneHue, .gradeMidtoneSat, .gradeMidtoneLum],
+        [.gradeHighlightHue, .gradeHighlightSat, .gradeHighlightLum],
+    ]
+
+    /// The channel and range of a grading kind, nil for every other kind
+    /// (balance included: it belongs to no one range).
+    var grade: (HSLChannel, GradeRange)? { Self.gradeByKind[self] }
+    private static let gradeByKind: [AdjustmentKind: (HSLChannel, GradeRange)] = {
+        var map: [AdjustmentKind: (HSLChannel, GradeRange)] = [:]
+        for (ri, range) in GradeRange.allCases.enumerated() {
+            for (ci, channel) in HSLChannel.allCases.enumerated() { map[gradeTable[ri][ci]] = (channel, range) }
+        }
         return map
     }()
 

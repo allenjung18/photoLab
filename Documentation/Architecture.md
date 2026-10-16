@@ -25,23 +25,37 @@ app does, this document says how. Four mechanisms carry everything:
 `Renderer.apply(_:to:)` (`Renderer.swift`) takes a `Recipe` and a `CIImage`
 and returns the adjusted `CIImage`. It walks `AdjustmentKind.allCases`, so
 kinds apply in the order the enum declares them (geometry, then exposure and
-white balance, tone, color, per-band HSL, detail, effects) whatever order the
+white balance, tone, color, per-band HSL, color grading, detail, effects)
+whatever order the
 recipe happens to list them in. An entry that is disabled or at its neutral
 value (`Adjustment.isNoop`) is skipped, so the neutral recipe is the identity.
 
 Some kinds render together as one stage. `AdjustmentKind.Group` names the
-three: `crop` (the four edges are one `cropped(to:)`), `tone` (highlights,
+four: `crop` (the four edges are one `cropped(to:)`), `tone` (highlights,
 shadows, whites, blacks and the five tone-curve points are one per-channel
-lookup) and `hsl` (the 24 hue / saturation / luminance sliders are one 3D
-color cube). `apply` reaches a group when it meets its first member and
+lookup), `hsl` (the 24 hue / saturation / luminance sliders are one 3D
+color cube) and `grade` (the ten color-grading sliders are another cube,
+right after `hsl` and before clarity; `ColorGradingTests` pins the
+position). `apply` reaches a group when it meets its first member and
 renders it once through `groupStage`, provided any member is not a no-op;
 the other members' own `stage` branch is a pass-through.
 
-The two lookups are built on the CPU in `ColorCubes` (`ColorCubes.swift`,
+The cubes are built on the CPU in `ColorCubes` (`ColorCubes.swift`,
 Accelerate): `ColorCubes.toneLUT` samples the tone curve and
 `ColorCubes.toneCube` turns it into cube data; `ColorCubes.hslCube` builds
 the HSL cube, weighted by each pixel's own saturation so grays never move.
-Both are `ColorCubes.dimension` samples per axis and are applied through
+`ColorCubes.gradeCube` builds the color-grading cube: each entry's Rec. 709
+luma (`ColorCubes.lumaWeights`) weights it into shadows, midtones and
+highlights (`ColorCubes.gradeWeights`, the quadratic Bernstein basis of the
+luma bent by balance, so the three sum to 1), the weighted luminance sliders
+add an offset to every channel (`gradeLuminanceAmount` at ±100), then the
+weighted tints (`ColorCubes.tintDirection` of each range's hue, times its
+saturation and `gradeTintChroma`) are added with no luma of their own,
+scaled per entry only as far as keeps every channel in 0…1, so a gray takes
+color and keeps its luma. `groupStage` skips the grade cube when every
+saturation and luminance is 0 (a hue alone, or balance alone, tints
+nothing), so such a grade is exactly the identity.
+All three are `ColorCubes.dimension` samples per axis and are applied through
 `colorCubeWithColorSpace` in sRGB gamma space on purpose, where tone and
 lightness read the way the sliders suggest. `CubeCache` keys a built cube by
 its parameter values: dragging an unrelated slider reuses the cube, a step of
@@ -54,8 +68,8 @@ same at their different sizes.
 
 The recipe's masks (`Recipe.masks`, local adjustments) are one more stage,
 run just before `Renderer.maskStageBefore` (clarity, the head of Detail):
-after the HSL group, so clarity, sharpening, grain and the vignette sit on
-top of local edits. `apply` makes one call, `MaskRender.compose`
+after the HSL group and the color grade, so clarity, sharpening, grain and
+the vignette sit on top of local edits. `apply` makes one call, `MaskRender.compose`
 (`MaskRender.swift`), with the extent of its own input (the scaled source,
 the frame mask geometry is written in). For each mask that renders
 (`MaskRender.renders`: enabled, some adjustment not a no-op, and not a brush,
@@ -505,12 +519,16 @@ leaves the photo as it was.
 One case per slider, declared in chain order; `Codable` by its raw string
 ("exposure", "cropLeft", "hueRed", and so on), which is what a sidecar stores.
 Each kind has a `label`, a `range`, a `format`, a `section` (the panel
-section: `basic`, `color`, `curve`, `hsl`, `detail`, `effects`, `geometry`)
+section: `basic`, `color`, `curve`, `hsl`, `grading`, `detail`, `effects`,
+`geometry`)
 and a `neutral` value, the value at which it does nothing (zero for every
 kind). `AdjustmentKind.geometryKinds` is rotate plus the four crop edges: the
 kinds a preset never carries and a `.look` sync never copies. `group` is the
 render grouping above; `hsl` and `curveX` give the HSL kinds their channel
-and band and the curve kinds their x position.
+and band and the curve kinds their x position; `grade` gives a color-grading
+kind its channel (`HSLChannel`) and range (`GradeRange`: shadow, midtone,
+highlight), nil for `gradeBalance`, and `AdjustmentKind.grade(_:_:)` looks
+one up.
 
 ### `Adjustment`
 

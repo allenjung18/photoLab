@@ -1172,7 +1172,7 @@ struct CropOverlay: View {
 }
 
 /// The histogram, the preset strip, then the adjustment sliders in sections (Basic, Color,
-/// Tone Curve, HSL, Detail, Effects, Crop & Rotate), each with an enable checkbox, plus a
+/// Tone Curve, HSL, Color Grading, Detail, Effects, Crop & Rotate), each with an enable checkbox, plus a
 /// hold-to-compare button, undo / redo / reset, and the live render time
 /// of the last frame. The HSL section shows one channel (hue, saturation or
 /// luminance) of the eight bands at a time, like Lightroom's panel.
