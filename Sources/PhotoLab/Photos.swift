@@ -151,10 +151,10 @@ enum PhotosError: LocalizedError, Equatable {
         switch self {
         case .notAuthorized(.notDetermined): return "Photos access has not been allowed yet."
         case .notAuthorized: return "Photos access is not allowed. Allow it in System Settings › Privacy & Security › Photos."
-        case .assetMissing(let id): return "The photo \(id) is no longer in the library."
-        case .noOriginal(let id): return "The photo \(id) has no original to open."
+        case .assetMissing: return "This photo is no longer in the library."
+        case .noOriginal: return "This photo's original is not in the library."
         case .cannotImport(let name): return "Photos could not import \(name)."
-        case .cannotEdit(let id): return "Photos could not open the photo \(id) for editing."
+        case .cannotEdit: return "Photos could not open this photo for editing."
         }
     }
 }

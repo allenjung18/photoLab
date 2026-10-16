@@ -102,6 +102,7 @@ struct PresetStrip: View {
     @State private var renaming: Preset?
     @State private var renameTo = ""
     @State private var deleting: Preset?
+    @State private var stripWidth: CGFloat = 0
 
     private var current: Recipe { library.recipe(for: photo.id) }
     /// What the thumbnails depend on besides the photo and the presets: only
@@ -120,6 +121,18 @@ struct PresetStrip: View {
                         ForEach(presetLibrary.presets) { preset in cell(preset) }
                     }
                     .padding(.vertical, 2)
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
+                // More presets than fit: the last visible cell fades out at the
+                // edge, the hint that the strip scrolls.
+                .mask {
+                    HStack(spacing: 0) {
+                        Rectangle()
+                        if Self.overflows(count: presetLibrary.presets.count, width: stripWidth) {
+                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: 28)
+                        }
+                    }
                 }
             }
             HStack {
@@ -172,6 +185,12 @@ struct PresetStrip: View {
         }
     }
 
+    /// Whether `count` cells (72 pt wide, 8 pt apart) are wider than the strip.
+    static func overflows(count: Int, width: CGFloat) -> Bool {
+        guard width > 0, count > 0 else { return false }
+        return CGFloat(count) * 72 + CGFloat(count - 1) * 8 > width
+    }
+
     /// Whether a cell without a thumbnail reads "Could not open" instead of
     /// spinning: the original is unavailable, or its decode failed.
     static func cellFailed(unavailable: Bool, file: URL?, failedFile: URL?) -> Bool {
@@ -222,7 +241,7 @@ struct PresetStrip: View {
     }
 
     private func helpText(_ preset: Preset) -> String {
-        if let t = thumbnails.thumbnails[preset.name], let file, thumbnails.url == file {
+        if DeveloperInfo.showTimings, let t = thumbnails.thumbnails[preset.name], let file, thumbnails.url == file {
             return String(format: "%@ · thumbnail %.1f ms", preset.name, t.milliseconds)
         }
         return preset.name

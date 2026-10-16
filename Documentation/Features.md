@@ -505,7 +505,7 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   created if missing; empty = the library only), the line that every export
   is a new photo and a Photos-sourced one comes back beside its original,
   the collision picker hidden, and the access row from
-  `ExportQueue.photos.authorizationStatus()`: **Allow Access…**
+  `ExportQueue.photos.authorizationStatus()`: **Allow Access to Photos…**
   (`requestAuthorization()`, the only prompt) when not yet asked, **Open
   System Settings** and **Check Again** when denied. **Export n Photos**
   (also **Return**) is enabled once a folder is chosen, or for Photos once

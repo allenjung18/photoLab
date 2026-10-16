@@ -51,7 +51,11 @@ struct PhotoLabApp: App {
                 Divider()
                 CommandItems(placement: .pasteboard, context: context)
             }
-            CommandMenu("View") { CommandItems(placement: .view, context: context) }
+            CommandMenu("View") {
+                CommandItems(placement: .view, context: context)
+                Divider()
+                ShowFilterMenu().environment(library)
+            }
             CommandMenu("Photo") { CommandItems(placement: .photo, context: context) }
             // Presets: save the selected photo's look, or apply one by name to
             // the selection (every selected photo in the grid, one undo step).

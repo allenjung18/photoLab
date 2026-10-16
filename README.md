@@ -81,6 +81,12 @@ ratings, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
+**View › Show** also picks the grid's filter (All, Picks, Unflagged, Rejected, 1 to 5
+stars), the same choice as the bar above the grid, and the empty-filter message has a
+**Show All** button. After an export, **Details…** lists every photo that failed or was
+skipped. Render timings stay out of the panel and the tooltips unless you run
+`defaults write <bundle id> showTimings -bool YES`.
+
 The same actions are clickable: Pick, Reject, Unflag and five stars in the
 loupe panel footer (the one photo) and in the batch bar (the selected
 photos), and a right-click menu on a grid photo (Pick, Reject, Unflag,
@@ -191,7 +197,7 @@ selection back to the anchor:
   choice, since every export is a new photo, and a photo opened from Photos
   comes back as a new photo beside its original, which is not changed.
   Photos needs the app bundle (`scripts/bundle.sh`) and your permission:
-  the sheet's **Allow Access…** is the only place it is asked. A bar at the
+  the sheet's **Allow Access to Photos…** is the only place it is asked. A bar at the
   bottom of the window shows the count done, the file in flight and Cancel,
   which stops after that file; what is written stays, a skipped file is
   counted.

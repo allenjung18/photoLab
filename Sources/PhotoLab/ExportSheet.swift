@@ -191,7 +191,7 @@ struct ExportSheet: View {
                 Text("PhotoLab needs your permission to add photos.")
                     .font(.caption)
                 Spacer()
-                Button("Allow Access…") {
+                Button("Allow Access to Photos…") {
                     Task { photosStatus = await exports.photos.requestAuthorization() }
                 }
             }
@@ -201,7 +201,7 @@ struct ExportSheet: View {
                     .font(.caption).foregroundStyle(.red)
                 Spacer()
                 if photosStatus == .denied {
-                    Button("Open System Settings") { NSWorkspace.shared.open(PhotosBrowser.settingsURL) }
+                    Button("Open System Settings…") { NSWorkspace.shared.open(PhotosBrowser.settingsURL) }
                     Button("Check Again") { photosStatus = exports.photos.authorizationStatus() }
                 }
             }

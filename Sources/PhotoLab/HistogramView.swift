@@ -17,7 +17,9 @@ struct HistogramView: View {
                 Spacer()
                 Text("Histogram")
                     .font(.callout.weight(.semibold))
-                    .help(histogram.map { String(format: "%d px, computed in %.1f ms", $0.pixelCount, $0.milliseconds) } ?? "Waiting for a frame")
+                    .help(DeveloperInfo.showTimings
+                          ? (histogram.map { String(format: "%d px, computed in %.1f ms", $0.pixelCount, $0.milliseconds) } ?? "Waiting for a frame")
+                          : "Red, green, blue and brightness of the photo; the triangles show clipping")
                 Spacer()
                 triangle(lit: histogram?.highlightsClipped ?? false, fraction: histogram?.highlightClipping,
                          name: "Highlight", color: .red)

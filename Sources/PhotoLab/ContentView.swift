@@ -34,18 +34,20 @@ struct ContentView: View {
                       : "The Photos library opens from the app bundle (scripts/bundle.sh)")
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Picker("View", selection: viewBinding) {
-                    Label("Grid", systemImage: "square.grid.3x3").tag(false)
-                    Label("Loupe", systemImage: "photo").tag(true)
+                if library.source != nil {
+                    Picker("View", selection: viewBinding) {
+                        Label("Grid", systemImage: "square.grid.3x3").tag(false)
+                        Label("Loupe", systemImage: "photo").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(library.photos.isEmpty)
+                    .help("Grid (G) or single photo (E)")
+                    Toggle(isOn: compareBinding) {
+                        Label("Before / After", systemImage: "rectangle.split.2x1")
+                    }
+                    .disabled(library.photos.isEmpty)
+                    .help("Before and After side by side (Y)")
                 }
-                .pickerStyle(.segmented)
-                .disabled(library.photos.isEmpty)
-                .help("Grid (G) or single photo (E)")
-                Toggle(isOn: compareBinding) {
-                    Label("Before / After", systemImage: "rectangle.split.2x1")
-                }
-                .disabled(library.photos.isEmpty)
-                .help("Before and After side by side (Y)")
                 if library.loupe, library.source is PhotosSource {
                     Button { Task { await library.saveToPhotos() } } label: {
                         Label("Save to Photos", systemImage: "square.and.arrow.down.on.square")
@@ -167,10 +169,13 @@ struct GridView: View {
                         .padding(40)
                         .frame(maxWidth: .infinity)
                 } else if library.visiblePhotos.isEmpty {
-                    Text("No photos match the filter")
-                        .foregroundStyle(.secondary)
-                        .padding(40)
-                        .frame(maxWidth: .infinity)
+                    VStack(spacing: 12) {
+                        Text("No photos match the filter")
+                            .foregroundStyle(.secondary)
+                        Button("Show All") { library.filter = .all }
+                    }
+                    .padding(40)
+                    .frame(maxWidth: .infinity)
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(library.visiblePhotos) { photo in
@@ -232,11 +237,6 @@ private struct FilterBar: View {
             .fixedSize()
             .help("Which photos the grid shows; P / X / U flag, 0–5 rate the selection")
             Spacer()
-            Text(library.filter == .all
-                 ? "\(library.photos.count) photos"
-                 : "\(library.visiblePhotos.count) of \(library.photos.count) shown")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
         }
         .controlSize(.small)
         .padding(.horizontal, 16).padding(.vertical, 8)
@@ -256,17 +256,11 @@ private struct BatchBar: View {
         HStack(spacing: 10) {
             Text("\(library.selectedIDs.count) selected")
                 .font(.callout.weight(.semibold))
-            if let anchor = library.selectedPhoto {
-                Text("· anchor \(anchor.name)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
             FlagStarControl(targets: library.batchTargets)
             Spacer()
             Button("Sync Settings…") { library.requestSync() }
-                .help("Copy the anchor's settings onto the other selected photos, with checkboxes for what to sync")
+                .help(library.selectedPhoto.map { "Copy \($0.name)'s settings onto the other selected photos, with checkboxes for what to sync" }
+                      ?? "Copy the settings of the photo you clicked first onto the others, with checkboxes for what to sync")
             Menu("Apply Preset") {
                 ForEach(presets.presets) { preset in
                     Button(preset.name) { library.apply(preset, to: library.batchTargets) }
@@ -406,6 +400,7 @@ struct SyncSheet: View {
 /// folder run) or Open Photos (a Photos run).
 private struct ExportBar: View {
     @Environment(ExportQueue.self) private var exports
+    @State private var showDetails = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -432,6 +427,22 @@ private struct ExportBar: View {
                     .lineLimit(2)
                 if let first = exports.failures.first {
                     Text(first.message).font(.caption).foregroundStyle(.red).lineLimit(1)
+                }
+                if !exports.detailLines.isEmpty {
+                    Button("Details…") { showDetails = true }
+                        .popover(isPresented: $showDetails, arrowEdge: .top) {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(Array(exports.detailLines.enumerated()), id: \.offset) { _, line in
+                                        Text(line).font(.caption).textSelection(.enabled)
+                                    }
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(width: 420, height: min(260, CGFloat(exports.detailLines.count) * 22 + 28))
+                        }
+                        .help("Every photo that failed or was skipped, with the reason")
                 }
                 Spacer()
                 switch exports.target {
@@ -503,7 +514,7 @@ struct ThumbnailCell: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(selected ? Color.accentColor.opacity(anchor ? 1 : 0.6) : .clear, lineWidth: 3))
+                    .stroke(selected ? Color.accentColor : .clear, lineWidth: anchor ? 4 : 3))
             .overlay(alignment: .topTrailing) {
                 if edited {
                     Image(systemName: "slider.horizontal.3")
@@ -548,6 +559,7 @@ struct ThumbnailCell: View {
                 .foregroundStyle(selected ? .primary : .secondary)
         }
         .contentShape(Rectangle())
+        .help(photo.name)
         .task(id: Thumbnails.Key(photo.id, recipe: recipe)) {
             // The entry for this photo and recipe when it is there; else the
             // plain thumbnail first (or whatever the cell already shows, the
@@ -1024,10 +1036,12 @@ struct AdjustmentsPanel: View {
             }
             .controlSize(.small)
             .padding(.horizontal, 16).padding(.vertical, 10)
-            Text(footer)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16).padding(.bottom, library.sidecarError == nil ? 10 : 4)
+            if let footer {
+                Text(footer)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16).padding(.bottom, library.sidecarError == nil ? 10 : 4)
+            }
             if let error = library.sidecarError {
                 Text(error)
                     .font(.caption2)
@@ -1081,11 +1095,14 @@ struct AdjustmentsPanel: View {
         }
     }
 
-    private var footer: String {
+    /// The panel's status line: Loading… / Could not open / the fetch note,
+    /// and, only with the `showTimings` default on, the render timing.
+    private var footer: String? {
         if let note = fetch.unavailableNote { return note }
         guard let file, preview.imageURL == file, let cg = preview.image else {
             return file != nil && preview.failed == file ? "Could not open" : "Loading…"
         }
+        guard DeveloperInfo.showTimings else { return nil }
         let master = preview.masterSize
         return String(format: "render %.1f ms · %d×%d px of %.0f×%.0f master",
                       preview.renderMilliseconds, cg.width, cg.height, master.width, master.height)

@@ -55,6 +55,7 @@ struct FilmstripView: View {
                     ForEach(items) { item in
                         FilmstripCell(item: item, side: cell)
                             .id(item.id)
+                            .contextMenu { PhotoContextMenu(photo: item.photo) }
                             .onTapGesture {
                                 let flags = NSEvent.modifierFlags
                                 Filmstrip.click(item.id, in: library,
@@ -97,7 +98,7 @@ private struct FilmstripCell: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(item.selected ? Color.accentColor.opacity(item.anchor ? 1 : 0.6) : .clear, lineWidth: 3))
+                .stroke(item.selected ? Color.accentColor : .clear, lineWidth: item.anchor ? 4 : 3))
         .overlay(alignment: .topTrailing) {
             if item.edited {
                 Image(systemName: "slider.horizontal.3")

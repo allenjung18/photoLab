@@ -336,6 +336,14 @@ final class ExportQueue {
     /// Items finished: written, skipped or failed.
     var completed: Int { done + skipped.count + failures.count }
 
+    /// One line per photo the run did not write: every failure with its
+    /// reason, then every file left alone because it already existed. The
+    /// result bar's Details… lists these.
+    var detailLines: [String] {
+        failures.map { "\($0.source.lastPathComponent) — \($0.message)" }
+            + skipped.map { "\($0.lastPathComponent) — already exists, skipped" }
+    }
+
     /// Opens the options sheet for `items`. Ignored while a run is going.
     func requestExport(_ items: [Item]) {
         guard !isRunning, !items.isEmpty else { return }

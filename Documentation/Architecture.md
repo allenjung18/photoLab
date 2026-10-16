@@ -660,7 +660,7 @@ Photos).
 
 `PhotosWriter` (`Photos.swift`) is everything an export to Photos asks of
 PhotoKit: `authorizationStatus()`, `requestAuthorization()` (the export
-sheet's Allow Access… button, the only prompt) and
+sheet's Allow Access to Photos… button, the only prompt) and
 `importImage(at:intoAlbum:)`, which returns the new asset's identifier.
 `PhotoKitLive` implements it with one `performChanges`:
 `PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL:)`, and the
