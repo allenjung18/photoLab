@@ -1081,6 +1081,24 @@ throwing, and writes only through `PresetLibrary.save(_:as:)`; the moved sliders
 from `RecipeDiff.moved(from:to:)` (`Presets.swift`), a pure diff against a recipe that the
 look-match sheet reuses (`XMPImportTests`).
 
+### `MatchLookModel`: Match Look
+
+`Library.matchLook(reference:to:)` (`Library.swift`) measures one reference image
+(`Renderer.previewMaster` at `PreviewModel.masterPixelSize`, then
+`ImageStats.of(master:recipe:)` under `.neutral`), solves each target with
+`LookMatch.values(target:master:recipe:)` (detached tasks, at most
+`Library.autoConcurrency`) and applies the results through `Library.sync(_:mask:)`
+with `LookMatch.mask` after `closeOpenEdit()`: one batch tag, one undo step. It
+reuses Auto's `autoToning`, `autoProgress` and `cancelAuto()`; it throws
+`MatchLookError` (`unreadable`, `busy`, `cancelled`) with nothing applied and never
+writes, copies or imports the reference file. `MatchLookOutcome` carries the
+counts and `MatchLookOutcome.rows` (per slider, `RecipeDiff.moved` over each
+photo's before and after). `MatchLookModel` (`MatchLook.swift`) is the sheet's
+state (`setReference`, `match()`, `close()`), held in `Library.matchLookRequest`
+and shown by `MatchLookSheet` (`ContentView`'s `.sheet(item:)`);
+`Library.requestMatchLook(for:reference:)` opens it from the Photo menu or from
+the loupe panel's `dropDestination` (`MatchLookTests`).
+
 ### `ExportOptions`
 
 One value per export run, carried unchanged through the queue to every item:

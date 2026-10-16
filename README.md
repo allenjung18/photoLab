@@ -89,6 +89,7 @@ in Xcode works too.
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
 | `⌘U` | Auto Tone: temperature and tint from the photo's average colour, then exposure, contrast, highlights, shadows, whites and blacks from its histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot; a large selection shows "Auto n of N" with Cancel, and `Esc` or Cancel stops it with nothing applied |
 | `⇧⌘U` | Auto White Balance: temperature and tint only (or **Auto** beside White Balance in Color) |
+| — | Match Look… (Photo menu, no key; or drop an image file on the loupe's panel): pick one reference photo and the batch targets get its tone and colour (exposure, contrast, whites, blacks, temperature, tint, saturation, vibrance and the shadow and highlight grade) as ordinary slider values, each photo solved for its own, one undo step for the lot; the sheet shows the reference's thumbnail and lists the sliders moved. The reference is only read: never copied, imported or changed. An unreadable file changes nothing |
 | `⇧⌘R` | Reset Photo (back to the original) |
 | `⌘'` | Create Virtual Copy: a second edit of the selected photo (grid or loupe), starting from its current one, listed right after it with a small number badge and captioned "<name> Copy 2"; **Photo › Remove Virtual Copy…** (also in a cell's right-click menu) deletes a copy's edit after a confirm and is not undoable. A copy is flagged, rated, synced, batch-edited and exported like any photo; its export is named `<name>-copy2.jpg` so it never lands on its master's; Save to Photos is off on a copy (Photos keeps one edit per photo) |
 | `⇧⌘P` | Save Preset… (in the loupe) |
@@ -103,8 +104,8 @@ Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Red
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
-to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Select Sky (guess), Move Rejected Photos to Trash…). Select Subject, Select Person, Select Faces and Select Sky (guess) have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
+ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Match Look…, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
+to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Select Sky (guess), Move Rejected Photos to Trash…). Select Subject, Select Person, Select Faces, Select Sky (guess) and Match Look… have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
 

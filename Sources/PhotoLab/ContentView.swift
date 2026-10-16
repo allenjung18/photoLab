@@ -82,6 +82,9 @@ struct ContentView: View {
         .sheet(item: $library.syncRequest) { request in
             SyncSheet(request: request)
         }
+        .sheet(item: $library.matchLookRequest) { model in
+            MatchLookSheet(model: model)
+        }
         .sheet(item: $library.keywordsRequest) { request in
             KeywordsSheet(request: request)
         }
@@ -1026,6 +1029,11 @@ struct LoupeView: View {
             AdjustmentsPanel(photo: photo, file: resolvedFile, fetch: fetch, preview: preview)
                 .frame(width: 280)
                 .clipped()
+                // A photo file dropped on the panel is the Match Look reference.
+                .dropDestination(for: URL.self) { urls, _ in
+                    guard let url = urls.first(where: \.isFileURL) else { return false }
+                    return library.requestMatchLook(for: library.batchTargets, reference: url)
+                }
         }
         .task(id: photo.id) {
             guard photo.fileURL == nil else { fetch = .none; return }

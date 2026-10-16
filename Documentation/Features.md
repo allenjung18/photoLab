@@ -1277,6 +1277,23 @@ Lightroom presets: `XMPPreset.parse(_:fileName:)` (Architecture 2,
 approximated, unsupported and clamped settings an import sheet would show;
 no menu or sheet calls it yet.
 
+## Match Look
+
+**Photo › Match Look…** (`AppCommand.Name.matchLook`, no key, enabled with batch
+targets and no Auto running) or an image file dropped on the loupe's panel opens
+`MatchLookSheet` over a `MatchLookModel`: one reference photo (D-472 (a), no mood
+board), chosen with **Choose Photo…** (`NSOpenPanel`, images) or dropped, shown as a
+thumbnail (`MatchLookModel.setReference`). A file `ImageLoading` cannot read is
+refused in the sheet with no reference. **Match** runs `Library.matchLook(reference:to:)`
+over `Library.batchTargets`: the reference is decoded once and measured with
+`ImageStats.of(master:recipe:)` under `.neutral`, each target is solved with
+`LookMatch.values` off the main thread, and the answers are applied through `sync`
+with `LookMatch.mask` as ONE undo step (the sidecars hold ordinary slider values). It
+shares Auto's busy flag, progress and `cancelAuto()` (Cancel while it runs applies
+nothing). The sheet then lists the sliders moved (`MatchLookOutcome.rows`, built with
+`RecipeDiff.moved`), with the number of photos each moved on and the mean value. The
+reference is only read (`MatchLookTests`).
+
 ## Export
 
 **Export…** comes from the batch bar, from **⇧⌘E** or the File menu (the item
@@ -1553,7 +1570,10 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
     Auto), **Auto White Balance** **⇧⌘U** (the same call with
     `AutoTone.whiteBalanceMask`: temperature and tint only; also the **Auto**
-    button beside White Balance in Color) and **Reset Photo** **⇧⌘R**
+    button beside White Balance in Color), **Match Look…**
+    (`AppCommand.Name.matchLook`, no key: `Library.requestMatchLook(for:)` opens
+    `MatchLookSheet`; a file dropped on the loupe's panel opens it with that
+    reference chosen) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited), **Create
     Virtual Copy** **⌘'** and **Remove Virtual Copy…** (see Virtual copies); then
     **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch

@@ -337,6 +337,8 @@ final class Library {
     private(set) var copiedFrom: Photo.ID?
     /// A Sync / Paste Settings sheet the window should show.
     var syncRequest: SyncRequest?
+    /// A Match Look sheet the window should show (`MatchLookModel`).
+    var matchLookRequest: MatchLookModel?
     /// The mask of the last sync, so the next sheet opens the same way.
     var lastSyncMask = SyncMask.look
     /// Edits per photo for the open folder, mirrored to sidecars.
@@ -1666,6 +1668,78 @@ final class Library {
         // A drag left open would fold Auto into its step.
         closeOpenEdit()
         return sync(sources, mask: mask)
+    }
+
+    /// Match Look (`LookMatch`): the global tone and colour of `reference`
+    /// brought to each photo of `ids`. The reference is decoded once
+    /// (`Renderer.previewMaster` at `PreviewModel.masterPixelSize`) and measured
+    /// with `ImageStats.of(master:recipe:)` under `.neutral`, as the file is,
+    /// off the main thread; it is only read, never copied, imported or
+    /// written. Each target is then solved (`LookMatch.values`, off the main
+    /// thread, at most `autoConcurrency` at a time) and the answers are applied
+    /// through `sync` with `LookMatch.mask`: ONE undo step for the lot, the
+    /// sidecars holding ordinary slider values. The run shares Auto's flag,
+    /// progress and `cancelAuto()`: a cancel applies nothing. Throws
+    /// `MatchLookError` (nothing changed) when the reference cannot be read or
+    /// another batch is running; a target that cannot be read is skipped and
+    /// counted in the outcome.
+    func matchLook(reference: URL, to ids: [Photo.ID]) async throws -> MatchLookOutcome {
+        guard !autoToning else { throw MatchLookError.busy }
+        var seen = Set<Photo.ID>()
+        let listed = Set(photos.map(\.id))
+        let targets = ids.filter { listed.contains($0) && seen.insert($0).inserted }
+        guard !targets.isEmpty else { return MatchLookOutcome(changed: 0, skipped: 0, moved: []) }
+        autoToning = true
+        autoCancelled = false
+        autoNote = nil
+        autoProgress = (0, targets.count)
+        defer { autoToning = false; autoLastRun = autoProgress; autoProgress = (0, 0) }
+        let stats = await Task.detached(priority: .userInitiated) { () -> ImageStats? in
+            guard let master = Renderer.previewMaster(reference, maxPixelSize: PreviewModel.masterPixelSize)
+            else { return nil }
+            return ImageStats.of(master: master, recipe: .neutral)
+        }.value
+        guard let stats else { throw MatchLookError.unreadable(reference.lastPathComponent) }
+        let cap = Self.autoConcurrency
+        var solved: [Photo.ID: [AdjustmentKind: Double]] = [:]
+        var skipped = 0
+        let recipes = Dictionary(targets.map { ($0, recipe(for: $0)) }, uniquingKeysWith: { a, _ in a })
+        await withTaskGroup(of: (Photo.ID, [AdjustmentKind: Double]?).self) { group in
+            var next = 0
+            func start(_ id: Photo.ID) {
+                let recipe = recipes[id] ?? .neutral
+                group.addTask { [weak self] in
+                    guard let self, let url = try? await self.originalFile(for: id) else { return (id, nil) }
+                    let values = await Task.detached(priority: .userInitiated) { () -> [AdjustmentKind: Double]? in
+                        guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
+                        else { return nil }
+                        return LookMatch.values(target: stats, master: master, recipe: recipe)
+                    }.value
+                    return (id, values)
+                }
+            }
+            while next < min(cap, targets.count) { start(targets[next]); next += 1 }
+            for await (id, values) in group {
+                autoProgress = (autoProgress.done + 1, targets.count)
+                if let values { solved[id] = values } else { skipped += 1 }
+                if autoCancelled { group.cancelAll(); continue }
+                if next < targets.count { start(targets[next]); next += 1 }
+            }
+        }
+        if autoCancelled {
+            autoNote = "Match Look cancelled: nothing changed (one batch, all or nothing)"
+            throw MatchLookError.cancelled
+        }
+        if skipped > 0 { autoNote = "Match Look: \(skipped) photo\(skipped == 1 ? "" : "s") skipped" }
+        let before = Dictionary(targets.map { ($0, recipe(for: $0)) }, uniquingKeysWith: { a, _ in a })
+        let sources = targets.compactMap { id in
+            solved[id].map { (id: id, source: LookMatch.applying($0, to: recipe(for: id))) }
+        }
+        // A drag left open would fold the match into its step.
+        closeOpenEdit()
+        let changed = sync(sources, mask: LookMatch.mask)
+        return MatchLookOutcome(changed: changed, skipped: skipped,
+                                moved: MatchLookOutcome.rows(targets.map { (before[$0] ?? .neutral, recipe(for: $0)) }))
     }
 
     /// Detects the automatic masks `kinds` (`AutoMaskKind`; `.sky` is a
