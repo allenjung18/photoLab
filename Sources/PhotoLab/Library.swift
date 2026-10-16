@@ -604,7 +604,9 @@ final class Library {
     /// no sidecar file holds, the source photo's current recipe and no
     /// marks or keywords. Its sidecar is written at once, even at the
     /// default recipe (the file is how it exists); it is listed right after
-    /// its master and the copies numbered below it, and selected. Nil, with
+    /// its master and the copies numbered below it, and selected (unless the
+    /// filter or the search hides it: the selection then follows
+    /// `reconcileSelection`, as for any hidden photo). Nil, with
     /// `sidecarError` set, when the write fails; nil for a photo not listed.
     @discardableResult
     func createVirtualCopy(of id: Photo.ID) -> Photo.ID? {
@@ -628,12 +630,14 @@ final class Library {
         let after = photos.lastIndex { $0.id == master.id || ($0.id.master == master.id && ($0.id.copyNumber ?? 0) < n) }
         photos.insert(copy, at: (after ?? photos.count - 1) + 1)
         selection = copy.id
+        reconcileSelection()  // a copy the filter or the search hides is not the anchor
         return copy.id
     }
 
     /// Removes a virtual copy: its sidecar is deleted and it leaves the
     /// photos, the recipes, the marks, the keywords and the undo history;
-    /// a selected copy hands the selection to its master. Refused (false)
+    /// a selected copy hands the selection to its master (to the nearest
+    /// visible photo when the filter or the search hides it). Refused (false)
     /// for a master, a photo not listed, and when the file cannot be
     /// deleted (`sidecarError` says why).
     @discardableResult
@@ -660,6 +664,7 @@ final class Library {
         } else if selectedIDs.contains(id) {
             selectedIDs.remove(id)
         }
+        reconcileSelection()  // a master the filter or the search hides is not the anchor
         if selection == nil { loupe = false }
         return true
     }

@@ -266,6 +266,29 @@ final class VirtualCopyTests: XCTestCase {
         XCTAssertEqual(lib.recipe(for: c2), recipe(exposure: 1))
     }
 
+    /// The anchor is never a photo the filter hides: a new unmarked copy
+    /// under Picks, or a removed copy's unpicked master under Rejected.
+    func testSelectionStaysOnVisiblePhotosUnderAFilter() throws {
+        let a = try makePhoto("a.png")
+        let b = try makePhoto("b.png")
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        lib.setFlag(.pick, for: [.file(a), .file(b)])
+        lib.filter = .picks
+        lib.selection = .file(a)
+        let copy = try XCTUnwrap(lib.createVirtualCopy(of: .file(a)))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: SidecarStore(folder: folder).url(for: copy).path))
+        XCTAssertEqual(lib.selection, .file(b), "the hidden copy is not the anchor")
+        XCTAssertFalse(lib.selectedIDs.contains(copy))
+
+        lib.setFlag(.reject, for: [copy])
+        lib.filter = .rejected
+        lib.selection = copy
+        XCTAssertTrue(lib.removeVirtualCopy(copy))
+        XCTAssertNil(lib.selection, "the picked master is hidden under Rejected")
+        XCTAssertFalse(lib.loupe)
+    }
+
     // MARK: Move to Trash
 
     /// A rejected copy is never trashed (its file is the master's); a
