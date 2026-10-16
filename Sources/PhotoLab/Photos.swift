@@ -45,6 +45,14 @@ struct PhotosAlbum: Identifiable, Hashable, Sendable {
 struct PhotosAsset: Hashable, Sendable {
     let id: String
     let originalFilename: String
+    /// The asset's `creationDate` (its capture time), nil when Photos has none.
+    let creationDate: Date?
+
+    init(id: String, originalFilename: String, creationDate: Date? = nil) {
+        self.id = id
+        self.originalFilename = originalFilename
+        self.creationDate = creationDate
+    }
 }
 
 /// Everything `PhotosSource` asks of PhotoKit, so a test can stand in a
@@ -219,7 +227,7 @@ struct PhotoKitLive: PhotoKitClient {
         out.reserveCapacity(fetched.count)
         fetched.enumerateObjects { asset, _, _ in
             let name = Self.originalResource(of: asset)?.originalFilename ?? asset.localIdentifier
-            out.append(PhotosAsset(id: asset.localIdentifier, originalFilename: name))
+            out.append(PhotosAsset(id: asset.localIdentifier, originalFilename: name, creationDate: asset.creationDate))
         }
         return out
     }
@@ -464,7 +472,7 @@ struct PhotosSource: PhotoSource {
         guard status.canRead else { throw PhotosError.notAuthorized(status) }
         let assets = client.assets(in: album)
         originals.remember(assets)
-        return assets.map { Photo(id: .asset($0.id), name: $0.originalFilename) }
+        return assets.map { Photo(id: .asset($0.id), name: $0.originalFilename, captureDate: $0.creationDate) }
     }
 
     var sidecars: SidecarStore { SidecarStore(directory: sidecarDirectory, naming: .flat) }

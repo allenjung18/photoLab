@@ -77,6 +77,21 @@ final class Library {
             saveViewState()
         }
     }
+    /// The grid's order (`PhotoSort`): `photos` is kept sorted by it, so the
+    /// grid, the filmstrip and the arrows follow it. Remembered per source
+    /// kind (`storedSort(for:)`); a change re-sorts at once and leaves the
+    /// selection and the anchor where they are.
+    var sort: PhotoSort = .folderDefault {
+        didSet {
+            guard sort != oldValue, !restoringViewState else { return }
+            resort()
+            if rememberFolder, source != nil {
+                defaults.set(sort.storageKey, forKey: Self.sortDefaultsKey(sortKind))
+            }
+        }
+    }
+    /// Capture dates read for the `.captureDate` sort, once per photo.
+    let captureDates: CaptureDates
     /// The anchor of the selection: the photo the loupe shows, the one a
     /// shift-click extends from, the source of Sync Settings. Setting it
     /// collapses a multi-selection to that one photo; `click` is the path
@@ -169,9 +184,11 @@ final class Library {
 
     /// `rememberFolder: false` keeps the source out of UserDefaults (tests);
     /// `defaults` is where it is remembered when it is.
-    init(rememberFolder: Bool = true, defaults: UserDefaults = .standard) {
+    init(rememberFolder: Bool = true, defaults: UserDefaults = .standard,
+         captureDates: CaptureDates = CaptureDates()) {
         self.rememberFolder = rememberFolder
         self.defaults = defaults
+        self.captureDates = captureDates
         if rememberFolder, defaults.object(forKey: Filmstrip.showKey) != nil {
             showFilmstrip = defaults.bool(forKey: Filmstrip.showKey)
         }
@@ -262,6 +279,7 @@ final class Library {
         sidecarError = nil
         photosSave = .idle
         filter = .all
+        sort = storedSort(for: sortKind)
         photos = listed
         let store = source.sidecars
         self.store = store
@@ -272,6 +290,7 @@ final class Library {
         if let first = loaded.unreadable.first {
             sidecarError = "Could not read the edit saved for \(name(for: first))"
         }
+        resort()
         restoreViewState()
     }
 
@@ -305,7 +324,7 @@ final class Library {
         open(URL(fileURLWithPath: path))
     }
 
-    /// The photos the filter admits, in folder order: what the grid shows and
+    /// The photos the filter admits, in sort order: what the grid shows and
     /// what every selection path walks. Under `.all` it is `photos`.
     var visiblePhotos: [Photo] {
         if filter == .all { return photos }
@@ -393,7 +412,7 @@ final class Library {
         selectedIDs = selection.map { [$0] } ?? []
     }
 
-    /// The photos a batch action targets, in folder order: the multi-selection
+    /// The photos a batch action targets, in sort order: the multi-selection
     /// when there is one, else the anchor. A photo the filter hides is never a
     /// target, whatever the selection set holds.
     var batchTargets: [Photo.ID] {
@@ -413,7 +432,7 @@ final class Library {
 
     /// After the filter or a mark changed: hidden photos leave the selection,
     /// and a hidden anchor moves to the nearest visible photo after it in
-    /// folder order (culling flow: reject under Picks shows the next one),
+    /// sort order (culling flow: reject under Picks shows the next one),
     /// else the nearest before, else none.
     private func reconcileSelection() {
         let kept = selectedIDs.filter(isVisible)
@@ -454,6 +473,7 @@ final class Library {
             m.rating = rating
             setMarks(m, for: id)
         }
+        if sort.key == .rating { resort() }
         reconcileSelection()
     }
 
@@ -716,8 +736,11 @@ final class Library {
 
     /// Only the default recipe is dropped from memory; a recipe that renders
     /// as identity because an entry is disabled keeps its values.
+    /// Under the `.edited` sort, a photo gaining or losing its edit moves.
     private func apply(_ recipe: Recipe, to id: Photo.ID) {
+        let wasEdited = recipes[id] != nil
         if recipe.isDefault { recipes.removeValue(forKey: id) } else { recipes[id] = recipe }
+        if sort.key == .edited, wasEdited != (recipes[id] != nil) { resort() }
     }
 
     /// Writes the photo's sidecar: recipe and marks together, so a reset

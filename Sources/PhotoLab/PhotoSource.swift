@@ -37,16 +37,21 @@ enum PhotoID: Hashable, Codable, Sendable {
 
 /// One photo of the open source: its identity and its display name, plus
 /// the file when the identity is one (`fileURL`, a shortcut for `.file`
-/// ids; nil for an asset until the source materialises its original).
+/// ids; nil for an asset until the source materialises its original), and
+/// the capture date when the listing carries one (a Photos asset's
+/// `creationDate`; nil for a file, whose date `CaptureDates` reads on
+/// demand).
 struct Photo: Identifiable, Hashable, Sendable {
     let id: PhotoID
     let name: String
     let fileURL: URL?
+    let captureDate: Date?
 
-    init(id: PhotoID, name: String) {
+    init(id: PhotoID, name: String, captureDate: Date? = nil) {
         self.id = id
         self.name = name
         self.fileURL = id.fileURL
+        self.captureDate = captureDate
     }
 
     /// A photo in a folder: identity, name and file are all the URL.
@@ -65,7 +70,7 @@ struct Photo: Identifiable, Hashable, Sendable {
 protocol PhotoSource: Sendable {
     /// What the window title shows for this source.
     var title: String { get }
-    /// The photos in the order the grid shows them.
+    /// The photos, in any order: the library sorts them (`PhotoSort`).
     func photos() throws -> [Photo]
     /// The store this source's edits persist to.
     var sidecars: SidecarStore { get }

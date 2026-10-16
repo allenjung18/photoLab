@@ -41,13 +41,15 @@ struct AppCommand: Identifiable {
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case resetPhoto
+        case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
 
-    /// The `CommandGroup` or `CommandMenu` an item sits in; `keysOnly` has no
+    /// The `CommandGroup` or `CommandMenu` an item sits in; `sort` is the
+    /// View › Sort By submenu and the grid bar's Sort menu; `keysOnly` has no
     /// menu item (Escape, Return).
     enum Placement: CaseIterable {
-        case newItem, importExport, undoRedo, pasteboard, presets, view, photo, keysOnly
+        case newItem, importExport, undoRedo, pasteboard, presets, view, sort, photo, keysOnly
 
         /// The menu bar menu that lists the placement's items; nil for
         /// `keysOnly`.
@@ -55,7 +57,7 @@ struct AppCommand: Identifiable {
             switch self {
             case .newItem, .importExport: "File"
             case .undoRedo, .pasteboard: "Edit"
-            case .view: "View"
+            case .view, .sort: "View"
             case .photo: "Photo"
             case .presets: "Presets"
             case .keysOnly: nil
@@ -225,6 +227,20 @@ struct AppCommand: Identifiable {
                    isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },
                    perform: { c in if let id = c.subject { c.library.resetRecipe(for: id) } }),
 
+        // Sort By: the key (one checked), then the direction. No keys.
+        sort(.captureDate, name: .sortCaptureDate),
+        sort(.name, name: .sortName),
+        sort(.rating, name: .sortRating),
+        sort(.edited, name: .sortEdited),
+        AppCommand(name: .sortAscending, title: "Ascending", key: nil, placement: .sort, section: 1,
+                   isOn: { $0.library.sort.ascending },
+                   isEnabled: { $0.library.source != nil },
+                   perform: { $0.library.sort.ascending = true }),
+        AppCommand(name: .sortDescending, title: "Descending", key: nil, placement: .sort, section: 1,
+                   isOn: { !$0.library.sort.ascending },
+                   isEnabled: { $0.library.source != nil },
+                   perform: { $0.library.sort.ascending = false }),
+
         // Keys with no menu item: Escape leaves the loupe (from the grid it
         // collapses the selection), Return opens it. Return is enabled only
         // when there is a photo to open, as Loupe (E) is: the Welcome view
@@ -237,6 +253,13 @@ struct AppCommand: Identifiable {
                    isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { enterLoupe($0.library) }),
     ]
+
+    private static func sort(_ key: SortKey, name: Name) -> AppCommand {
+        AppCommand(name: name, title: key.label, key: nil, placement: .sort,
+                   isOn: { $0.library.sort.key == key },
+                   isEnabled: { $0.library.source != nil },
+                   perform: { $0.library.sort.key = key })
+    }
 
     private static func flag(_ flag: Marks.Flag?, title: String, key: KeyEquivalent) -> AppCommand {
         let name: Name = switch flag { case .pick: .pick; case .reject: .reject; case nil: .unflag }

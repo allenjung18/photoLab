@@ -58,7 +58,7 @@ not only the pass.
   `Library.maxUndoDepth` (100) caps the undo stack, dropping the oldest
   steps and keeping the newest in order.
 - `SourceTests.swift` — the `PhotoSource` seam: a fake source of three
-  assets opens in its own order with its names and title, a recipe on an
+  assets opens in the sort order (no dates, so by name) with its names and title, a recipe on an
   asset persists under the flat naming (`A/L0/001` as `A_L0_001.json` in
   the injected directory) and reloads through a fresh `Library`, export
   items and the loupe take their file from the source, a source whose
@@ -221,6 +221,19 @@ not only the pass.
   with `Region.rect(in:)`; a photo that fits the view stays at fit; a pan
   moves the window by the drag times the display scale and stops at the
   edge. Shown to bite by removing the clamp (7 failures in 2 tests).
+- `SortTests.swift` — `PhotoSort`: each key in both directions over a mix
+  of file and asset ids through the one function, ties by name ascending
+  then id, undated photos last in either direction, the order independent
+  of the input order, and the storage key round trip; `CaptureDates` reads
+  EXIF `DateTimeOriginal`, falls back to the file's date, and reads each
+  file once (an injected counting reader); a folder and an album-like source
+  open in their kind's default and sort through the same rule; a re-sort
+  keeps the anchor, the multi-selection and the loupe while the filmstrip,
+  `batchTargets` and the arrows follow the new order; a rating under Rating
+  and an edit (and its undo) under Edited move the photo at once; the
+  choice is remembered per source kind in the injected defaults and never
+  with `rememberFolder: false`; and the `sort` placement's commands check
+  and set the choice.
 - `CommandsTests.swift` — the command table (`AppCommand.all`): no two
   entries share a key and modifiers, and none takes a system menu key
   (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button

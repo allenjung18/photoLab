@@ -84,7 +84,12 @@ into a text field (a preset's name, the export suffix) types the letter.
 
 **View › Show** also picks the grid's filter (All, Picks, Unflagged, Rejected, 1 to 5
 stars), the same choice as the bar above the grid, and the empty-filter message has a
-**Show All** button. After an export, **Details…** lists every photo that failed or was
+**Show All** button. **View › Sort By** (or the **Sort** menu at the right of the bar
+above the grid) orders the grid by Capture Date, Name, Rating or Edited, Ascending or
+Descending; the filmstrip and `←` `→` follow it, ties go by name, a photo with no
+capture date goes last, and the choice is remembered once for folders and once for
+Photos albums (a folder opens by name, an album oldest capture first until you pick
+another). A file's capture date is its EXIF DateTimeOriginal, else the file's date. After an export, **Details…** lists every photo that failed or was
 skipped. Render timings stay out of the panel and the tooltips unless you run
 `defaults write <bundle id> showTimings -bool YES`.
 

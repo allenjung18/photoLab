@@ -80,14 +80,15 @@ final class SourceTests: XCTestCase {
 
     // MARK: A fake source
 
-    func testAFakeSourceOpensInItsOwnOrderWithItsNamesAndTitle() throws {
+    func testAFakeSourceOpensInTheSortOrderWithItsNamesAndTitle() throws {
         let source = try fake()
         let lib = Library(rememberFolder: false)
         lib.open(source)
         XCTAssertNil(lib.openError)
-        XCTAssertEqual(lib.photos.map(\.id), [.asset("C/L0/003"), .asset("A/L0/001"), .asset("B/L0/002")],
-                       "the source's order, not a sort")
-        XCTAssertEqual(lib.photos.map(\.name), ["IMG_0003.HEIC", "IMG_0001.HEIC", "IMG_0002.HEIC"])
+        XCTAssertEqual(lib.sort, .photosDefault, "a source that is not a folder sorts like a Photos album")
+        XCTAssertEqual(lib.photos.map(\.id), [.asset("A/L0/001"), .asset("B/L0/002"), .asset("C/L0/003")],
+                       "no capture dates: the tie is broken by name, not the source's listing order")
+        XCTAssertEqual(lib.photos.map(\.name), ["IMG_0001.HEIC", "IMG_0002.HEIC", "IMG_0003.HEIC"])
         XCTAssertEqual(lib.source?.title, "Fake album")
         XCTAssertNil(lib.folder, "a source that is not a folder has none")
         XCTAssertEqual(lib.name(for: .asset("A/L0/001")), "IMG_0001.HEIC", "names come from the source")

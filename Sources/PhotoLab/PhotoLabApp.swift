@@ -59,6 +59,7 @@ struct PhotoLabApp: App {
                 CommandItems(placement: .view, context: context)
                 Divider()
                 ShowFilterMenu().environment(library)
+                Menu("Sort By") { CommandItems(placement: .sort, context: context) }
             }
             CommandMenu(AppCommand.Placement.photo.menuTitle!) { CommandItems(placement: .photo, context: context) }
             // Presets: save the selected photo's look, or apply one by name to

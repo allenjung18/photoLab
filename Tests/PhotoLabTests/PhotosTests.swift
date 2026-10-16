@@ -103,9 +103,9 @@ final class PhotosTests: XCTestCase {
     static let recents = PhotosAlbum(id: "RECENTS/L0/040", title: "Recents", count: 3, isRecents: true)
     static let trip = PhotosAlbum(id: "TRIP/L0/040", title: "Trip", count: 2, isRecents: false)
     static let shoot: [PhotosAsset] = [
-        PhotosAsset(id: "C/L0/001", originalFilename: "DSC00003.ARW"),
-        PhotosAsset(id: "A/L0/001", originalFilename: "IMG_0001.HEIC"),
-        PhotosAsset(id: "B/L0/001", originalFilename: "IMG_0002.JPG"),
+        PhotosAsset(id: "C/L0/001", originalFilename: "DSC00003.ARW", creationDate: Date(timeIntervalSince1970: 1_000)),
+        PhotosAsset(id: "A/L0/001", originalFilename: "IMG_0001.HEIC", creationDate: Date(timeIntervalSince1970: 2_000)),
+        PhotosAsset(id: "B/L0/001", originalFilename: "IMG_0002.JPG", creationDate: Date(timeIntervalSince1970: 3_000)),
     ]
 
     private func fake(status: PhotosAuthorization) -> FakePhotoKit {
@@ -179,7 +179,7 @@ final class PhotosTests: XCTestCase {
 
     // MARK: Albums and order
 
-    func testRecentsIsFirstAndAnAlbumOpensInTheClientsOrderWithTheOriginalsNames() throws {
+    func testRecentsIsFirstAndAnAlbumOpensOldestCaptureFirstWithTheOriginalsNames() throws {
         let client = fake(status: .authorized)
         let access = access(client)
         let browser = PhotosBrowser(access: access)
@@ -190,8 +190,11 @@ final class PhotosTests: XCTestCase {
         lib.open(album: Self.trip, access: access)
         XCTAssertNil(lib.openError)
         XCTAssertEqual(lib.source?.title, "Trip")
-        XCTAssertEqual(lib.photos.map(\.id), [.asset("A/L0/001"), .asset("C/L0/001")], "the album's own order (the client sorts)")
-        XCTAssertEqual(lib.photos.map(\.name), ["IMG_0001.HEIC", "DSC00003.ARW"], "names are the originals' file names")
+        XCTAssertEqual(lib.photos.map(\.id), [.asset("C/L0/001"), .asset("A/L0/001")],
+                       "oldest capture first (PhotoSort.photosDefault), whatever order the client listed")
+        XCTAssertEqual(lib.photos.map(\.name), ["DSC00003.ARW", "IMG_0001.HEIC"], "names are the originals' file names")
+        XCTAssertEqual(lib.photos.map(\.captureDate), [Date(timeIntervalSince1970: 1_000), Date(timeIntervalSince1970: 2_000)],
+                       "the capture date is the asset's creationDate")
         XCTAssertNil(lib.folder)
         XCTAssertEqual(client.assetsCalls, 1)
 

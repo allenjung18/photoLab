@@ -248,13 +248,17 @@ A photo's identity is a `PhotoID` (`PhotoSource.swift`): `PhotoID.file`,
 the file URL of a photo in a folder, or `PhotoID.asset`, a library asset's
 identifier (`UUID/L0/001`). Every `Library` map (`recipes`, `marks`, the
 undo history, the selection) is keyed by it, and a `Photo` is the id, the
-display `name` the source gave it and `Photo.fileURL`, the file when the
-id is one (nil for an asset until its source produces a file). The three
+display `name` the source gave it, `Photo.fileURL`, the file when the
+id is one (nil for an asset until its source produces a file), and
+`Photo.captureDate` when the listing carries one (a Photos asset's
+`creationDate`; nil for a file, whose date `CaptureDates` reads when the
+capture-date sort first needs it). The three
 places the library shows a photo's name (Copy Settings, the Sync sheet,
 the sidecar error) read `Library.name(for:)`, never the id.
 
 Where photos come from is a `PhotoSource`: `title` (the window title),
-`photos()` (the grid's order), `sidecars` (the `SidecarStore` its edits
+`photos()` (in any order: `Library` sorts them by `Library.sort`, a
+`PhotoSort`, Features: Grid, Sort), `sidecars` (the `SidecarStore` its edits
 persist to), `thumbnail(for:maxPixelSize:)` (a downsample of the
 unadjusted original, synchronous, run off the main thread by `Thumbnails`)
 and `originalFile(for:)` (the one file the loupe master and the export
@@ -293,7 +297,8 @@ Welcome view checks before offering the album sheet.
 reads (`PhotosAuthorization.canRead`: authorized or limited), so `Library`
 refuses the open and nothing is fetched; it lists the album through the
 client and names each photo by its original's file name
-(`PhotosAsset.originalFilename`). Thumbnails come from Photos' own cache:
+(`PhotosAsset.originalFilename`), dating it by the asset's capture time
+(`PhotosAsset.creationDate` -> `Photo.captureDate`). Thumbnails come from Photos' own cache:
 the live client asks `PHImageManager` synchronously (480 px aspect-fit,
 version unadjusted, high quality, fast resize, iCloud allowed) from inside
 `Thumbnails`' detached decode, and a request cancelled while it waits is
@@ -618,7 +623,7 @@ minus the geometry kinds. Sync Settings (`requestSync`, the anchor's recipe
 onto the other selected photos) and Paste Settings (`requestPaste`, the
 recipe `copySettings(from:)` remembered) both put up a `SyncRequest`, which
 the `SyncSheet` turns into one `sync` call with the mask the user ticked;
-`batchTargets` is the folder-ordered list a batch acts on.
+`batchTargets` is the list a batch acts on, in sort order.
 
 ## 4. Export pipeline
 

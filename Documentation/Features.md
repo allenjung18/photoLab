@@ -64,7 +64,8 @@ bundle, never to a bare binary.
   `Library.open(album:access:)` wraps the album in a `PhotosSource` and goes
   through `Library.open(_:)`: before access is allowed `photos()` throws
   `PhotosError.notAuthorized` and the open is refused like a missing path
-  (`openError`). The grid then shows the album oldest capture first, named
+  (`openError`). The grid then shows the album in its sort (oldest capture
+  first until another is picked, see Grid, Sort), named
   by the originals' file names; the thumbnails come from Photos
   (`Thumbnails.source`, Architecture 1).
 - **Open Recent and reopening where you left off** (`Recents.swift`). The
@@ -115,7 +116,8 @@ selected. Selecting a photo scrolls it into view.
   and its subfolders with `.skipsHiddenFiles` and `.skipsPackageDescendants`
   and keeps every regular file whose content type conforms to `public.image`
   (JPEG, HEIC, PNG, TIFF and every RAW format ImageIO knows), sorted by path
-  with `localizedStandardCompare`. Skipping hidden entries is what keeps the
+  with `localizedStandardCompare`; the grid then shows them in the sort order
+  (below). Skipping hidden entries is what keeps the
   `.photolab/` sidecar directory out of the grid. The URLs the enumerator
   returns have symlinks resolved (a folder under `/var` comes back under
   `/private/var`); they are the photo ids (`Photo.id`), and every recipe,
@@ -125,13 +127,38 @@ selected. Selecting a photo scrolls it into view.
   Rejected, and at least one to five stars, `PhotoFilter.stars`) bound to
   `Library.filter`, with the shown count beside it. `Library.visiblePhotos`
   is the folder's photos the filter admits (`PhotoFilter.admits(_:)` over
-  each photo's marks), in folder order, and `Library.isVisible` the test for
+  each photo's marks), in sort order, and `Library.isVisible` the test for
   one photo; under All it is `Library.photos`. Opening a folder resets the
   filter to All. Changing the filter, or a mark that moves a photo out of
   it, drops hidden photos from the selection and moves a hidden anchor to
-  the next visible photo in folder order (else the previous one, else none,
+  the next visible photo in sort order (else the previous one, else none,
   which also leaves the loupe), so rejecting under Picks shows the next
   candidate.
+- **Sort** (`Sort.swift`). `Library.sort` is a `PhotoSort`: a `SortKey`
+  (Capture Date, Name, Rating, Edited) and a direction. `Library.photos`
+  is kept in that order (`Library.resort()` over
+  `PhotoSort.sorted(_:captureDate:rating:edited:)`, one function for a
+  folder and a Photos album), so the grid, `visiblePhotos`, the filmstrip,
+  `batchTargets` and the arrows all follow it. Ties go by name ascending
+  (Finder's `localizedStandardCompare`), then by id; a photo with no capture
+  date sorts after every dated one in either direction. Name compares
+  `Photo.name` (the file name), so a folder's subfolders interleave rather
+  than group. A change re-sorts at once and moves only the order: the
+  anchor, the selection and the loupe stay. Under Rating a rating change
+  re-sorts (`setRating`), under Edited a photo gaining or losing its edit
+  does (`Library.apply`, so undo too). The capture date is
+  `Photo.captureDate` when the listing carries one (a Photos asset's
+  `creationDate`), else `CaptureDates` reads the file's EXIF
+  `DateTimeOriginal` (header only, local time), else its creation date,
+  else its modification date, once per photo for the library's lifetime.
+  The choice is remembered per source kind (`Library.sortKind`: a
+  `FolderSource` is `folder`, any other source `photos`) in the library's
+  injected defaults (`sort.folder`, `sort.photos`, the
+  `PhotoSort.storageKey`), never written by `open` itself; with nothing
+  stored a folder opens `PhotoSort.folderDefault` (Name ascending) and an
+  album `PhotoSort.photosDefault` (Capture Date ascending). The choice is
+  made in **View › Sort By** or the **Sort** menu at the right of
+  `FilterBar`, both built from the command table's `sort` placement.
 - **A cell.** `ThumbnailCell` (photo, selected, anchor, edited, marks,
   recipe) draws the thumbnail as the photo's recipe shows it (a spinner
   until it arrives), a ring when selected, heavier for the anchor, a sliders
@@ -181,7 +208,7 @@ selected. Selecting a photo scrolls it into view.
   and keeps the anchor, or makes the first visible photo the anchor.
   `Library.collapseSelection` (**Esc** in the grid, **Deselect** in the bar)
   goes back to the anchor alone. `Library.batchTargets` is what a batch acts
-  on: the multi-selection in folder order, or the anchor alone when there is
+  on: the multi-selection in sort order, or the anchor alone when there is
   no multi-selection; the Presets menu, Export, Paste Settings and the flag
   and rating keys all read it. `Library.select(offset:)` moves the anchor by
   one for the arrow keys. Every one of these walks `visiblePhotos`: a click
@@ -584,7 +611,11 @@ key is typed anywhere else; the README's Keys table is the user's list.
   - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
     **Show Original** **\\**, **Clipping Warning** **J**, **Previous Photo**
-    **←** and **Next Photo** **→** (the keys below).
+    **←** and **Next Photo** **→** (the keys below); then **Show** (the
+    filter) and **Sort By**, the `sort` placement's items with no keys:
+    **Capture Date**, **Name**, **Rating**, **Edited** (one checked,
+    `Library.sort.key`), then **Ascending** / **Descending**
+    (`Library.sort.ascending`), enabled while a source is open.
   - **Photo**: **Pick** **P**, **Reject** **X**, **Unflag** **U**, **No
     Rating** **0** to **5 Stars** **5**, then **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited).

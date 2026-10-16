@@ -237,6 +237,15 @@ private struct FilterBar: View {
             .fixedSize()
             .help("Which photos the grid shows; P / X / U flag, 0–5 rate the selection")
             Spacer()
+            Menu {
+                CommandItems(placement: .sort, context: CommandContext(library: library))
+            } label: {
+                Label("Sort: \(library.sort.key.label)",
+                      systemImage: library.sort.ascending ? "arrow.up" : "arrow.down")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("The grid's order (View › Sort By); the filmstrip and the arrow keys follow it")
         }
         .controlSize(.small)
         .padding(.horizontal, 16).padding(.vertical, 8)
