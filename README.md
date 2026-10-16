@@ -247,6 +247,15 @@ and **Delete**. Every add, delete, switch and slider drag is one undo step.
   the wheels; **Hue & Saturation** opens the six exact sliders.
 - **Detail** — clarity (local contrast), sharpening, grain.
 - **Effects** — vignette (negative darkens the corners).
+- **Lens Corrections** — manual sliders, no lens-profile database.
+  **Distortion** (−100…+100): positive straightens barrel distortion (lines
+  bowed outward), negative straightens pincushion; the frame is zoomed just
+  enough that no empty edge shows, and keeps its size. **Vignetting**
+  (−100…+100): positive brightens the corners to undo a lens's falloff (one
+  stop at +100), negative darkens them; the centre is untouched. Both act
+  on the whole frame the lens made, before Crop & Rotate, so the crop
+  overlay shows the corrected frame; the Effects vignette is separate and
+  follows the crop.
 - **Crop & Rotate** — rotate (degrees, positive is clockwise; the frame is
   cropped to the largest same-shape rectangle, so no empty corners) and a
   crop from each edge in percent of the frame (up to 40% each, so at least

@@ -36,6 +36,21 @@ not only the pass.
   `XCTExpectFailure`: contrast pivots at 0.5 in the linear working space
   (about sRGB 188), so +50 takes a flat sRGB 128 gray to 77 and −50 to 161;
   + contrast darkens a whole photo.
+- `LensCorrectionTests.swift` — the lens corrections: the two kinds first
+  in the chain (before rotate), their section between Effects and Crop &
+  Rotate, carried by presets and the look sync, never by a mask, geometry
+  still rotate plus the crop; the kernels compile; the sign of each slider;
+  `LensMath.scale` keeps every border point a pixel inside the source and
+  is tight (1% more crosses) on four frame shapes; the output extent equals
+  the input's (offset origin too); no transparent or off-gray pixel on the
+  four edges at ±100 (with and without vignetting); a grid bowed by the
+  barrel warp of +50 is straight within 1 px at 2400 px under +50 (about
+  0.1 px measured) and at the preview's 1200 px; lens vignetting lifts and
+  darkens the corners, keeps the centre within 1 level, and is pre-crop,
+  while the Effects vignette follows the crop (7 tests). Shown to bite by
+  flipping the sign of k in the warp kernel (the straightening and the
+  edge tests go red) and by a fill zoom of 1 (empty edges, the zoom tests
+  red). The two kinds are also in the everything-on slider-step gates.
 - `ColorGradingTests.swift` — color grading: the ten kinds contiguous after
   HSL and before clarity, rendered before the mask stage (a grade plus a
   mask equals the grade then the mask's recipe, not the reverse), the
@@ -875,8 +890,9 @@ The checklist, with the test it ends in:
    for a grouped kind). Nothing else: no second renderer, no special case in
    the preview or the export.
 3. One direction test in `ToneSetTests.swift` that moves the slider and
-   reads pixels back the way the slider's name says, then the mutant check
-   above to show it bites.
+   reads pixels back the way the slider's name says (a family with its own
+   file keeps it there: `ColorGradingTests`, `LensCorrectionTests`), then
+   the mutant check above to show it bites.
 
 The recipe tests then hold on their own: the neutral recipe still lists
 every kind once, and the sidecar shape test fails if the kind is missing

@@ -24,8 +24,8 @@ app does, this document says how. Four mechanisms carry everything:
 
 `Renderer.apply(_:to:)` (`Renderer.swift`) takes a `Recipe` and a `CIImage`
 and returns the adjusted `CIImage`. It walks `AdjustmentKind.allCases`, so
-kinds apply in the order the enum declares them (geometry, then exposure and
-white balance, tone, color, per-band HSL, color grading, detail, effects)
+kinds apply in the order the enum declares them (lens corrections, geometry,
+then exposure and white balance, tone, color, per-band HSL, color grading, detail, effects)
 whatever order the
 recipe happens to list them in. An entry that is disabled or at its neutral
 value (`Adjustment.isNoop`) is skipped, so the neutral recipe is the identity.
@@ -65,6 +65,35 @@ Every spatial parameter in `stage` (the clarity and blur radius, the
 sharpening radius, the grain cell, the vignette radius) is a fraction of the
 image's own long side, so a preview and an export of the same recipe look the
 same at their different sizes.
+
+The two lens corrections, `lensDistortion` and `lensVignette`, are the first
+stages, before rotate, so they act on the whole frame the lens made
+(`LensCorrection.swift`). Both are Core Image kernels compiled once at
+runtime from the Metal source `LensCorrection.source` through
+`CIKernel.kernels(withMetalString:)` (macOS 12 and later, so no availability
+check against the macOS 14 floor, and no .metal build step in SwiftPM); they
+need the Metal-backed context `Renderer` makes, and without the kernels
+(`LensCorrection.isAvailable` false) each stage returns its input. Positions
+are normalised about the frame centre by the half diagonal, so both scale
+with the image. `LensCorrection.distort` is a `CIWarpKernel`: an output
+point `p` reads the source at `q (1 + k |q|²)` with `q = s p`
+(`LensMath.source(of:k:scale:)`), `k = LensMath.k(for:)` (−0.2 at +100:
+positive corrects barrel, negative pincushion) and `s` the fill zoom
+`LensMath.scale(k:width:height:)`, the largest that keeps every border
+point reading at least a pixel inside the source (the corner binds for
+k > 0, the nearer edge's midpoint for k < 0). The zoom is applied before
+the warp, so the corrected picture is only scaled about the centre and a
+straightened line stays straight. Its ROI callback bounds a destination
+rect by the rect scaled at the factors of its nearest and farthest radius,
+so a 1:1 region reads only its own neighbourhood. The output is cropped to
+the input's extent, so `CropMath.uncropped` and the crop overlay work on
+it unchanged. `LensCorrection.vignette` is a `CIColorKernel` gain of
+`2^(value/100 · r²)` (`LensMath.vignetteGain`) over the pre-crop frame,
+apart from the Effects `vignette`, which stays post-crop. Masks are drawn
+over the source extent and go through rotate and crop only
+(`geometryKinds` is still rotate plus the crop edges), so a mask stays
+where it was placed on screen but does not follow the image when the
+distortion slider later moves.
 
 The recipe's masks (`Recipe.masks`, local adjustments) are one more stage,
 run just before `Renderer.maskStageBefore` (clarity, the head of Detail):
@@ -575,7 +604,7 @@ One case per slider, declared in chain order; `Codable` by its raw string
 ("exposure", "cropLeft", "hueRed", and so on), which is what a sidecar stores.
 Each kind has a `label`, a `range`, a `format`, a `section` (the panel
 section: `basic`, `color`, `curve`, `hsl`, `grading`, `detail`, `effects`,
-`geometry`)
+`lens`, `geometry`)
 and a `neutral` value, the value at which it does nothing (zero for every
 kind). `AdjustmentKind.geometryKinds` is rotate plus the four crop edges: the
 kinds a preset never carries and a `.look` sync never copies. `group` is the

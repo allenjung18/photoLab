@@ -1,7 +1,7 @@
 import Foundation
 
-/// Every adjustment, listed in the order the chain applies them (geometry,
-/// then exposure and white balance, tone, color, per-band HSL, color
+/// Every adjustment, listed in the order the chain applies them (lens
+/// corrections, geometry, then exposure and white balance, tone, color, per-band HSL, color
 /// grading, detail, effects). Values are user-facing units (EV for exposure, degrees for
 /// rotate, percent of the frame for a crop edge, -100…100 or 0…100 for the
 /// rest); `Renderer` maps them onto Core Image parameters.
@@ -11,6 +11,9 @@ import Foundation
 /// curve points are one tone lookup, the 24 HSL sliders are one color cube,
 /// the ten color-grading sliders are another.
 enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
+    // Lens corrections: first, so they act on the whole frame the lens
+    // made, before rotate and the crop (`LensCorrection`).
+    case lensDistortion, lensVignette
     // Geometry
     case rotate, cropLeft, cropTop, cropRight, cropBottom
     // Exposure and white balance
@@ -85,6 +88,8 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .sharpening: return "Sharpening"
         case .grain: return "Grain"
         case .vignette: return "Vignette"
+        case .lensDistortion: return "Distortion"
+        case .lensVignette: return "Vignetting"
         case .gradeBalance: return "Balance"
         default:
             if let (_, band) = hsl { return band.label }
@@ -123,7 +128,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
     // MARK: Panel layout
 
     enum Section: CaseIterable {
-        case basic, color, curve, hsl, grading, detail, effects, geometry
+        case basic, color, curve, hsl, grading, detail, effects, lens, geometry
 
         var title: String {
             switch self {
@@ -134,6 +139,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
             case .grading: return "Color Grading"
             case .detail: return "Detail"
             case .effects: return "Effects"
+            case .lens: return "Lens Corrections"
             case .geometry: return "Crop & Rotate"
             }
         }
@@ -152,6 +158,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .curveBlacks, .curveShadows, .curveMidtones, .curveHighlights, .curveWhites: return .curve
         case .clarity, .sharpening, .grain: return .detail
         case .vignette: return .effects
+        case .lensDistortion, .lensVignette: return .lens
         default:
             if group == .grade { return .grading }
             return .hsl

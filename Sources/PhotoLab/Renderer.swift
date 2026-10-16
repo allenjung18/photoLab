@@ -87,7 +87,8 @@ final class Renderer: @unchecked Sendable {
     // MARK: The chain
 
     /// Applies `recipe` to `image` in `AdjustmentKind.allCases` order (the
-    /// recipe's own order does not matter). Disabled and neutral entries are
+    /// recipe's own order does not matter): the lens corrections first, then
+    /// rotate and the crop, then the rest. Disabled and neutral entries are
     /// skipped, so the neutral recipe is the identity. Grouped kinds (crop,
     /// tone, HSL, grade) are one stage each, applied where their first member
     /// sits: the color grade right after HSL.
@@ -176,6 +177,12 @@ final class Renderer: @unchecked Sendable {
     private static func stage(_ a: Adjustment, on image: CIImage) -> CIImage {
         let longest = max(image.extent.width, image.extent.height)
         switch a.kind {
+        case .lensDistortion:
+            // The first stages: over the whole frame the lens made, before
+            // rotate and the crop. Extent kept (`LensCorrection`).
+            return LensCorrection.distort(image, value: a.value)
+        case .lensVignette:
+            return LensCorrection.vignette(image, value: a.value)
         case .rotate:
             // Positive = clockwise on screen; the result is the largest
             // same-aspect rectangle inside the rotated frame (no empty corners),

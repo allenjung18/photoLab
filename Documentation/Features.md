@@ -843,6 +843,11 @@ redo, Reset, the render time and any sidecar error.
   saturation to 0, its luminance kept), one step. A wheel whose hue or
   saturation is unchecked is dimmed and takes no drag. The Sync sheet
   lists the ten kinds as checkboxes under Color Grading.
+  Lens Corrections (`AdjustmentKind.Section.lens`, between Effects and
+  Crop & Rotate, next to the other frame-wide geometry) is two plain rows,
+  Distortion (`lensDistortion`) and Vignetting (`lensVignette`), rendered
+  first in the chain by `LensCorrection` (Architecture 1). Presets, the
+  look sync and the Sync sheet carry them like any non-geometry kind.
 - **Footer.** Undo and redo call `Library.undo()` and `Library.redo()`,
   enabled by `Library.canUndo` / `Library.canRedo`. **Reset** is
   `Library.resetRecipe(for:)` (one undo step; the sidecar is removed unless

@@ -122,7 +122,7 @@ final class ToneSetTests: XCTestCase {
 
     func testEveryKindHasExactlyOneRecipeEntryAndTheSidecarShapeIsUnchanged() throws {
         XCTAssertEqual(Recipe.neutral.adjustments.map(\.kind), AdjustmentKind.allCases)
-        XCTAssertEqual(AdjustmentKind.allCases.count, 58)
+        XCTAssertEqual(AdjustmentKind.allCases.count, 60)
         XCTAssertEqual(AdjustmentKind.members(of: .hsl).count, 24)
         XCTAssertEqual(AdjustmentKind.members(of: .grade).count, 10)
         XCTAssertEqual(AdjustmentKind.members(of: .tone).count, 9)
