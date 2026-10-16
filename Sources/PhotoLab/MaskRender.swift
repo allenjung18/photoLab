@@ -5,7 +5,8 @@ import CoreImage.CIFilterBuiltins
 /// Local adjustments in the one chain: each mask's own adjustments are run
 /// through `Renderer.apply` (the global chain, limited to `LocalMask.kinds`)
 /// and composed over the picture with `CIBlendWithMask`, weighted by the
-/// mask's shape (`MaskMath` states the weights). The mask image is drawn over
+/// mask's shape (`MaskMath` states the weights; a brush is rastered on the
+/// CPU by `BrushRaster`, cached in `BrushRasterCache`). The mask image is drawn over
 /// the chain's INPUT extent (the scaled source) in the source frame and then
 /// run through the recipe's own geometry stages (rotate, crop), so it lands
 /// on the pixels it was drawn over at any crop, rotate, preview size or 1:1
@@ -16,19 +17,23 @@ enum MaskRender {
     static var geometryKinds: [AdjustmentKind] { AdjustmentKind.geometryKinds }
 
     /// Whether `mask` takes part in a render: enabled, some adjustment that
-    /// is not a no-op, and a shape that renders (brushes come in a later
-    /// chunk, so a brush mask is skipped).
+    /// is not a no-op, and a shape that draws something (a brush with no
+    /// strokes is skipped).
     static func renders(_ mask: LocalMask) -> Bool {
         if mask.isNoop { return false }
-        if case .brush = mask.shape { return false }
+        if case .brush(let strokes) = mask.shape, strokes.isEmpty { return false }
         return true
     }
 
     /// The shape's mask before geometry: white (weight 1) to black (0) over
     /// `extent` (Core Image coordinates, origin bottom-left), cropped to it.
     /// Nil for a degenerate shape (zero-length gradient, zero radius) or a
-    /// brush. Not inverted; `compose` swaps the two images for that.
-    static func image(for shape: MaskShape, over extent: CGRect) -> CIImage? {
+    /// brush with no strokes. Not inverted; `compose` swaps the two images
+    /// for that. A brush is rastered at `extent`'s size (long side capped at
+    /// `BrushRaster.maxLongSide`) through `brushes`, and scaled by Core Image
+    /// to the extent beyond the cap.
+    static func image(for shape: MaskShape, over extent: CGRect,
+                      brushes: BrushRasterCache = .shared) -> CIImage? {
         guard !extent.isInfinite, extent.width > 0, extent.height > 0 else { return nil }
         let long = max(extent.width, extent.height)
         // A source-frame point (top-left, fractions) in Core Image space.
@@ -62,8 +67,16 @@ enum MaskRender {
                 .concatenating(CGAffineTransform(rotationAngle: -CGFloat(angle) * .pi / 180))
                 .concatenating(CGAffineTransform(translationX: c.x, y: c.y))
             return f.outputImage?.transformed(by: t).cropped(to: extent)
-        case .brush:
-            return nil
+        case .brush(let strokes):
+            guard !strokes.isEmpty else { return nil }
+            let size = BrushRaster.rasterSize(for: extent.size)
+            let raster = brushes.image(for: strokes, width: size.width, height: size.height)
+            // Raster pixel edges onto the extent's edges (so pixel centres
+            // are the source points the raster sampled); edges clamped so the
+            // scale does not fade the border.
+            let t = CGAffineTransform(scaleX: extent.width / CGFloat(size.width), y: extent.height / CGFloat(size.height))
+                .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY))
+            return raster.clampedToExtent().transformed(by: t).cropped(to: extent)
         }
     }
 

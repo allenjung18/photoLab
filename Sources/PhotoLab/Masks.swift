@@ -185,11 +185,9 @@ struct LocalMask: Codable, Hashable, Identifiable {
 /// radii are a circle on any aspect ratio; hence the source `size`.
 enum MaskMath {
     /// `mask`'s weight at `point` (source frame) over a source of `size`
-    /// pixels: the shape's weight, or 1 minus it when `inverted`. A brush
-    /// mask weighs 0 everywhere, inverted or not, until brushes render; a
+    /// pixels: the shape's weight, or 1 minus it when `inverted`; a
     /// disabled mask still has its weight (the renderer skips it).
     static func weight(of mask: LocalMask, at point: MaskPoint, in size: CGSize) -> Double {
-        if case .brush = mask.shape { return 0 }
         let w = weight(of: mask.shape, at: point, in: size)
         return mask.inverted ? 1 - w : w
     }
@@ -202,7 +200,8 @@ enum MaskMath {
     ///   and outside the outer one (radii), a straight ramp in normalised
     ///   radius between; the ellipse is turned clockwise on screen by
     ///   `angle` degrees. A zero radius weighs 0.
-    /// - brush: 0 (rendered by a later chunk).
+    /// - brush: `BrushRaster.weight(of:at:in:)` (dabs along each stroke,
+    ///   flow and feather, paint adding and erase multiplying down).
     static func weight(of shape: MaskShape, at point: MaskPoint, in size: CGSize) -> Double {
         let long = max(Double(size.width), Double(size.height))
         guard long > 0 else { return 0 }
@@ -223,8 +222,8 @@ enum MaskMath {
             if d >= 1 { return 0 }
             if d <= 1 - f { return 1 }
             return (1 - d) / f
-        case .brush:
-            return 0
+        case .brush(let strokes):
+            return BrushRaster.weight(of: strokes, at: point, in: size)
         }
     }
 

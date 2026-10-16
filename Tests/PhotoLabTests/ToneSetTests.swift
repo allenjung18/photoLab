@@ -454,10 +454,11 @@ final class ToneSetTests: XCTestCase {
         try sliderStepGate(Self.everythingOn(), steppers, label: "everything on")
     }
 
-    /// Two local adjustments (a linear and a radial mask, each carrying every
-    /// `LocalMask.kinds` value) over the everything-on recipe: the budget
-    /// holds with masks on, for every global slider and for the first mask's
-    /// own sliders.
+    /// Three local adjustments (a linear, a radial and a 300-point brush
+    /// mask, each carrying every `LocalMask.kinds` value) over the
+    /// everything-on recipe: the budget holds with masks on, for every global
+    /// slider and for the first and the brush mask's own sliders (the brush
+    /// is rastered once, by the warm-up render, and cached after that).
     static func everythingOnWithMasks() -> Recipe {
         var r = everythingOn()
         func local(_ shape: MaskShape) -> LocalMask {
@@ -468,6 +469,10 @@ final class ToneSetTests: XCTestCase {
         r.masks = [
             local(.linear(start: MaskPoint(x: 0.5, y: 0), end: MaskPoint(x: 0.5, y: 0.45))),
             local(.radial(center: MaskPoint(x: 0.6, y: 0.55), radii: MaskRadii(x: 0.25, y: 0.15), angle: 20, feather: 0.5)),
+            local(.brush([BrushStroke(points: (0..<300).map { i in
+                let t = Double(i) / 299
+                return MaskPoint(x: 0.1 + 0.8 * t, y: 0.5 + 0.15 * sin(t * 4 * .pi))
+            }, radius: 0.05, feather: 0.5, flow: 0.8)])),
         ]
         return r
     }
@@ -481,7 +486,10 @@ final class ToneSetTests: XCTestCase {
         steppers += LocalMask.kinds.map { kind in
             Stepper(name: "mask.\(kind.rawValue)", range: kind.range, geometry: false) { $0.masks[0].set(kind, to: $1) }
         }
-        try sliderStepGate(Self.everythingOnWithMasks(), steppers, label: "everything on, a linear and a radial mask")
+        steppers += LocalMask.kinds.map { kind in
+            Stepper(name: "brush.\(kind.rawValue)", range: kind.range, geometry: false) { $0.masks[2].set(kind, to: $1) }
+        }
+        try sliderStepGate(Self.everythingOnWithMasks(), steppers, label: "everything on, a linear, a radial and a 300-point brush mask")
     }
 
     /// One slider of the timed gate: a name for the bench line, its range,

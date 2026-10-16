@@ -72,12 +72,13 @@ after the HSL group and the color grade, so clarity, sharpening, grain and
 the vignette sit on top of local edits. `apply` makes one call, `MaskRender.compose`
 (`MaskRender.swift`), with the extent of its own input (the scaled source,
 the frame mask geometry is written in). For each mask that renders
-(`MaskRender.renders`: enabled, some adjustment not a no-op, and not a brush,
-which a later chunk renders), in list order, it draws the shape's mask over
+(`MaskRender.renders`: enabled, some adjustment not a no-op, and not a brush
+with no strokes), in list order, it draws the shape's mask over
 that extent (`MaskRender.image(for:over:)`: `CILinearGradient` from `start`
 to `end`, or `CIRadialGradient` on a unit circle with its inner ring at
 `1 - feather`, scaled to the radii in long-side pixels, turned clockwise on
-screen by `angle` and moved to the centre), runs it through the recipe's
+screen by `angle` and moved to the centre, or a brush's CPU raster, below),
+runs it through the recipe's
 own geometry kinds (`AdjustmentKind.geometryKinds`, by `apply` itself, so
 rotate and crop are not written twice), applies the mask's adjustments to
 the picture so far through `apply(mask.recipe, to:)` (the same chain, so a
@@ -90,6 +91,28 @@ normalised ellipse radius between the inner and outer rings. Because the
 mask is built over the whole source and placed by the same stages as the
 pixels, a 1:1 region needs nothing of its own: it reads a window of the
 same chain.
+
+A brush mask is rastered on the CPU (`BrushRaster.swift`).
+`BrushRaster.render(strokes:width:height:)` is pure: one byte per pixel,
+rows top-down, each pixel the brush's weight at its centre. A stroke is
+round dabs every `BrushRaster.dabSpacing` (a quarter of the radius) of arc
+length along its points, plus one on the last point (`BrushRaster.dabs`);
+a dab weighs `flow` inside `radius x (1 - feather)` and eases to 0 at
+`radius` by a smoothstep (`BrushRaster.dabWeight`). The dabs of one stroke
+merge by their maximum, so one pass lays down at most its `flow`; strokes
+apply in order, a paint stroke adding its coverage clipped at 1 and an
+erase stroke multiplying the weight so far by 1 - its coverage.
+`BrushRaster.weight(of:at:in:)` is the same rule at one point, and is what
+`MaskMath` reports for a brush. The raster is the size of the extent it is
+drawn over (the scaled source), its long side capped at
+`BrushRaster.maxLongSide` (4096, `BrushRaster.rasterSize(for:)`); beyond
+the cap `MaskRender.image(for:over:)` scales it up with Core Image. It is
+held as a one-channel, unmanaged `CIImage` (`.L8`, no colour space, so the
+bytes are the weights) in `BrushRasterCache.shared`, keyed by the strokes
+and the raster size (the `CubeCache` pattern, a handful of entries): a
+render whose strokes have not changed (a mask or global slider, a rotate or
+crop, which act on the mask after it is drawn) never rasters again, and
+`BrushRasterCache.rasters` counts the misses for the tests.
 
 ### The two inputs
 
@@ -581,8 +604,9 @@ form, list order kept) include them; any mask makes a recipe not
 disabled or all-neutral mask renders as identity but is still an edit.
 `Recipe`'s `Codable` reads a missing `masks` key as none and writes the
 key only when there is a mask, so an unmasked recipe encodes exactly as it
-did before masks existed. Linear and radial masks render (§1, The chain);
-a brush mask is a no-op until brushes render.
+did before masks existed. Every shape renders (§1, The chain): linear and
+radial masks as Core Image gradients, brush masks as a cached CPU raster
+(`BrushRaster`).
 
 ### `Sidecar` and `SidecarStore`
 

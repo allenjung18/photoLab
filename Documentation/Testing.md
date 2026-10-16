@@ -395,24 +395,50 @@ not only the pass.
   the outer ring, falling monotonically; equal radii are a circle on any
   aspect; an ellipse turned 90 degrees equals one with its radii swapped,
   and +45 runs its long axis top-left to bottom-right on screen; a hard
-  edge, a zero radius and a zero-length gradient; inverted is 1 - w, and a
-  brush weighs 0 until brushes render.
-- `MaskRenderTests.swift` — linear and radial masks through `Renderer`: +1 EV
+  edge, a zero radius and a zero-length gradient; inverted is 1 - w for
+  every shape, a brush's included (1 at its dab's centre, 0 beyond its
+  radius).
+- `BrushRasterTests.swift` — `BrushRaster`, pure: a dab's centre equals its
+  flow; every pixel 20 px or more from a 20 px dab is 0; the feather ramp
+  never rises, falls strictly across the feather and is a smoothstep (flat
+  at both ends); two overlapping flow-0.4 dabs make 0.8, three of 0.7 clip
+  at 1, and the dabs of one stroke merge by their maximum (a long flow-0.4
+  stroke lays down 0.4); a flow-1 erase zeroes what it covers and leaves
+  the rest, a half-flow one halves it, and a later paint lays down over an
+  earlier erase; both ends and the middle point of a three-point stroke
+  are painted, dabs no further apart than a quarter radius; the raster is
+  `MaskMath`'s weight at each pixel centre within 8-bit rounding; the
+  raster size is the source's, capped at 4096 on the long side; no points
+  or no radius paints nothing.
+- `MaskRenderTests.swift` — linear, radial and brush masks through `Renderer`: +1 EV
   over the top half lifts the top row, part-lifts the middle of the ramp
   and leaves every row past the end within 1/255; a radial lifts the centre
   and leaves the corners; an inverted one the reverse; the drawn mask
   (`MaskRender.image(for:over:)`, read back unmatched) is `MaskMath`'s weight
-  within 0.02 for a linear, a turned ellipse and a circle; a radial drawn
+  within 0.02 for a linear, a turned ellipse, a circle and a brush with an
+  erase, and a brush drawn over an extent off the origin lands on its
+  source point; a radial drawn
   over a red spot in the source frame is still centred on it (within 3 px)
   after rotate 10 and a 20% crop; a disabled, all-neutral, adjustment-less,
-  brush or degenerate mask renders bit-identical to none; a 1:1 region
+  stroke-less or disabled brush or degenerate mask renders bit-identical
+  to none; a 1:1 region
   across a mask edge equals that window of the whole frame; a full-frame
   mask equals the chain run in three parts with the mask's recipe between
   HSL and clarity, and differs from it at the head or the tail; two +0.5 EV
-  masks over the same pixels are +1 EV. Shown to bite by mutants: the mask
+  masks over the same pixels are +1 EV. Brushes: a +1 EV stroke across the
+  middle lifts the pixels under it and leaves the rows clear of it and the
+  ends beyond its last dabs, and inverted the reverse; a dab over a red spot
+  is still centred on it (within 3 px) after rotate -12 and a left and
+  bottom crop; `BrushRasterCache.rasters` goes up once for the first render
+  and not for mask sliders, global sliders or a rotate, once more for a
+  moved stroke (which lifts the new place and not the old) and for another
+  raster size; a 4800 px source is rastered at the cap and the lift still
+  lands within the stroke's 48 px radius. Shown to bite by mutants: the mask
   skipping the geometry stages (the spot case, 27.8 px off), the radial's
   angle turned the other way (the drawn-mask case), the stage moved before
-  grain (the three-part case, 58/255 off, and the anchor assertion).
+  grain (the three-part case, 58/255 off, and the anchor assertion), the
+  raster cache key ignoring the strokes (a moved stroke renders the stale
+  mask: the cache case).
 - `WhiteBalanceTests.swift` — the white-balance eyedropper
   (`WhiteBalance`, `Library.pickWhiteBalance`, `ZoomMath.point(forClick:)`):
   grey patches at three levels given six known casts (warm, cool, magenta,
@@ -629,9 +655,10 @@ each prints a `BENCH` line and fails above a bound.
   it meets a size; those kinds are measured twice over the same sizes and
   gated on the second pass, the first printed beside it.
   `testEverySliderStepRenderTimeOn24MPWithMasks` runs the same gate over
-  the everything-on recipe with a linear and a radial mask (each carrying
-  all of `LocalMask.kinds`), stepping every global kind and the first
-  mask's own seven.
+  the everything-on recipe with a linear, a radial and a 300-point brush
+  mask (each carrying all of `LocalMask.kinds`), stepping every global kind,
+  the first mask's own seven and the brush's seven; the brush is rastered
+  by the warm-up render and cached after that.
 - `testPresetThumbnailsRenderUnder50msEachOn24MP` (`PresetTests`): the strip
   of starters over the current photo, each cell under its bound.
 - `test500SyntheticJPEGsThumbnailConcurrentlyUnder3s` and

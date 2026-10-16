@@ -107,7 +107,7 @@ final class MaskMathTests: XCTestCase {
 
     // MARK: The mask
 
-    func testInvertedIsOneMinusTheWeightAndABrushWeighsNothingYet() {
+    func testInvertedIsOneMinusTheWeightForEveryShape() {
         let shape = MaskShape.linear(start: p(0, 0), end: p(1, 0))
         let mask = LocalMask(shape: shape, adjustments: [Adjustment(kind: .exposure, value: 1)])
         var inverted = mask
@@ -120,8 +120,10 @@ final class MaskMathTests: XCTestCase {
         XCTAssertEqual(MaskMath.weight(of: mask, at: p(0.3, 0.5), in: wide), 0.7, accuracy: 1e-12)
         let stroke = BrushStroke(points: [p(0.5, 0.5)], radius: 0.1, feather: 0.5, flow: 1)
         var brush = LocalMask(shape: .brush([stroke]), adjustments: [Adjustment(kind: .exposure, value: 1)])
-        XCTAssertEqual(MaskMath.weight(of: brush, at: p(0.5, 0.5), in: wide), 0)
+        XCTAssertEqual(MaskMath.weight(of: brush, at: p(0.5, 0.5), in: wide), 1, "a brush's dab centre is its flow")
+        XCTAssertEqual(MaskMath.weight(of: brush, at: p(0.95, 0.5), in: wide), 0, "beyond its radius")
         brush.inverted = true
         XCTAssertEqual(MaskMath.weight(of: brush, at: p(0.5, 0.5), in: wide), 0)
+        XCTAssertEqual(MaskMath.weight(of: brush, at: p(0.95, 0.5), in: wide), 1)
     }
 }

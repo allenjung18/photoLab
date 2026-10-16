@@ -122,6 +122,8 @@ final class MaskRenderTests: XCTestCase {
             .linear(start: p(0.2, 0.3), end: p(0.7, 0.9)),
             .radial(center: p(0.45, 0.55), radii: MaskRadii(x: 0.3, y: 0.12), angle: 30, feather: 0.6),
             .radial(center: p(0.6, 0.4), radii: MaskRadii(x: 0.15, y: 0.15), angle: 0, feather: 1),
+            .brush([BrushStroke(points: [p(0.1, 0.2), p(0.5, 0.7), p(0.85, 0.3)], radius: 0.08, feather: 0.6, flow: 0.8),
+                    BrushStroke(points: [p(0.5, 0.65)], radius: 0.05, feather: 0.3, flow: 0.7, erase: true)]),
         ]
         let w = Int(size.width), h = Int(size.height)
         for shape in shapes {
@@ -142,6 +144,16 @@ final class MaskRenderTests: XCTestCase {
         }
         XCTAssertNil(MaskRender.image(for: .linear(start: p(0.3, 0.3), end: p(0.3, 0.3)), over: extent))
         XCTAssertNil(MaskRender.image(for: .brush([]), over: extent))
+        // Off the origin too: a brush lands on the extent, not at (0, 0).
+        let moved = CGRect(x: 30, y: -12, width: 240, height: 160)
+        let stroke = MaskShape.brush([BrushStroke(points: [p(0.25, 0.25)], radius: 0.05, feather: 0, flow: 1)])
+        let image = try XCTUnwrap(MaskRender.image(for: stroke, over: moved))
+        XCTAssertEqual(image.extent, moved)
+        var px = [Float](repeating: 0, count: 4)
+        // Source (0.25, 0.25) is 60 px right of the left edge and 40 px down from the top.
+        renderer.context.render(image, toBitmap: &px, rowBytes: 16,
+                                bounds: CGRect(x: moved.minX + 60, y: moved.maxY - 41, width: 1, height: 1), format: .RGBAf, colorSpace: nil)
+        XCTAssertEqual(Double(px[1]), 1, accuracy: 0.01, "the dab is at its source point")
     }
 
     // MARK: Pinned to the photo
@@ -188,7 +200,8 @@ final class MaskRenderTests: XCTestCase {
             ("disabled", exposureMask(shape, enabled: false)),
             ("all neutral", LocalMask(shape: shape, adjustments: LocalMask.kinds.map { Adjustment(kind: $0, value: 0) })),
             ("no adjustments, inverted", LocalMask(shape: shape, inverted: true)),
-            ("brush (not rendered yet)", exposureMask(.brush([stroke]))),
+            ("brush with no strokes", exposureMask(.brush([]))),
+            ("brush, disabled", exposureMask(.brush([stroke]), enabled: false)),
             ("degenerate gradient", exposureMask(.linear(start: p(0.5, 0.5), end: p(0.5, 0.5)))),
         ]
         for (name, mask) in cases {
@@ -294,5 +307,119 @@ final class MaskRenderTests: XCTestCase {
         one.set(.exposure, to: 1)
         XCTAssertLessThanOrEqual(maxDiff(try render(r, src).image, try render(one, src).image), 1,
                                  "two +0.5 EV masks over the same pixels are +1 EV")
+    }
+
+    // MARK: Brush masks
+
+    /// A horizontal stroke across the middle of the frame, radius 0.06 of
+    /// the long side, hard core: +1 EV under it and nowhere else.
+    func testABrushStrokeAcrossTheMiddleBrightensUnderItOnly() throws {
+        let src = flatImage(width: 300, height: 200, level: 0.35)
+        var r = Recipe.neutral
+        let plain = try render(r, src).image
+        let stroke = BrushStroke(points: [p(0.1, 0.5), p(0.5, 0.52), p(0.9, 0.5)], radius: 0.06, feather: 0.3, flow: 1)
+        r.masks = [exposureMask(.brush([stroke]))]
+        let masked = try render(r, src).image
+        for x in [40, 150, 260] {
+            XCTAssertGreaterThan(rgb(masked, x, 101).g, rgb(plain, x, 101).g + 40, "(\(x), 101) is under the stroke")
+        }
+        // 0.06 x 300 = 18 px either side of the line; rows well clear of it and
+        // the ends beyond the first and last dab are untouched.
+        for y in [0, 40, 70, 130, 160, 199] {
+            XCTAssertLessThanOrEqual(rowDiff(masked, plain, y), 1, "row \(y) is clear of the stroke")
+        }
+        for x in [0, 5, 294, 299] {
+            let a = rgb(masked, x, 100), b = rgb(plain, x, 100)
+            XCTAssertLessThanOrEqual(abs(a.g - b.g), 1, "(\(x), 100) is past the stroke's end")
+        }
+        // Inverted: the stroke is left alone and the rest lifted.
+        r.masks[0].inverted = true
+        let inverted = try render(r, src).image
+        XCTAssertLessThanOrEqual(abs(rgb(inverted, 150, 101).g - rgb(plain, 150, 101).g), 1)
+        XCTAssertGreaterThan(rgb(inverted, 150, 20).g, rgb(plain, 150, 20).g + 40)
+    }
+
+    /// A dab painted over a marked spot in the source frame stays on it
+    /// after the recipe rotates and crops: the raster goes through the same
+    /// geometry stages as the pixels.
+    func testABrushOverAMarkedSpotStaysOnItAfterRotateAndCrop() throws {
+        let spot = CGPoint(x: 0.7, y: 0.3)
+        let src = flatImage(width: 512, height: 384, level: 0.5, dot: spot, dotRadius: 5)
+        var r = Recipe.neutral
+        r.set(.rotate, to: -12)
+        r.set(.cropLeft, to: 15)
+        r.set(.cropBottom, to: 10)
+        let dab = BrushStroke(points: [p(spot.x - 0.004, spot.y), p(spot.x + 0.004, spot.y)], radius: 0.04, feather: 0.5, flow: 1)
+        r.masks = [exposureMask(.brush([dab]), ev: 1.5)]
+        let out = try render(r, src).image
+        let plainGray = rgb(try render(Recipe.neutral, src).image, 100, 300).g
+        var red = (x: 0.0, y: 0.0, n: 0.0), lit = (x: 0.0, y: 0.0, n: 0.0)
+        for y in 0..<out.height {
+            for x in 0..<out.width {
+                let c = rgb(out, x, y)
+                if c.r > c.g + 60 { red.x += Double(x); red.y += Double(y); red.n += 1 }
+                else if c.r - c.g < 8, c.g > plainGray + 25 { lit.x += Double(x); lit.y += Double(y); lit.n += 1 }
+            }
+        }
+        XCTAssertGreaterThan(red.n, 20, "the spot survives the crop")
+        XCTAssertGreaterThan(lit.n, 100, "the brush lifts the gray around it")
+        let dx = red.x / red.n - lit.x / lit.n, dy = red.y / red.n - lit.y / lit.n
+        XCTAssertLessThan(hypot(dx, dy), 3, "the lifted ring is centred on the spot (off by \(dx), \(dy))")
+    }
+
+    /// The raster cache: a second render with the same strokes (a mask
+    /// slider dragged, a global slider, a rotate) does not raster again; a
+    /// changed stroke does, and renders the new mask, not the cached one.
+    func testABrushIsRasteredOnceAndAgainOnlyWhenItsStrokesChange() throws {
+        let cache = BrushRasterCache.shared
+        let src = flatImage(width: 320, height: 200, level: 0.35)
+        let plain = try render(Recipe.neutral, src).image
+        // A stroke no other test paints, so the first render is a miss.
+        let left = BrushStroke(points: [p(0.2, 0.3), p(0.2, 0.7)], radius: 0.05, feather: 0.4, flow: 0.9)
+        var r = Recipe.neutral
+        r.masks = [exposureMask(.brush([left]))]
+        let before = cache.rasters
+        let first = try render(r, src).image
+        XCTAssertEqual(cache.rasters, before + 1, "the first render rasters")
+        r.masks[0].set(.exposure, to: 1.3)
+        r.masks[0].set(.contrast, to: 20)
+        r.set(.exposure, to: 0.2)
+        r.set(.vignette, to: -30)
+        _ = try render(r, src)
+        r.set(.rotate, to: 5)
+        _ = try render(r, src)
+        XCTAssertEqual(cache.rasters, before + 1, "mask sliders, global sliders and a rotate reuse the raster")
+        XCTAssertGreaterThan(rgb(first, 64, 100).g, rgb(plain, 64, 100).g + 30, "the left stroke is lifted")
+
+        // Move the stroke to the right: a new raster, and the picture follows it.
+        var right = left
+        right.points = [p(0.8, 0.3), p(0.8, 0.7)]
+        var moved = Recipe.neutral
+        moved.masks = [exposureMask(.brush([right]))]
+        let second = try render(moved, src).image
+        XCTAssertEqual(cache.rasters, before + 2, "a changed stroke rasters")
+        XCTAssertGreaterThan(rgb(second, 256, 100).g, rgb(plain, 256, 100).g + 30, "the right stroke is lifted")
+        XCTAssertLessThanOrEqual(abs(rgb(second, 64, 100).g - rgb(plain, 64, 100).g), 1, "the old stroke is gone")
+        // A different raster size is a different entry (the 1:1 master vs the loupe).
+        _ = try XCTUnwrap(renderer.render(src, recipe: moved, maxPixelSize: 160))
+        XCTAssertEqual(cache.rasters, before + 3, "another size rasters")
+    }
+
+    /// Beyond 4096 px the brush is rastered at the cap and scaled up by Core
+    /// Image: the lift still lands on the stroke.
+    func testABrushOverASourceAboveTheCapIsScaledOntoIt() throws {
+        let src = flatImage(width: 4800, height: 300, level: 0.35)
+        let stroke = BrushStroke(points: [p(0.5, 0.2), p(0.5, 0.8)], radius: 0.01, feather: 0.2, flow: 1)
+        var r = Recipe.neutral
+        r.masks = [exposureMask(.brush([stroke]))]
+        let out = try render(r, src).image
+        let plain = try render(Recipe.neutral, src).image
+        XCTAssertEqual(out.width, 4800)
+        // 0.01 x 4800 = 48 px radius around x = 2400.
+        XCTAssertGreaterThan(rgb(out, 2400, 150).g, rgb(plain, 2400, 150).g + 40, "under the stroke")
+        XCTAssertGreaterThan(rgb(out, 2436, 150).g, rgb(plain, 2436, 150).g + 30, "inside the radius")
+        for x in [2340, 2460, 100, 4700] {
+            XCTAssertLessThanOrEqual(abs(rgb(out, x, 150).g - rgb(plain, x, 150).g), 1, "(\(x), 150) is outside")
+        }
     }
 }
