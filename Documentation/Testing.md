@@ -13,7 +13,7 @@ with `@testable import PhotoLab`.
 The filter is a regular expression over `Class/test`. Build with Xcode
 selected (README, Run): the Command Line Tools toolchain cannot build the
 SwiftUI target. A green run prints the executed count with its failures and
-skips; five tests skip by design (the real-RAW timing, below, and the four
+skips; seven tests skip by design (the two snapshot tests, below, the real-RAW timing, and the four
 real-PhotoKit tests: two in `PhotosTests`, which run only in a process that
 is already authorized for Photos, and the import in `ExportTests` and the
 edit in `AdjustmentDataTests`, which also need `PHOTOLAB_PHOTOS_WRITE=1`),
@@ -264,6 +264,42 @@ not only the pass.
   `bench24MPImageURL()` is the 24 MP source for the timed tests, and
   `loadAverage()` / `assertFrameBudget` are the one load guard every timed
   test gates through.
+
+## The snapshot harness
+
+`Tests/PhotoLabTests/Snapshots/` renders the app's main-window states to PNG
+in-process, light and dark, so a design review can read the screens without
+anyone driving the app. It is skipped unless an output directory is passed:
+
+    PHOTOLAB_SNAPSHOTS=<output dir> swift test --filter UISnapshotTests
+
+The directory is the caller's (never a default, and keep it outside the
+repo: the PNGs are not committed). It gets `light/`, `dark/` (one
+`<nn>-<state>.png` per state) and `index.txt`, one line per state with what
+it shows, the model state it was set to, and its offscreen caveat.
+
+How it works: each state's view is hosted in a titled `NSWindow` that is
+never ordered on screen (no `orderFront`, no activation, no screen capture),
+through an `NSHostingController` with `sceneBridgingOptions = .all`, so the
+window toolbar and title draw into the frame view's bitmap
+(`cacheDisplay`, 2x). The harness waits with `Task.sleep` (a blocking
+run-loop spin starves the main actor, and the grid's thumbnail tasks never
+resume), and writes a state only once its model is ready and three
+successive captures are identical; a state that has not settled in 45 s
+fails by name. Everything is injected: `Library(rememberFolder: false)`, a
+temp `PresetStore`, an `ExportQueue` with `FakePhotosWriter` (and a held or
+failing worker for the export bar), `PhotosTests.FakePhotoKit` for Photos
+sources, and a temp folder of synthetic photos per state (12 JPEGs, a PNG,
+a junk `.JPG` and a junk sidecar where a state needs them). One production
+seam exists for it: `PanelStart` (an environment value, unset in the app)
+opens the adjustments panel with chosen sections expanded.
+
+The gate with the variable set: every state is written in both modes, none
+is a single flat color, none times out. Without it the tests skip and the
+suite is as fast as before. The grid is lazy, so a state's thumbnails load
+only for the cells in the viewport, as in the app; materials may render
+flatter than on screen (read `index.txt`); sheets, alerts and the menu bar
+are not part of the main-window states.
 
 ## The direction tests
 

@@ -861,6 +861,25 @@ private struct PreviewCanvas: View {
 /// hold-to-compare button, undo / redo / reset, and the live render time
 /// of the last frame. The HSL section shows one channel (hue, saturation or
 /// luminance) of the eight bands at a time, like Lightroom's panel.
+/// Which sections the adjustments panel opens expanded, and the HSL channel
+/// it opens on. Unset in the app (Basic open, Hue); a test sets it to host
+/// the panel in a given state.
+struct PanelStart: Equatable {
+    var sections: Set<AdjustmentKind.Section>
+    var hslChannel: AdjustmentKind.HSLChannel = .hue
+}
+
+private struct PanelStartKey: EnvironmentKey {
+    static let defaultValue: PanelStart? = nil
+}
+
+extension EnvironmentValues {
+    var panelStart: PanelStart? {
+        get { self[PanelStartKey.self] }
+        set { self[PanelStartKey.self] = newValue }
+    }
+}
+
 struct AdjustmentsPanel: View {
     @Environment(Library.self) private var library
     let photo: Photo
@@ -870,6 +889,7 @@ struct AdjustmentsPanel: View {
     @State private var expanded: Set<AdjustmentKind.Section> = [.basic]
     @State private var presetsExpanded = true
     @State private var hslChannel: AdjustmentKind.HSLChannel = .hue
+    @Environment(\.panelStart) private var panelStart
 
     private var recipe: Binding<Recipe> {
         Binding(
@@ -962,6 +982,12 @@ struct AdjustmentsPanel: View {
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
+        .task {
+            if let start = panelStart {
+                expanded = start.sections
+                hslChannel = start.hslChannel
+            }
+        }
     }
 
     private func row(_ kind: AdjustmentKind) -> some View {
