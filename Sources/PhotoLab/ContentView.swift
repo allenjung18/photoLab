@@ -24,6 +24,13 @@ struct ContentView: View {
                     Label("Open Folder", systemImage: "folder")
                 }
                 .help("Open a folder of photos (⌘O)")
+                Button { library.choosePhotosAlbum() } label: {
+                    Label("Open Photos Library", systemImage: "photo.on.rectangle")
+                }
+                .disabled(!PhotosAccess.hasBundle)
+                .help(PhotosAccess.hasBundle
+                      ? "Open a Photos album (⇧⌘O)"
+                      : "The Photos library opens from the app bundle (scripts/bundle.sh)")
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 Picker("View", selection: viewBinding) {
@@ -168,6 +175,7 @@ struct GridView: View {
                                           marks: library.marks(for: photo.id),
                                           recipe: library.recipe(for: photo.id))
                                 .id(photo.id)
+                                .contextMenu { PhotoContextMenu(photo: photo) }
                                 .onTapGesture(count: 2) {
                                     library.selection = photo.id
                                     library.loupe = true
@@ -250,6 +258,7 @@ private struct BatchBar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            FlagStarControl(targets: library.batchTargets)
             Spacer()
             Button("Sync Settings…") { library.requestSync() }
                 .help("Copy the anchor's settings onto the other selected photos, with checkboxes for what to sync")
@@ -821,6 +830,7 @@ struct AdjustmentsPanel: View {
                 BeforeButton(isPressed: $library.showBefore)
                     .fixedSize()
                 Spacer(minLength: 4)
+                FlagStarControl(targets: [photo.id])
                 Button { library.undo() } label: { Image(systemName: "arrow.uturn.backward") }
                     .disabled(!library.canUndo)
                     .help("Undo (⌘Z)")

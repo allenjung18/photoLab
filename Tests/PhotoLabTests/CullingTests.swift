@@ -180,6 +180,48 @@ final class CullingTests: XCTestCase {
 
     // MARK: Filter
 
+    func testContextTargetsInsideTheSelectionAreTheBatchOutsideIsTheOnePhotoAndAHiddenPhotoGivesNothing() throws {
+        for n in ["a", "b", "c", "d"] { try makePhoto("\(n).png") }
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let a = try id(lib, "a.png"), b = try id(lib, "b.png"), c = try id(lib, "c.png"), d = try id(lib, "d.png")
+        lib.click(a)
+        lib.click(c, toggling: true)
+        XCTAssertEqual(lib.batchTargets, [a, c])
+        XCTAssertEqual(lib.contextTargets(for: a), lib.batchTargets)
+        XCTAssertEqual(lib.contextTargets(for: c), lib.batchTargets)
+        XCTAssertEqual(lib.contextTargets(for: b), [b], "outside the selection: that photo alone")
+        XCTAssertEqual(lib.contextTargets(for: d), [d])
+        lib.setFlag(.reject, for: [b])
+        lib.filter = .picks
+        XCTAssertEqual(lib.contextTargets(for: b), [], "a photo the filter hides gives nothing")
+    }
+
+    func testTheFlagControlOnTwoSelectedPhotosWritesBothSidecarsAndAddsNoUndoStep() throws {
+        for n in ["a", "b", "c"] { try makePhoto("\(n).png") }
+        let store = SidecarStore(folder: folder)
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let a = try id(lib, "a.png"), b = try id(lib, "b.png"), c = try id(lib, "c.png")
+        lib.click(a)
+        lib.click(b, toggling: true)
+        let ctx = CommandContext(library: lib, targetIDs: lib.contextTargets(for: b))
+        AppCommand.command(.pick).perform(ctx)
+        AppCommand.command(.rate3).perform(ctx)
+        XCTAssertEqual(lib.flag(for: a), .pick)
+        XCTAssertEqual(lib.flag(for: b), .pick)
+        XCTAssertNil(lib.flag(for: c))
+        XCTAssertEqual(lib.rating(for: b), 3)
+        XCTAssertTrue(try sidecarText(store, a).contains("pick"))
+        XCTAssertTrue(try sidecarText(store, b).contains("pick"))
+        XCTAssertFalse(lib.canUndo, "a mark is not an undo step")
+        // A right-click outside the selection marks that photo alone.
+        let alone = CommandContext(library: lib, targetIDs: lib.contextTargets(for: c))
+        AppCommand.command(.reject).perform(alone)
+        XCTAssertEqual(lib.flag(for: c), .reject)
+        XCTAssertEqual(lib.flag(for: a), .pick)
+    }
+
     func testFilterReturnsTheSubsetInFolderOrderAndBatchTargetsNeverIncludeAHiddenPhoto() throws {
         for n in ["a", "b", "c", "d", "e", "f"] { try makePhoto("\(n).png") }
         let lib = Library(rememberFolder: false)

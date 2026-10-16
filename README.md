@@ -75,6 +75,15 @@ ratings, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
+The same actions are clickable: Pick, Reject, Unflag and five stars in the
+loupe panel footer (the one photo) and in the batch bar (the selected
+photos), and a right-click menu on a grid photo (Pick, Reject, Unflag,
+Rating, Apply Preset, Copy and Paste Settings, Export, Reset Photo, and Show
+in Finder for a folder photo). A right-click on a photo outside the selection
+acts on that photo alone, inside it on the whole selection. Open Photos
+Library sits in the toolbar beside Open Folder (disabled outside the app
+bundle).
+
 `Return` and `Esc` also confirm and cancel the welcome screen's Open Folder…,
 the Sync sheet and the Export sheet. Sync Settings… and the preset names in
 the Presets menu have no key.

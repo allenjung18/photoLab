@@ -351,6 +351,15 @@ final class Library {
         return ids
     }
 
+    /// What a right-click on `id` acts on: the batch targets when the photo is
+    /// one of them (inside the selection), that photo alone when it is not
+    /// (Finder's rule); nothing for a photo the filter hides.
+    func contextTargets(for id: Photo.ID) -> [Photo.ID] {
+        guard isVisible(id) else { return [] }
+        let targets = batchTargets
+        return targets.contains(id) ? targets : [id]
+    }
+
     /// After the filter or a mark changed: hidden photos leave the selection,
     /// and a hidden anchor moves to the nearest visible photo after it in
     /// folder order (culling flow: reject under Picks shows the next one),
@@ -559,10 +568,11 @@ final class Library {
 
     /// Asks the window for the Paste Settings sheet: the copied recipe onto
     /// the selection.
-    func requestPaste() {
-        guard let copied = copiedSettings, !batchTargets.isEmpty else { return }
+    func requestPaste(for ids: [Photo.ID]? = nil) {
+        let targets = ids ?? batchTargets
+        guard let copied = copiedSettings, !targets.isEmpty else { return }
         syncRequest = SyncRequest(source: copied.recipe, sourceName: copied.name,
-                                  targets: batchTargets, mask: lastSyncMask)
+                                  targets: targets, mask: lastSyncMask)
     }
 
     /// The (file, recipe) pairs an export of `ids` writes, each file the

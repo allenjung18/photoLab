@@ -8,6 +8,15 @@ struct CommandContext {
     let library: Library
     var presets: PresetLibrary? = nil
     var exports: ExportQueue? = nil
+    /// A context menu on one photo pins what the commands act on: the
+    /// targets (`Library.contextTargets(for:)`) and the one photo the
+    /// single-photo commands (Copy Settings, Reset Photo) take. Nil for the
+    /// menus and keys, which act on the batch targets and the anchor.
+    var targetIDs: [Photo.ID]? = nil
+    var subjectID: Photo.ID? = nil
+
+    var targets: [Photo.ID] { targetIDs ?? library.batchTargets }
+    var subject: Photo.ID? { subjectID ?? library.selection }
 }
 
 /// One key-driven action: its title, its key, the menu that lists it, when it
@@ -102,11 +111,11 @@ struct AppCommand: Identifiable {
         AppCommand(name: .export, title: "Export…", key: "e", modifiers: [.command, .shift],
                    placement: .importExport,
                    dynamicTitle: { c in
-                       let n = c.library.batchTargets.count
+                       let n = c.targets.count
                        return n > 1 ? "Export \(n) Photos…" : "Export…"
                    },
-                   isEnabled: { c in !c.library.batchTargets.isEmpty && c.exports?.isRunning != true },
-                   perform: { c in c.exports?.requestExport(from: c.library) }),
+                   isEnabled: { c in !c.targets.isEmpty && c.exports?.isRunning != true },
+                   perform: { c in c.exports?.requestExport(from: c.library, ids: c.targets) }),
         // The selected photo's edit written into Photos itself (a Photos
         // album's edited photo only): Photos shows it and can revert it; the
         // export above makes a new asset instead.
@@ -123,12 +132,12 @@ struct AppCommand: Identifiable {
         // Copy / paste a photo's settings; select every photo in the grid.
         AppCommand(name: .copySettings, title: "Copy Settings", key: "c", modifiers: [.command, .shift],
                    placement: .pasteboard,
-                   isEnabled: { $0.library.selection != nil },
-                   perform: { c in if let id = c.library.selection { c.library.copySettings(from: id) } }),
+                   isEnabled: { $0.subject != nil },
+                   perform: { c in if let id = c.subject { c.library.copySettings(from: id) } }),
         AppCommand(name: .pasteSettings, title: "Paste Settings…", key: "v", modifiers: [.command, .shift],
                    placement: .pasteboard,
-                   isEnabled: { c in c.library.copiedSettings != nil && !c.library.batchTargets.isEmpty },
-                   perform: { $0.library.requestPaste() }),
+                   isEnabled: { c in c.library.copiedSettings != nil && !c.targets.isEmpty },
+                   perform: { $0.library.requestPaste(for: $0.targets) }),
         AppCommand(name: .syncSettings, title: "Sync Settings…", key: nil, placement: .pasteboard,
                    isEnabled: { $0.library.selectedIDs.count >= 2 },
                    perform: { $0.library.requestSync() }),
@@ -181,8 +190,8 @@ struct AppCommand: Identifiable {
         rate(0), rate(1), rate(2), rate(3), rate(4), rate(5),
         AppCommand(name: .resetPhoto, title: "Reset Photo", key: "r", modifiers: [.command, .shift],
                    placement: .photo, section: 2,
-                   isEnabled: { c in c.library.selection.map { c.library.isEdited($0) } ?? false },
-                   perform: { c in if let id = c.library.selection { c.library.resetRecipe(for: id) } }),
+                   isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },
+                   perform: { c in if let id = c.subject { c.library.resetRecipe(for: id) } }),
 
         // Keys with no menu item: Escape leaves the loupe (from the grid it
         // collapses the selection), Return opens it.
@@ -197,8 +206,8 @@ struct AppCommand: Identifiable {
     private static func flag(_ flag: Marks.Flag?, title: String, key: KeyEquivalent) -> AppCommand {
         let name: Name = switch flag { case .pick: .pick; case .reject: .reject; case nil: .unflag }
         return AppCommand(name: name, title: title, key: key, modifiers: [], placement: .photo,
-                          isEnabled: { !$0.library.batchTargets.isEmpty },
-                          perform: { $0.library.setFlag(flag, for: $0.library.batchTargets) })
+                          isEnabled: { !$0.targets.isEmpty },
+                          perform: { $0.library.setFlag(flag, for: $0.targets) })
     }
 
     private static func rate(_ n: Int) -> AppCommand {
@@ -206,8 +215,8 @@ struct AppCommand: Identifiable {
         let title = n == 0 ? "No Rating" : n == 1 ? "1 Star" : "\(n) Stars"
         return AppCommand(name: names[n], title: title, key: KeyEquivalent(Character(String(n))), modifiers: [],
                           placement: .photo, section: 1,
-                          isEnabled: { !$0.library.batchTargets.isEmpty },
-                          perform: { $0.library.setRating(n, for: $0.library.batchTargets) })
+                          isEnabled: { !$0.targets.isEmpty },
+                          perform: { $0.library.setRating(n, for: $0.targets) })
     }
 
     /// The loupe on the selection, or on the first visible photo when none.

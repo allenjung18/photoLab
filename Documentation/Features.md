@@ -9,8 +9,8 @@ document is the layer between: screen to type. Every name in backticks is in
 
 The window is `ContentView` (`ContentView.swift`): the welcome screen while
 no source is open (`Library.source` is nil), the loupe while `Library.loupe`
-is on and a photo is selected, the grid otherwise; a toolbar with Open Folder
-and a Grid / Loupe picker; the hidden keyboard shortcuts; the export bar at
+is on and a photo is selected, the grid otherwise; a toolbar with Open Folder,
+Open Photos Library (disabled without an app bundle) and a Grid / Loupe picker; the hidden keyboard shortcuts; the export bar at
 the bottom when a run is going; and three sheets, Sync, Export and Open
 Photos Library. The
 title is the source's name (the folder's, or the album's), the subtitle "n of N" in the loupe (with the
@@ -183,6 +183,17 @@ photo in the grid, the one photo in the loupe) and read by the filter bar.
   **0** to **5** rate (0 clears), from the keyboard or the Photo menu. They
   are `AppCommand` entries (`HiddenShortcuts` binds the keys) that call `Library.setFlag(_:for:)` and `Library.setRating(_:for:)` with
   `Library.batchTargets`.
+- **Clickable.** `FlagStarControl` (`ActionControls.swift`: the loupe panel
+  footer for the one photo, the batch bar for `Library.batchTargets`) and
+  `PhotoContextMenu` (the grid cell's right-click menu: Pick, Reject, Unflag,
+  Rating, Apply Preset, Copy Settings, Paste Settings, Export, Reset Photo,
+  and Show in Finder for a folder photo) run the `AppCommand` of the same
+  name over a `CommandContext` that pins `targetIDs` and `subjectID`, so a
+  key, a menu item and a button share one definition and the same `Library`
+  methods; a mark is still not an undo step. `Library.contextTargets(for:)`
+  is the rule for a right-click: the batch targets when the photo is one of
+  them, that photo alone when it is outside the selection, nothing when the
+  filter hides it.
 - **The model.** `Marks` (`Sidecar.swift`) is a `Marks.Flag` (`pick` or
   `reject`, or none) and a rating clamped to 0…`Marks.maxRating`;
   `Marks.isEmpty` is no flag and no stars. `Library.marks(for:)` reads a
