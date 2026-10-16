@@ -100,20 +100,20 @@ struct ContentView: View {
 
     private var title: String { library.source?.title ?? "PhotoLab" }
 
-    /// Grid: "N photos", or "n of N shown" under a filter, plus the selection
+    /// Grid: "N photos", or "n of N shown" under a filter or a search, plus the selection
     /// count. Loupe: the anchor's place among the visible photos and its marks.
     private var subtitle: String {
         guard library.source != nil else { return "" }
         let total = library.photos.count
         let shown = library.visiblePhotos.count
         if library.loupe, let i = library.visibleIndex {
-            var s = library.filter == .all ? "\(i + 1) of \(total)" : "\(i + 1) of \(shown) shown"
+            var s = !library.isNarrowed ? "\(i + 1) of \(total)" : "\(i + 1) of \(shown) shown"
             let marks = library.marks(for: library.selection!)
             if let flag = marks.flag { s += flag == .pick ? " · Pick" : " · Rejected" }
             if marks.rating > 0 { s += " · " + String(repeating: "★", count: marks.rating) }
             return s
         }
-        var s = library.filter == .all ? "\(total) photos" : "\(shown) of \(total) shown"
+        var s = !library.isNarrowed ? "\(total) photos" : "\(shown) of \(total) shown"
         let n = library.selectedIDs.count
         if n > 1 { s += " · \(n) selected" }
         return s
@@ -180,9 +180,14 @@ struct GridView: View {
                         .frame(maxWidth: .infinity)
                 } else if library.visiblePhotos.isEmpty {
                     VStack(spacing: 12) {
-                        Text("No photos match the filter")
+                        Text(library.search.isEmpty ? "No photos match the filter"
+                             : library.filter == .all ? "No photos match the search"
+                             : "No photos match the filter and the search")
                             .foregroundStyle(.secondary)
-                        Button("Show All") { library.filter = .all }
+                        Button("Show All") {
+                            library.filter = .all
+                            library.searchText = ""
+                        }
                     }
                     .padding(40)
                     .frame(maxWidth: .infinity)
@@ -259,10 +264,120 @@ private struct ThumbnailSizeBar: View {
     }
 }
 
-/// The bar above the grid: Lightroom's filter choices (All · Picks ·
-/// Unflagged · Rejected · ≥ 1…5 stars). The grid, Select All, the batch
-/// actions and the loupe arrows all walk the filtered list.
+/// The bar above the grid: the search field (name and keywords, ⌘F), then
+/// Lightroom's filter choices (All · Picks · Unflagged · Rejected · ≥ 1…5
+/// stars), the Keywords menu and the Sort menu. The grid, Select All, the
+/// batch actions and the loupe arrows all walk the filtered list.
 private struct FilterBar: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        HStack(spacing: 10) {
+            SearchField()
+            FilterChoices()
+            Spacer()
+            KeywordsMenu()
+            Menu {
+                CommandItems(placement: .sort, context: CommandContext(library: library))
+            } label: {
+                Label("Sort: \(library.sort.key.label)",
+                      systemImage: library.sort.ascending ? "arrow.up" : "arrow.down")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("The grid's order (View › Sort By); the filmstrip and the arrow keys follow it")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// The grid's search: `Library.searchText`, every whitespace-separated term
+/// matched against a photo's name and keywords (`PhotoSearch`). Its focus is
+/// mirrored into `Library.textEntryActive`, which disables every bare-key
+/// command while the user types. ⌘F (Search Photos) focuses it; Esc clears
+/// it and gives the focus back; Return gives the focus back.
+private struct SearchField: View {
+    @Environment(Library.self) private var library
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        @Bindable var library = library
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search", text: $library.searchText)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onExitCommand {
+                    library.searchText = ""
+                    focused = false
+                }
+                .onSubmit { focused = false }
+            if !library.searchText.isEmpty {
+                Button {
+                    library.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Clear the search")
+            }
+        }
+        .padding(.horizontal, 6).padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 5).fill(Color(nsColor: .textBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator))
+        .frame(width: 180)
+        .help("Search by name and keyword; every word must match (⌘F, Esc clears)")
+        .onChange(of: focused) { _, now in library.textEntryActive = now }
+        .onChange(of: library.searchFocusRequested) { _, asked in if asked { takeFocus() } }
+        .onAppear {
+            if library.searchFocusRequested {
+                takeFocus()
+            } else {
+                // The window may give its first text field the focus on its
+                // own; only ⌘F or a click should, or the bare keys go dead.
+                DispatchQueue.main.async { focused = false }
+            }
+        }
+        .onDisappear {
+            focused = false
+            library.textEntryActive = false
+        }
+    }
+
+    private func takeFocus() {
+        library.searchFocusRequested = false
+        DispatchQueue.main.async { focused = true }
+    }
+}
+
+/// The open source's keywords with how many photos hold each
+/// (`Library.keywordTally`); picking one sets the search to it.
+private struct KeywordsMenu: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let tally = library.keywordTally
+        Menu {
+            ForEach(tally) { entry in
+                Button("\(entry.keyword) (\(entry.count))") { library.searchText = entry.keyword }
+            }
+        } label: {
+            Label("Keywords", systemImage: "tag")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(tally.isEmpty)
+        .help("Search for one of this source's keywords (Photo › Keywords…, ⌘K, adds them)")
+    }
+}
+
+/// The filter's segmented choices.
+private struct FilterChoices: View {
     @Environment(Library.self) private var library
 
     var body: some View {
@@ -280,21 +395,7 @@ private struct FilterBar: View {
             .labelsHidden()
             .fixedSize()
             .help("Which photos the grid shows; P / X / U flag, 0–5 rate the selection")
-            Spacer()
-            Menu {
-                CommandItems(placement: .sort, context: CommandContext(library: library))
-            } label: {
-                Label("Sort: \(library.sort.key.label)",
-                      systemImage: library.sort.ascending ? "arrow.up" : "arrow.down")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("The grid's order (View › Sort By); the filmstrip and the arrow keys follow it")
         }
-        .controlSize(.small)
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

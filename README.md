@@ -73,6 +73,7 @@ in Xcode works too.
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
 | `⌘K` | Keywords… on the selection: a sheet with a field that adds comma-separated keywords to every selected photo and each keyword already on any of them, with "all" or "n of N" and a remove button; not an undo step, and Reset leaves keywords |
+| `⌘F` | Search Photos: the search field at the left of the bar above the grid (from the loupe it goes back to the grid); every word typed must match a photo's name or one of its keywords, ignoring case and accents, on top of the filter; `Esc` clears it, `Return` leaves it; not remembered when you open another folder or album. While it has the focus every single-key shortcut (`P`, `X`, `0`–`5`, the arrows, `Esc`, `Return`…) types into it instead |
 | `⌘A` | Select All Photos (grid only) |
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
 | `⌘U` | Auto Tone: exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
@@ -85,7 +86,7 @@ in Xcode works too.
 Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
 PhotoLab › Settings…): File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
-Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
+Photos, Search Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…). A single-letter key is written after its menu item's
@@ -94,7 +95,10 @@ into a text field (a preset's name, the export suffix) types the letter.
 
 **View › Show** also picks the grid's filter (All, Picks, Unflagged, Rejected, 1 to 5
 stars), the same choice as the bar above the grid, and the empty-filter message has a
-**Show All** button. **View › Sort By** (or the **Sort** menu at the right of the bar
+**Show All** button (it clears the search as well). The **Keywords** menu beside the
+**Sort** menu lists the open folder's or album's keywords, each with how many photos
+hold it; picking one searches for it. Under a filter or a search the window's subtitle
+reads "n of N shown". **View › Sort By** (or the **Sort** menu at the right of the bar
 above the grid) orders the grid by Capture Date, Name, Rating or Edited, Ascending or
 Descending; the filmstrip and `←` `→` follow it, ties go by name, a photo with no
 capture date goes last, and the choice is remembered once for folders and once for

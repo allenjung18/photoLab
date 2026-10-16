@@ -725,6 +725,21 @@ recipe-only `SidecarStore.save(_:for:name:now:)` carries over the marks and
 keywords the file held. `Library.requestKeywords(for:)` sets
 `Library.keywordsRequest`, the `KeywordsSheet` the window presents.
 
+### Visibility: the filter and the search
+
+What the grid shows is one predicate in `Library` (`Library.swift`), and
+every selection path walks its result: `Library.visiblePhotos` is the
+photos (in sort order) whose marks `PhotoFilter.admits(_:)` AND that
+`Library.search` matches, and `Library.isVisible(_:)` is the same test for
+one id. `Library.search` is `Library.searchText` as a `PhotoSearch`
+(`Search.swift`): its terms, split at whitespace, ANDed, each found as a
+substring ignoring case and diacritics in the photo's name (only once the
+source has named it, `Photo.isNamed`) or in one of its keywords. The
+search is view state, not data: nothing writes it to a sidecar or to the
+recents' `SourceViewState`, and `open` empties it. A change to the filter,
+the search, a mark or a keyword runs `Library.reconcileSelection()`, which
+drops hidden photos from the selection and moves a hidden anchor on.
+
 ### `Preset` and `PresetStore`
 
 A `Preset` is a named recipe: `version` (`Preset.currentVersion`), `name`,

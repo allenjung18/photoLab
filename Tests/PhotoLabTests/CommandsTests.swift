@@ -97,7 +97,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(AppCommand.items(in: .importExport).map(\.name), [.export, .saveToPhotos])
         XCTAssertEqual(AppCommand.items(in: .undoRedo).map(\.name), [.undo, .redo])
         XCTAssertEqual(AppCommand.items(in: .pasteboard).map(\.name),
-                       [.copySettings, .pasteSettings, .syncSettings, .selectAll])
+                       [.copySettings, .pasteSettings, .syncSettings, .selectAll, .search])
         XCTAssertEqual(AppCommand.items(in: .presets).map(\.name), [.savePreset])
     }
 

@@ -15,7 +15,7 @@ the bottom when a run is going; and three sheets, Sync, Export and Open
 Photos Library. The
 title is the source's name (the folder's, or the album's), the subtitle "n of N" in the loupe (with the
 photo's flag and stars when it has them) and "N photos · n selected" in the
-grid; under a filter both count the photos shown, "n of N shown".
+grid; under a filter or a search (`Library.isNarrowed`) both count the photos shown, "n of N shown".
 
 ## Welcome
 
@@ -118,8 +118,9 @@ the originals cache, below) or edited (a sidecar under
 
 `GridView` (`ContentView.swift`): the filter bar above, a `LazyVGrid` of
 `ThumbnailCell` over `Library.visiblePhotos`, "No photos in this folder"
-when the scan found none and "No photos match the filter" when the filter
-hides them all, the batch bar under it while more than one photo is
+when the scan found none and "No photos match the filter" (or "the
+search", or "the filter and the search") when they hide them all, with a
+**Show All** button that sets the filter to All and clears the search, the batch bar under it while more than one photo is
 selected, and under that the thumbnail size strip. Selecting a photo
 scrolls it into view.
 
@@ -154,6 +155,29 @@ scrolls it into view.
   the next visible photo in sort order (else the previous one, else none,
   which also leaves the loupe), so rejecting under Picks shows the next
   candidate.
+- **Search** (`Search.swift`). `SearchField`, at the left of `FilterBar`,
+  is bound to `Library.searchText`; `Library.search` is that text as a
+  `PhotoSearch`, its terms split at whitespace. `Library.visiblePhotos` and
+  `Library.isVisible` admit a photo when the filter admits its marks AND
+  `PhotoSearch.matches(_:keywords:)` holds: every term is found
+  (`PhotoSearch.finds`, a substring ignoring case and diacritics) in the
+  photo's name or in one of its keywords (`Library.keywords(for:)`). A
+  Photos photo not named yet (`Photo.isNamed` false) matches by its
+  keywords only. So Select All, `batchTargets`, the arrows, the filmstrip
+  and the counts follow the search as they follow the filter, and changing
+  the search, or adding or removing a keyword, reconciles the selection as
+  a filter change does. `open` resets the search to empty, and it is not
+  part of the remembered view state. **Search Photos** (⌘F, `AppCommand`
+  `.search`, Edit menu) leaves the loupe and sets
+  `Library.searchFocusRequested`, which `SearchField` turns into focus.
+  The field's focus is mirrored into `Library.textEntryActive`, which turns
+  off every bare key (see Menus and shortcuts); Esc in the field
+  (`onExitCommand`) clears it and drops the focus, Return drops the focus,
+  and the field drops it when it leaves the screen.
+- **Keywords menu.** `KeywordsMenu`, beside the Sort menu in `FilterBar`,
+  lists `Library.keywordTally` (`Keywords.tally` over every photo of the
+  open source, shown or not) as "keyword (count)"; picking one sets
+  `Library.searchText` to it. Disabled while no photo has a keyword.
 - **Sort** (`Sort.swift`). `Library.sort` is a `PhotoSort`: a `SortKey`
   (Capture Date, Name, Rating, Edited) and a direction. `Library.photos`
   is kept in that order (`Library.resort()` over
@@ -311,8 +335,8 @@ Words on a photo, kept with the marks and like them not an edit.
   never enters a `Recipe`, a `Preset`, Copy Settings or a sync mask, and
   Reset leaves it.
 - **Where it shows.** A Keywords row in the loupe's Info section (see
-  Loupe, Info), and the IPTC Keywords of an export with Keep camera info on
-  (see Export).
+  Loupe, Info), the grid's search and its Keywords menu (see Grid, Search),
+  and the IPTC Keywords of an export with Keep camera info on (see Export).
 
 Writes: the photo's sidecar, through the same `Library.persist` as the
 marks. Keywords are one optional key, `keywords`, written only when the list
@@ -903,7 +927,12 @@ key is typed anywhere else; the README's Keys table is the user's list.
   `AppCommand.menuTitle(_:)`): a menu key equivalent is global to the app
   and would take the letter from a text field in a sheet or an alert (the
   Save Preset name, the export suffix), while the hidden buttons sit in the
-  main window and never see those keystrokes.
+  main window and never see those keystrokes. The main window's own text
+  field, the grid's search, is covered by the table itself: `AppCommand.all`
+  is the entries passed through `AppCommand.offWhileTyping`, which makes
+  every bare key's `isEnabled` false while `Library.textEntryActive`, so
+  the hidden buttons and the menu items are disabled together while the
+  user types.
 - **Menus** are the `.commands` of `PhotoLabApp` (`PhotoLabApp.swift`),
   each a `CommandGroup` or `CommandMenu` holding `CommandItems` for one
   placement (table order, a divider between sections; an entry with an
@@ -922,10 +951,11 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.copySettings(from:)`), **Paste Settings…** **⇧⌘V**
     (`Library.requestPaste`), **Sync Settings…** (`Library.requestSync`,
     from two selected), **Select All Photos** **⌘A** (`Library.selectAll`,
-    grid only).
+    grid only); then **Search Photos** **⌘F** (see Grid, Search), enabled
+    while the source has photos.
   - Edit, replacing `.undoRedo`: **Undo** **⌘Z** and **Redo** **⇧⌘Z**
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
-    unused, there are no text fields).
+    unused).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
   - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,

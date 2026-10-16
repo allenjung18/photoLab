@@ -147,6 +147,19 @@ not only the pass.
   keeps the source's, none with Keep camera info off). Shown to bite by
   dropping keywords from `SidecarStore.save`'s nothing-to-keep rule (11
   failures in 3 tests).
+- `SearchTests.swift` — the grid's search: terms ANDed in any order and
+  split at any whitespace (a blank search shows every photo); a term
+  matches the name or a keyword, and one term the name while another a
+  keyword; case and diacritics ignored ("cafe" finds "Café", "nandu"
+  "Ñandú"); a Photos photo not named yet matches by keywords only, never
+  its identifier; ANDed with the Picks filter; a hidden anchor moves to the
+  next match, Select All, `batchTargets`, the arrows and the filmstrip walk
+  the matches, and adding or removing a keyword re-applies it; `open`
+  resets it; `Library.keywordTally` counts every photo's keywords; every
+  bare key in `AppCommand.all` is disabled while `Library.textEntryActive`
+  (modified keys stay on, and they all come back); Search Photos is ⌘F and
+  leaves the loupe. Shown to bite by ORing the terms (5 failures in 3 tests)
+  and by dropping the bare-key guard in `AppCommand.offWhileTyping`.
 - `PresetTests.swift` — the starter set is distinct looks without geometry,
   saving drops geometry and applying keeps the photo's own, a preset round
   trips through a fresh `PresetStore`, file names are sanitised and names

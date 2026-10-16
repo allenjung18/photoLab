@@ -77,6 +77,29 @@ final class Library {
             saveViewState()
         }
     }
+    /// The grid's search field (`FilterBar`, focused by ⌘F): a photo shows
+    /// only when every term matches its name or one of its keywords
+    /// (`PhotoSearch`), on top of the filter. Changing it reconciles the
+    /// selection as the filter does; reset to empty by `open`, never
+    /// remembered.
+    var searchText: String = "" {
+        didSet {
+            guard searchText != oldValue else { return }
+            let next = PhotoSearch(searchText)
+            guard next != search else { return }
+            search = next
+            reconcileSelection()
+        }
+    }
+    /// `searchText` split into its terms.
+    private(set) var search = PhotoSearch("")
+    /// True while a text field of the main window has focus (the search
+    /// field, mirrored from its `FocusState`): every bare-key command is
+    /// disabled then (`AppCommand.all`), so P, X, 0–5 and the arrows reach
+    /// the field instead of the photos.
+    var textEntryActive = false
+    /// Set by Search Photos (⌘F); the search field takes focus and clears it.
+    var searchFocusRequested = false
     /// The grid's order (`PhotoSort`): `photos` is kept sorted by it, so the
     /// grid, the filmstrip and the arrows follow it. Remembered per source
     /// kind (`storedSort(for:)`, in `settings`); a change re-sorts at once
@@ -363,6 +386,7 @@ final class Library {
         whiteBalanceNote = nil
         photosSave = .idle
         filter = .all
+        searchText = ""
         sort = storedSort(for: sortKind)
         photos = listed
         let store = source.sidecars
@@ -464,14 +488,38 @@ final class Library {
         }
     }
 
-    /// The photos the filter admits, in sort order: what the grid shows and
-    /// what every selection path walks. Under `.all` it is `photos`.
+    /// The photos the filter admits and the search matches, in sort order:
+    /// what the grid shows and what every selection path walks. Under `.all`
+    /// with no search it is `photos`.
     var visiblePhotos: [Photo] {
-        if filter == .all { return photos }
-        return photos.filter { filter.admits(marks(for: $0.id)) }
+        if !isNarrowed { return photos }
+        return photos.filter(admits)
     }
 
-    func isVisible(_ id: Photo.ID) -> Bool { filter.admits(marks(for: id)) }
+    func isVisible(_ id: Photo.ID) -> Bool {
+        guard filter.admits(marks(for: id)) else { return false }
+        if search.isEmpty { return true }
+        guard let photo = photos.first(where: { $0.id == id }) else {
+            return search.matches(name: nil, keywords: keywords(for: id))
+        }
+        return search.matches(photo, keywords: keywords(for: id))
+    }
+
+    /// The filter admits the photo's marks and the search matches it.
+    private func admits(_ photo: Photo) -> Bool {
+        filter.admits(marks(for: photo.id))
+            && (search.isEmpty || search.matches(photo, keywords: keywords(for: photo.id)))
+    }
+
+    /// True when the grid shows fewer than every photo could: a filter other
+    /// than All, or a search ("n of N shown").
+    var isNarrowed: Bool { filter != .all || !search.isEmpty }
+
+    /// Every keyword on the open source's photos with how many photos hold
+    /// it (`Keywords.tally`): the grid bar's Keywords menu.
+    var keywordTally: [Keywords.Tally] {
+        Keywords.tally(photos.map { keywords(for: $0.id) })
+    }
 
     var selectedIndex: Int? {
         guard let selection else { return nil }
@@ -571,14 +619,15 @@ final class Library {
         return targets.contains(id) ? targets : [id]
     }
 
-    /// After the filter or a mark changed: hidden photos leave the selection,
-    /// and a hidden anchor moves to the nearest visible photo after it in
-    /// sort order (culling flow: reject under Picks shows the next one),
-    /// else the nearest before, else none.
+    /// After the filter, the search, a mark or a keyword changed: hidden
+    /// photos leave the selection, and a hidden anchor moves to the nearest
+    /// visible photo after it in sort order (culling flow: reject under Picks
+    /// shows the next one), else the nearest before, else none.
     private func reconcileSelection() {
-        let kept = selectedIDs.filter(isVisible)
-        if let anchor = selection, !isVisible(anchor) {
-            let visible = photos.indices.filter { isVisible(photos[$0].id) }
+        let shown = Set(visiblePhotos.map(\.id))
+        let kept = selectedIDs.filter(shown.contains)
+        if let anchor = selection, !shown.contains(anchor) {
+            let visible = photos.indices.filter { shown.contains(photos[$0].id) }
             let pos = selectedIndex ?? 0
             let next = visible.first { $0 > pos } ?? visible.last { $0 < pos }
             selection = next.map { photos[$0].id }  // collapses selectedIDs
@@ -639,6 +688,7 @@ final class Library {
             let merged = Keywords.normalized(current + words)
             if merged != current { setKeywords(merged, for: id) }
         }
+        reconcileSelection()
     }
 
     /// Removes `word` (case-insensitively) from every photo in `ids` that has
@@ -649,6 +699,7 @@ final class Library {
             let kept = current.filter { !Keywords.same($0, word) }
             if kept.count != current.count { setKeywords(kept, for: id) }
         }
+        reconcileSelection()
     }
 
     /// Asks the window for the Keywords sheet over `ids` (the batch targets

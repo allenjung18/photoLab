@@ -29,13 +29,15 @@ struct CommandContext {
 /// menu key equivalent is global to the app, so a bare one would fire while
 /// the user types into a text field (the Save Preset name, the export
 /// suffix); the hidden buttons live in the main window's view hierarchy and
-/// never see a sheet's or an alert's keystrokes.
+/// never see a sheet's or an alert's keystrokes. The main window's own text
+/// field (the grid's search) is covered by `all`: every bare key is disabled
+/// while `Library.textEntryActive`.
 @MainActor
 struct AppCommand: Identifiable {
     enum Name: String, CaseIterable {
         case openFolder, openPhotos, export, saveToPhotos
         case undo, redo
-        case copySettings, pasteSettings, syncSettings, selectAll
+        case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
         case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
@@ -125,7 +127,22 @@ struct AppCommand: Identifiable {
 
     // MARK: The table
 
-    static let all: [AppCommand] = [
+    /// The table, every bare key disabled while a text field of the main
+    /// window has focus (`offWhileTyping`).
+    static let all: [AppCommand] = table.map(\.offWhileTyping)
+
+    /// The command with its `isEnabled` also false while
+    /// `Library.textEntryActive`, when it is a bare key; unchanged when its
+    /// key has modifiers (those never type a character).
+    var offWhileTyping: AppCommand {
+        guard isBareKey else { return self }
+        var command = self
+        let enabled = isEnabled
+        command.isEnabled = { c in !c.library.textEntryActive && enabled(c) }
+        return command
+    }
+
+    private static let table: [AppCommand] = [
         // File
         AppCommand(name: .openFolder, title: "Open Folder…", key: "o", placement: .newItem,
                    perform: { $0.library.chooseFolder() }),
@@ -169,6 +186,14 @@ struct AppCommand: Identifiable {
         AppCommand(name: .selectAll, title: "Select All Photos", key: "a", placement: .pasteboard, section: 1,
                    isEnabled: { c in !c.library.loupe && !c.library.photos.isEmpty },
                    perform: { $0.library.selectAll() }),
+        // The grid's search field (`FilterBar`): from the loupe it goes back
+        // to the grid; the field takes focus, so typing reaches it.
+        AppCommand(name: .search, title: "Search Photos", key: "f", placement: .pasteboard, section: 2,
+                   isEnabled: { !$0.library.photos.isEmpty },
+                   perform: { c in
+                       c.library.loupe = false
+                       c.library.searchFocusRequested = true
+                   }),
 
         // Presets: save the selected photo's look (the menu then lists every
         // preset, applied to the selection; those have no key).
