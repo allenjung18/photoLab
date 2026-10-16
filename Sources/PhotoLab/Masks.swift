@@ -1,4 +1,7 @@
 import Foundation
+import CryptoKit
+import ImageIO
+import Compression
 
 // MARK: - Local adjustments: the data model
 
@@ -44,6 +47,325 @@ enum MaskShape: Hashable {
     case radial(center: MaskPoint, radii: MaskRadii, angle: Double, feather: Double)
     /// Painted strokes, in order (a later erase removes an earlier paint).
     case brush([BrushStroke])
+    /// An automatic mask: a detected bitmap over the source frame, refined
+    /// by brush strokes on top (`AutoMask`).
+    case auto(AutoMask)
+}
+
+/// What an automatic mask selects. The detection that fills the bitmap
+/// lives elsewhere; the kind names it in the list and in the sidecar.
+enum AutoMaskKind: String, Codable, Hashable, CaseIterable {
+    case subject, person, sky
+}
+
+/// An automatic mask: `bitmap` (the detected weights over the whole source
+/// frame) with `strokes` applied over it by `BrushRaster`'s rule (paint adds,
+/// clipped at 1; erase multiplies down), so a detection can be refined by hand.
+struct AutoMask: Codable, Hashable {
+    var kind: AutoMaskKind
+    var bitmap: MaskBitmap
+    var strokes: [BrushStroke] = []
+
+    init(kind: AutoMaskKind, bitmap: MaskBitmap, strokes: [BrushStroke] = []) {
+        self.kind = kind
+        self.bitmap = bitmap
+        self.strokes = strokes
+    }
+}
+
+/// An automatic mask's weights: an 8-bit grey raster over the SOURCE frame
+/// (row 0 the top, 255 = weight 1), stretched onto the source whatever its
+/// own size, so it lands on the same pixels under any crop, rotate, preview
+/// size or 1:1 window (`MaskRender` places it as it places a brush raster).
+///
+/// It is stored in the recipe as an 8-bit grey PNG (`png`, base64 in the
+/// sidecar JSON) and identified by `digest`, the SHA-256 of its size and
+/// PIXELS (never of the PNG bytes): two bitmaps are equal, and hash alike,
+/// when their pixels are, however the PNG was encoded. Recipes compare masks
+/// on every edit, so equality costs a digest compare, not a pixel walk.
+struct MaskBitmap: Hashable, @unchecked Sendable {
+    /// The largest long side kept; a larger raster is box-filtered down to
+    /// it (`init(gray:width:height:)`), aspect kept. A 2048 px soft mask is a
+    /// PNG of tens of kilobytes; the source's own resolution would be MBs in
+    /// every sidecar.
+    static let maxLongSide = 2048
+
+    let width: Int
+    let height: Int
+    /// One byte per pixel, rows top-down, `width * height` bytes.
+    let pixels: Data
+    /// The PNG the sidecar carries (8-bit grey, no alpha).
+    let png: Data
+    /// Hex SHA-256 of the width, height and pixels.
+    let digest: String
+    /// True when every pixel is 0: the mask selects nothing.
+    let isBlank: Bool
+
+    /// A 1x1 all-zero bitmap: an automatic mask with nothing detected yet.
+    static let blank = MaskBitmap(gray: [0], width: 1, height: 1)
+
+    /// A bitmap of `gray` (`width * height` bytes, rows top-down; missing
+    /// bytes read 0, extra are ignored), box-filtered down to `maxLongSide`
+    /// on the long side when larger. Sizes below 1 become 1.
+    init(gray: [UInt8], width: Int, height: Int) {
+        let w = max(1, width), h = max(1, height)
+        var bytes = gray
+        if bytes.count != w * h {
+            bytes = Array(bytes.prefix(w * h)) + [UInt8](repeating: 0, count: max(0, w * h - bytes.count))
+        }
+        let size = Self.fittedSize(width: w, height: h)
+        if size.width != w || size.height != h {
+            bytes = Self.downscale(bytes, width: w, height: h, to: size.width, size.height)
+        }
+        self.init(validated: Data(bytes), width: size.width, height: size.height,
+                  png: Self.encodePNG(bytes, width: size.width, height: size.height))
+    }
+
+    private init(validated pixels: Data, width: Int, height: Int, png: Data) {
+        self.width = width
+        self.height = height
+        self.pixels = pixels
+        self.png = png
+        self.digest = Self.digest(of: pixels, width: width, height: height)
+        self.isBlank = !pixels.contains { $0 != 0 }
+    }
+
+    /// The size `width` x `height` is kept at: itself, or scaled down to
+    /// `maxLongSide` on the long side (rounded, at least 1).
+    static func fittedSize(width: Int, height: Int) -> (width: Int, height: Int) {
+        let long = max(width, height)
+        guard long > maxLongSide else { return (width, height) }
+        let s = Double(maxLongSide) / Double(long)
+        return (max(1, Int((Double(width) * s).rounded())), max(1, Int((Double(height) * s).rounded())))
+    }
+
+    /// The weight at the centre of pixel (x, y), 0...1.
+    func value(x: Int, y: Int) -> Double {
+        let xi = min(max(x, 0), width - 1), yi = min(max(y, 0), height - 1)
+        return Double(pixels[pixels.startIndex + yi * width + xi]) / 255
+    }
+
+    /// The weight at `point` (source frame fractions, top-left): bilinear
+    /// between pixel centres (pixel i's centre at (i + 0.5) / width), the
+    /// edge pixels held beyond the outer centres.
+    func weight(at point: MaskPoint) -> Double {
+        let fx = point.x * Double(width) - 0.5, fy = point.y * Double(height) - 0.5
+        let x0 = Int(fx.rounded(.down)), y0 = Int(fy.rounded(.down))
+        let tx = fx - Double(x0), ty = fy - Double(y0)
+        let top = value(x: x0, y: y0) * (1 - tx) + value(x: x0 + 1, y: y0) * tx
+        let bottom = value(x: x0, y: y0 + 1) * (1 - tx) + value(x: x0 + 1, y: y0 + 1) * tx
+        return top * (1 - ty) + bottom * ty
+    }
+
+    /// The bitmap at `width` x `height`: each pixel `weight(at:)` its
+    /// centre, rounded to 8 bits.
+    func resampled(width w: Int, height h: Int) -> [UInt8] {
+        var out = [UInt8](repeating: 0, count: max(0, w * h))
+        for y in 0..<h {
+            for x in 0..<w {
+                let v = weight(at: MaskPoint(x: (Double(x) + 0.5) / Double(w), y: (Double(y) + 0.5) / Double(h)))
+                out[y * w + x] = UInt8(min(max((v * 255).rounded(), 0), 255))
+            }
+        }
+        return out
+    }
+
+    static func == (a: MaskBitmap, b: MaskBitmap) -> Bool {
+        a.width == b.width && a.height == b.height && a.digest == b.digest
+    }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(digest) }
+
+    static func digest(of pixels: Data, width: Int, height: Int) -> String {
+        var h = SHA256()
+        withUnsafeBytes(of: UInt32(width).littleEndian) { h.update(bufferPointer: $0) }
+        withUnsafeBytes(of: UInt32(height).littleEndian) { h.update(bufferPointer: $0) }
+        h.update(data: pixels)
+        return h.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// An exact box filter: each output pixel the area-weighted mean of the
+    /// source pixels it covers (separable, rows then columns), rounded.
+    static func downscale(_ src: [UInt8], width: Int, height: Int, to nw: Int, _ nh: Int) -> [UInt8] {
+        // Per output index, the source indices it overlaps and their weights.
+        func taps(_ n: Int, _ m: Int) -> [[(Int, Float)]] {
+            let s = Double(n) / Double(m)
+            return (0..<m).map { d in
+                let a = Double(d) * s, b = Double(d + 1) * s
+                var out: [(Int, Float)] = []
+                var i = Int(a.rounded(.down))
+                while Double(i) < b, i < n {
+                    let w = min(b, Double(i + 1)) - max(a, Double(i))
+                    if w > 0 { out.append((i, Float(w / s))) }
+                    i += 1
+                }
+                return out
+            }
+        }
+        let tx = taps(width, nw), ty = taps(height, nh)
+        var mid = [Float](repeating: 0, count: nw * height)
+        src.withUnsafeBufferPointer { s in
+            mid.withUnsafeMutableBufferPointer { m in
+                for y in 0..<height {
+                    let row = y * width, orow = y * nw
+                    for x in 0..<nw {
+                        var v: Float = 0
+                        for (i, w) in tx[x] { v += Float(s[row + i]) * w }
+                        m[orow + x] = v
+                    }
+                }
+            }
+        }
+        var out = [UInt8](repeating: 0, count: nw * nh)
+        mid.withUnsafeBufferPointer { m in
+            out.withUnsafeMutableBufferPointer { o in
+                for y in 0..<nh {
+                    let orow = y * nw
+                    for x in 0..<nw {
+                        var v: Float = 0
+                        for (j, w) in ty[y] { v += m[j * nw + x] * w }
+                        o[orow + x] = UInt8(min(max(v.rounded(), 0), 255))
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    /// `bytes` as an 8-bit grey PNG (no alpha, no colour profile: the
+    /// values are weights), written here rather than by ImageIO: each row
+    /// takes the PNG filter whose output has the smallest sum of magnitudes
+    /// (the libpng heuristic), and the rows are deflated by the Compression
+    /// framework. ImageIO's PNG encoder wrote a soft-edged 2048 px disc at
+    /// 193 KB, 257 KB once base64 in a sidecar; this one keeps that sidecar
+    /// under 200 KB (`AutoMaskModelTests`).
+    static func encodePNG(_ bytes: [UInt8], width: Int, height: Int) -> Data {
+        var raw = [UInt8]()
+        raw.reserveCapacity((width + 1) * height)
+        var prev = [UInt8](repeating: 0, count: width)
+        var cand = [[UInt8]](repeating: [UInt8](repeating: 0, count: width), count: 5)
+        bytes.withUnsafeBufferPointer { src in
+            for y in 0..<height {
+                let row = Array(src[(y * width)..<((y + 1) * width)])
+                var best = 0, bestCost = Int.max
+                for f in 0..<5 {
+                    var cost = 0
+                    for x in 0..<width {
+                        let a = x > 0 ? Int(row[x - 1]) : 0, b = Int(prev[x]), c = x > 0 ? Int(prev[x - 1]) : 0
+                        let pred: Int
+                        switch f {
+                        case 0: pred = 0
+                        case 1: pred = a
+                        case 2: pred = b
+                        case 3: pred = (a + b) / 2
+                        default:
+                            let p = a + b - c, pa = abs(p - a), pb = abs(p - b), pc = abs(p - c)
+                            pred = pa <= pb && pa <= pc ? a : (pb <= pc ? b : c)
+                        }
+                        let v = UInt8(truncatingIfNeeded: Int(row[x]) - pred)
+                        cand[f][x] = v
+                        cost += v < 128 ? Int(v) : 256 - Int(v)
+                    }
+                    if cost < bestCost { bestCost = cost; best = f }
+                }
+                raw.append(UInt8(best))
+                raw.append(contentsOf: cand[best])
+                prev = row
+            }
+        }
+        // zlib: header, raw deflate, Adler-32 (big-endian).
+        var deflated = [UInt8](repeating: 0, count: raw.count + raw.count / 8 + 1024)
+        let n = compression_encode_buffer(&deflated, deflated.count, raw, raw.count, nil, COMPRESSION_ZLIB)
+        guard n > 0 else { return Data() }
+        var zlib: [UInt8] = [0x78, 0x9C]
+        zlib.append(contentsOf: deflated[0..<n])
+        var s1: UInt32 = 1, s2: UInt32 = 0
+        for chunk in stride(from: 0, to: raw.count, by: 5552) {
+            for v in raw[chunk..<min(chunk + 5552, raw.count)] { s1 &+= UInt32(v); s2 &+= s1 }
+            s1 %= 65521
+            s2 %= 65521
+        }
+        zlib.append(contentsOf: Self.bigEndian((s2 << 16) | s1))
+
+        var out: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        func chunk(_ type: String, _ body: [UInt8]) {
+            let t = Array(type.utf8)
+            out.append(contentsOf: Self.bigEndian(UInt32(body.count)))
+            out.append(contentsOf: t)
+            out.append(contentsOf: body)
+            out.append(contentsOf: Self.bigEndian(Self.crc32(t + body)))
+        }
+        // IHDR: size, bit depth 8, colour type 0 (grey), deflate, adaptive filters, no interlace.
+        chunk("IHDR", Self.bigEndian(UInt32(width)) + Self.bigEndian(UInt32(height)) + [8, 0, 0, 0, 0])
+        chunk("IDAT", zlib)
+        chunk("IEND", [])
+        return Data(out)
+    }
+
+    private static func bigEndian(_ v: UInt32) -> [UInt8] {
+        [UInt8(v >> 24), UInt8((v >> 16) & 0xFF), UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)]
+    }
+
+    private static let crcTable: [UInt32] = (0..<256).map { n -> UInt32 in
+        var c = UInt32(n)
+        for _ in 0..<8 { c = c & 1 != 0 ? 0xEDB8_8320 ^ (c >> 1) : c >> 1 }
+        return c
+    }
+
+    private static func crc32(_ bytes: [UInt8]) -> UInt32 {
+        var c: UInt32 = 0xFFFF_FFFF
+        for b in bytes { c = crcTable[Int((c ^ UInt32(b)) & 0xFF)] ^ (c >> 8) }
+        return c ^ 0xFFFF_FFFF
+    }
+
+    /// The pixels of an 8-bit grey PNG, rows top-down, read as stored (no
+    /// colour matching); nil for anything else or a size other than
+    /// `width` x `height`.
+    static func decodePNG(_ png: Data, width: Int, height: Int) -> Data? {
+        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              image.width == width, image.height == height,
+              image.bitsPerComponent == 8, image.bitsPerPixel == 8,
+              image.colorSpace?.model == .monochrome,
+              let data = image.dataProvider?.data, let base = CFDataGetBytePtr(data)
+        else { return nil }
+        let rowBytes = image.bytesPerRow
+        guard rowBytes >= width, CFDataGetLength(data) >= rowBytes * (height - 1) + width else { return nil }
+        var out = Data(count: width * height)
+        out.withUnsafeMutableBytes { o in
+            let dst = o.bindMemory(to: UInt8.self)
+            for y in 0..<height {
+                for x in 0..<width { dst[y * width + x] = base[y * rowBytes + x] }
+            }
+        }
+        return out
+    }
+}
+
+/// The sidecar form: `{"width": …, "height": …, "png": "<base64>"}`. The
+/// digest is not stored; it is taken from the decoded pixels, so a file
+/// cannot claim another bitmap's identity.
+extension MaskBitmap: Codable {
+    private enum CodingKeys: String, CodingKey { case width, height, png }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let width = try c.decode(Int.self, forKey: .width), height = try c.decode(Int.self, forKey: .height)
+        let png = try c.decode(Data.self, forKey: .png)
+        guard width > 0, height > 0, max(width, height) <= Self.maxLongSide,
+              let pixels = Self.decodePNG(png, width: width, height: height) else {
+            throw DecodingError.dataCorruptedError(forKey: .png, in: c,
+                                                   debugDescription: "not an 8-bit grey PNG of \(width)x\(height) within \(Self.maxLongSide) px")
+        }
+        self.init(validated: pixels, width: width, height: height, png: png)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(width, forKey: .width)
+        try c.encode(height, forKey: .height)
+        try c.encode(png, forKey: .png)
+    }
 }
 
 /// The sidecar form of a shape: one object with a `type` and that type's
@@ -51,10 +373,10 @@ enum MaskShape: Hashable {
 /// plainly and a new shape is a new `type`.
 extension MaskShape: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, start, end, center, radii, angle, feather, strokes
+        case type, start, end, center, radii, angle, feather, strokes, kind, bitmap
     }
 
-    private enum Kind: String, Codable { case linear, radial, brush }
+    private enum Kind: String, Codable { case linear, radial, brush, auto }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -69,6 +391,10 @@ extension MaskShape: Codable {
                            feather: try c.decode(Double.self, forKey: .feather))
         case .brush:
             self = .brush(try c.decode([BrushStroke].self, forKey: .strokes))
+        case .auto:
+            self = .auto(AutoMask(kind: try c.decode(AutoMaskKind.self, forKey: .kind),
+                                  bitmap: try c.decode(MaskBitmap.self, forKey: .bitmap),
+                                  strokes: try c.decodeIfPresent([BrushStroke].self, forKey: .strokes) ?? []))
         }
     }
 
@@ -88,6 +414,11 @@ extension MaskShape: Codable {
         case .brush(let strokes):
             try c.encode(Kind.brush, forKey: .type)
             try c.encode(strokes, forKey: .strokes)
+        case .auto(let auto):
+            try c.encode(Kind.auto, forKey: .type)
+            try c.encode(auto.kind, forKey: .kind)
+            try c.encode(auto.bitmap, forKey: .bitmap)
+            try c.encode(auto.strokes, forKey: .strokes)
         }
     }
 }
@@ -202,6 +533,8 @@ enum MaskMath {
     ///   `angle` degrees. A zero radius weighs 0.
     /// - brush: `BrushRaster.weight(of:at:in:)` (dabs along each stroke,
     ///   flow and feather, paint adding and erase multiplying down).
+    /// - auto: the bitmap sampled bilinearly (`MaskBitmap.weight(at:)`),
+    ///   then its strokes applied over that by the brush's rule.
     static func weight(of shape: MaskShape, at point: MaskPoint, in size: CGSize) -> Double {
         let long = max(Double(size.width), Double(size.height))
         guard long > 0 else { return 0 }
@@ -224,6 +557,8 @@ enum MaskMath {
             return (1 - d) / f
         case .brush(let strokes):
             return BrushRaster.weight(of: strokes, at: point, in: size)
+        case .auto(let auto):
+            return BrushRaster.weight(of: auto.strokes, at: point, in: size, over: auto.bitmap.weight(at: point))
         }
     }
 

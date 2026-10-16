@@ -102,11 +102,20 @@ the vignette sit on top of local edits. `apply` makes one call, `MaskRender.comp
 (`MaskRender.swift`), with the extent of its own input (the scaled source,
 the frame mask geometry is written in). For each mask that renders
 (`MaskRender.renders`: enabled, some adjustment not a no-op, and not a brush
-with no strokes), in list order, it draws the shape's mask over
+with no strokes nor an automatic mask whose bitmap is all zero with no paint
+stroke, `MaskBitmap.isBlank`), in list order, it draws the shape's mask over
 that extent (`MaskRender.image(for:over:)`: `CILinearGradient` from `start`
 to `end`, or `CIRadialGradient` on a unit circle with its inner ring at
 `1 - feather`, scaled to the radii in long-side pixels, turned clockwise on
-screen by `angle` and moved to the centre, or a brush's CPU raster, below),
+screen by `angle` and moved to the centre, a brush's CPU raster, below,
+or an automatic mask's bitmap, placed as the brush raster is: its pixel
+edges onto the extent's, clamped at the edges; `CIImage(bitmapData:)` reads
+row 0 as the top, so the top-down rows need no flip; with strokes, the
+bitmap is first resampled to the brush's raster size for the extent
+(`MaskBitmap.resampled(width:height:)`, `BrushRaster.rasterSize(for:)`) and
+the strokes laid over it there by
+`BrushRaster.render(strokes:over:width:height:)`, so a dab is round and
+the size `MaskMath` says whatever the bitmap's size),
 runs it through the recipe's
 own geometry kinds (`AdjustmentKind.geometryKinds`, by `apply` itself, so
 rotate and crop are not written twice), applies the mask's adjustments to
@@ -116,7 +125,10 @@ and composes the two with `CIBlendWithMask`; an inverted mask swaps the two
 images, weight 1 - w. `MaskMath.weight(of:at:in:)` (`Masks.swift`) states
 the same weights without Core Image: a straight ramp along the gradient,
 constant along its perpendicular in pixels, and a straight ramp in
-normalised ellipse radius between the inner and outer rings. Because the
+normalised ellipse radius between the inner and outer rings, and an
+automatic mask's bitmap sampled bilinearly between pixel centres
+(`MaskBitmap.weight(at:)`) with its strokes applied over it by the brush's
+rule (`BrushRaster.weight(of:at:in:over:)`). Because the
 mask is built over the whole source and placed by the same stages as the
 pixels, a 1:1 region needs nothing of its own: it reads a window of the
 same chain.
@@ -657,7 +669,8 @@ and the export show.
 Save to Photos writes a PhotoLab edit into the library non-destructively.
 `PhotosAdjustment` is the edit as Photos stores it: format identifier
 `local.photolab.recipe`, format version `Sidecar.version(for:)` of the
-recipe (1, or 2 when it has masks, the rule a sidecar file follows), and as
+recipe (1, 2 when it has masks, 3 when one is automatic, the rule a
+sidecar file follows), and as
 data the recipe-only sidecar JSON (`SidecarStore.encode`, no flag or
 rating). `Library.saveToPhotos()` (enabled by `canSaveToPhotos`: the
 anchor is an edited photo of a Photos album and no save is running; the
@@ -745,14 +758,28 @@ in `LocalMask.kinds`: exposure, temperature, tint, contrast, highlights,
 shadows, saturation; `init`, the subscript and decoding all drop any
 other), `enabled` and `inverted`. `MaskShape` is `.linear(start:end:)`
 (full effect at `start` fading to none at `end`),
-`.radial(center:radii:angle:feather:)` or `.brush(_:)`, a list of
-`BrushStroke` (`points`, `radius`, `feather`, `flow`, `erase`). All
+`.radial(center:radii:angle:feather:)`, `.brush(_:)`, a list of
+`BrushStroke` (`points`, `radius`, `feather`, `flow`, `erase`), or
+`.auto(_:)`, an `AutoMask`: a `kind` (`AutoMaskKind`: subject, person,
+sky), a `MaskBitmap` and `strokes` (default none) that refine it. A
+`MaskBitmap` is an 8-bit grey raster over the whole source frame, rows
+top-down, stretched onto the source whatever its own size; `init(gray:width:height:)`
+box-filters anything above `MaskBitmap.maxLongSide` (2048) down to it. It
+carries its pixels, the PNG it is stored as (`png`, written by
+`MaskBitmap.encodePNG`: per-row adaptive filters, deflate by the Compression
+framework) and `digest`, the SHA-256 (CryptoKit) of its size and pixels;
+equality and hashing are the digest, so the same pixels in a differently
+encoded PNG are the same bitmap, and a recipe compare never walks pixels. All
 geometry is in the SOURCE frame, before the recipe's rotate and crop:
 a `MaskPoint` is a fraction of the source's width and height with the
 origin top-left, and every radius (`MaskRadii`, `BrushStroke.radius`) a
 fraction of the source's long side, so a mask stays on the same pixels
 under any crop or rotate. In the JSON a shape is one object with a `type`
-(`linear`, `radial`, `brush`) and that type's fields. Masks are part of
+(`linear`, `radial`, `brush`, `auto`) and that type's fields; an `auto`
+shape's are `kind`, `bitmap` (`width`, `height`, `png` as base64; the
+digest is recomputed from the decoded pixels, never read) and `strokes`
+(read as none when absent). A bitmap whose PNG is not 8-bit grey of its
+stated size, or is over the cap, does not decode. Masks are part of
 the edit: equality and `normalized` (each mask in `LocalMask.normalized`
 form, list order kept) include them; any mask makes a recipe not
 `isDefault`; `isNeutral` also needs every mask to be a no-op
@@ -762,7 +789,12 @@ disabled or all-neutral mask renders as identity but is still an edit.
 key only when there is a mask, so an unmasked recipe encodes exactly as it
 did before masks existed. Every shape renders (§1, The chain): linear and
 radial masks as Core Image gradients, brush masks as a cached CPU raster
-(`BrushRaster`).
+(`BrushRaster`), automatic masks as their bitmap. `MaskKind` names the
+automatic kinds Subject, Person and Sky (`MaskKind.init(_:)` from the
+shape's `AutoMaskKind`); their `defaultShape` is a placeholder
+(`MaskBitmap.blank`, selecting nothing), since an automatic mask is made by
+a detection, not placed, and the overlay draws no handles for one
+(`MaskHandles.positions(of:size:)` is empty, as for a brush).
 
 The panel edits masks through `extension Library` in `MasksPanel.swift`:
 `addMask(_:for:)` (a `MaskKind.defaultShape` appended), `updateMask(_:for:_:)`,
@@ -790,10 +822,12 @@ reading the directory), `updated` and `recipe`, plus three optional keys,
 so a file written before they existed decodes unchanged. Keywords do not
 enter the version: `Sidecar.version(for:)` reads the recipe alone, so a
 file with keywords and no masks is still format 1. The `version` is
-the format: 1 is a recipe of sliders, 2 adds `Recipe.masks`;
-`Sidecar.currentVersion` (2) is the newest this build reads, and every
+the format: 1 is a recipe of sliders, 2 adds `Recipe.masks`, 3 adds
+automatic masks (`MaskShape.auto`);
+`Sidecar.currentVersion` (3) is the newest this build reads, and every
 writer stamps `Sidecar.version(for:)`, the LOWEST version that holds the
-recipe (1 without masks, 2 with). An unmasked file therefore stays
+recipe (1 without masks, 2 with, 3 when any mask is automatic), so format 1
+and 2 files are written byte for byte as before. An unmasked file therefore stays
 byte-identical to what a build before masks wrote and readable there, and
 a masked one is refused there as unreadable (and backed up) instead of
 being read without its masks and written back without them. A later

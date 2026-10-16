@@ -79,7 +79,8 @@ enum MaskHandles {
         return ((cos(a), sin(a)), (-sin(a), cos(a)))
     }
 
-    /// Where each handle of `shape` sits, in the source frame; empty for a brush.
+    /// Where each handle of `shape` sits, in the source frame; empty for a
+    /// brush or an automatic mask (neither has handles).
     static func positions(of shape: MaskShape, size: CGSize) -> [MaskHandle: MaskPoint] {
         let s = scale(size)
         switch shape {
@@ -97,7 +98,7 @@ enum MaskHandles {
                     .radialEdge(.bottom): at(0, radii.y), .radialEdge(.top): at(0, -radii.y),
                     .radialRotate: at(0, -(radii.y + rotateOffset)),
                     .radialFeather: at(radii.x * (1 - f), 0)]
-        case .brush:
+        case .brush, .auto:
             return [:]
         }
     }
@@ -177,7 +178,7 @@ enum MaskHandles {
             let r = max(hypot(b.x - a.x, b.y - a.y), minRadius)
             guard case .radial(_, _, let angle, let feather) = kind.defaultShape else { return nil }
             return .radial(center: from, radii: MaskRadii(x: r, y: r), angle: angle, feather: feather)
-        case .brush:
+        case .brush, .subject, .person, .sky:
             return nil
         }
     }
@@ -192,7 +193,7 @@ enum MaskHandles {
                            end: MaskPoint(x: point.x + hx, y: point.y + hy))
         case .radial(_, let radii, let angle, let feather):
             return .radial(center: point, radii: radii, angle: angle, feather: feather)
-        case .brush:
+        case .brush, .auto:
             return nil
         }
     }
@@ -284,7 +285,7 @@ struct MaskOverlay: View {
                 }
             }
             .shadow(color: .black.opacity(0.6), radius: 1)
-        case .brush:
+        case .brush, .auto:
             EmptyView()
         }
     }

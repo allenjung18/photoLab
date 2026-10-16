@@ -1344,7 +1344,12 @@ private struct PreviewCanvas: View {
     @ViewBuilder private var maskHandles: some View {
         let current = library.recipe(for: photo.id)
         let selected = library.selectedMask.flatMap { id in current.masks.first { $0.id == id } }
-        let shape: MaskShape? = selected.flatMap { if case .brush = $0.shape { return nil } else { return $0.shape } }
+        let shape: MaskShape? = selected.flatMap {
+            switch $0.shape {
+            case .brush, .auto: return nil
+            default: return $0.shape
+            }
+        }
         if shape != nil || library.maskPlacement != nil,
            !library.cropMode, !library.showBefore, let file, preview.imageURL == file,
            let cg = preview.image, let shown = zoomWindow != nil ? preview.zoomRecipe : preview.imageRecipe,

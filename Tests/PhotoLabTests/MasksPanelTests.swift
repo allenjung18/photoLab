@@ -103,19 +103,21 @@ final class MasksPanelTests: XCTestCase {
             lib.redo()
             counts.append(lib.recipe(for: photo).masks.count)
         }
-        XCTAssertEqual(counts, [1, 2, 3])
+        XCTAssertEqual(counts, Array(1...MaskKind.allCases.count))
         // The defaults: a linear from the top edge to 40% down, a radial
         // centred at a third of the frame, an empty brush.
         XCTAssertEqual(MaskKind.linear.defaultShape, .linear(start: MaskPoint(x: 0.5, y: 0), end: MaskPoint(x: 0.5, y: 0.4)))
         guard case .radial(let c, _, _, _) = MaskKind.radial.defaultShape else { return XCTFail("radial") }
         XCTAssertEqual(c, MaskPoint(x: 1.0 / 3, y: 1.0 / 3))
         XCTAssertEqual(MaskKind.brush.defaultShape, .brush([]))
+        // Subject, Person and Sky have no placement: an automatic mask that selects nothing.
+        XCTAssertEqual(MaskKind.sky.defaultShape, .auto(AutoMask(kind: .sky, bitmap: .blank)))
 
         // Names by kind and order.
         lib.addMask(.linear, for: photo)
         let masks = lib.recipe(for: photo).masks
         let names = MaskKind.names(of: masks)
-        XCTAssertEqual(masks.map { names[$0.id]! }, ["Linear 1", "Radial 1", "Brush 1", "Linear 2"])
+        XCTAssertEqual(masks.map { names[$0.id]! }, ["Linear 1", "Radial 1", "Brush 1", "Subject 1", "Person 1", "Sky 1", "Linear 2"])
         // The new masks render as nothing until a slider moves.
         XCTAssertTrue(lib.recipe(for: photo).isNeutral)
     }

@@ -434,7 +434,9 @@ Everything the app writes, and nothing else:
   never deleted. An edit with local adjustments is saved as format 2,
   which an older PhotoLab (another Mac not yet updated) treats as
   unreadable rather than opening it without them; an edit without any is
-  saved as format 1, exactly as before.
+  saved as format 1, exactly as before. An edit with an automatic mask
+  (Subject, Person or Sky) is saved as format 3, its mask a small grey PNG
+  inside the file; formats 1 and 2 are written exactly as before.
 - **Collections** — `~/Library/Application Support/PhotoLab/Collections/<id>.json`,
   one per collection: its name, when it was made, and each member's file
   path and the folder whose `.photolab/` holds its edit. Nothing is written

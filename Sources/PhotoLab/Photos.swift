@@ -114,8 +114,8 @@ protocol PhotoKitClient: Sendable {
 
 /// A PhotoLab edit as Photos stores it beside an asset (`PHAdjustmentData`):
 /// format identifier `local.photolab.recipe`, format version
-/// `Sidecar.version(for:)` of the recipe (1, or 2 with masks, as a sidecar
-/// file is stamped), and as data the recipe-only sidecar JSON (no
+/// `Sidecar.version(for:)` of the recipe (1, 2 with masks, 3 with an
+/// automatic mask, as a sidecar file is stamped), and as data the recipe-only sidecar JSON (no
 /// flag or rating: marks are not an edit). Photos syncs it with the library
 /// and hands it back on a content-editing input, which is how a photo whose
 /// sidecar is gone gets its recipe back (`PhotosSource.recoverRecipe`).

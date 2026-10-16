@@ -4,20 +4,29 @@ import CoreImage.CIFilterBuiltins
 
 // MARK: - Mask kinds, names and default placements
 
-/// The three kinds of local adjustment, as the Masks section and the Photo
+/// The kinds of local adjustment, as the Masks section and the Photo
 /// menu offer them. A linear or radial is placed by a drag on the photo
 /// (`MaskHandles.placed`); `defaultShape` is what a click places (moved to
 /// the click) and what `Library.addMask` adds: a linear from the top edge
 /// to 40% down, a radial ellipse centred at a third of the frame, an empty
-/// brush.
+/// brush. Subject, Person and Sky name automatic masks (`MaskShape.auto`)
+/// in the list ("Subject 1"); nothing in the panel adds one yet.
 enum MaskKind: CaseIterable {
     case linear, radial, brush
+    /// Automatic masks (`MaskShape.auto`), named by what they select.
+    case subject, person, sky
 
     init(_ shape: MaskShape) {
         switch shape {
         case .linear: self = .linear
         case .radial: self = .radial
         case .brush: self = .brush
+        case .auto(let auto):
+            switch auto.kind {
+            case .subject: self = .subject
+            case .person: self = .person
+            case .sky: self = .sky
+            }
         }
     }
 
@@ -26,6 +35,9 @@ enum MaskKind: CaseIterable {
         case .linear: "Linear"
         case .radial: "Radial"
         case .brush: "Brush"
+        case .subject: "Subject"
+        case .person: "Person"
+        case .sky: "Sky"
         }
     }
 
@@ -34,6 +46,9 @@ enum MaskKind: CaseIterable {
         case .linear: "rectangle.tophalf.filled"
         case .radial: "circle.dashed"
         case .brush: "paintbrush.pointed"
+        case .subject: "person.and.background.dotted"
+        case .person: "person.fill"
+        case .sky: "cloud.sun"
         }
     }
 
@@ -47,6 +62,20 @@ enum MaskKind: CaseIterable {
                            radii: MaskRadii(x: 0.2, y: 0.15), angle: 0, feather: 0.5)
         case .brush:
             return .brush([])
+        case .subject, .person, .sky:
+            // Nothing offers these yet: an automatic mask is made by a
+            // detection, not placed. Its placeholder selects nothing.
+            return .auto(AutoMask(kind: autoKind ?? .subject, bitmap: .blank))
+        }
+    }
+
+    /// The automatic kind this mask kind names; nil for a drawn one.
+    var autoKind: AutoMaskKind? {
+        switch self {
+        case .linear, .radial, .brush: nil
+        case .subject: .subject
+        case .person: .person
+        case .sky: .sky
         }
     }
 

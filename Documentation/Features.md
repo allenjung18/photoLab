@@ -939,7 +939,9 @@ redo, Reset, the render time and any sidecar error.
   put down; one undo step and one sidecar write. A new mask has every adjustment at neutral, so it renders
   as nothing until a slider moves. The list names each mask by kind and
   order, "Linear 1", "Radial 1", "Linear 2" (`MaskKind.names(of:)`,
-  derived, so a delete renumbers); a click selects it, again deselects.
+  derived, so a delete renumbers); an automatic mask (`MaskShape.auto`) is
+  named by what it selects, "Subject 1", "Person 1", "Sky 1", and shows no
+  handles on the photo, though nothing in the section adds one yet; a click selects it, again deselects.
   `Library.selectedMask` is tool state: never in a recipe, cleared when the
   photo changes and whenever the photo's recipe stops holding it (an undo
   of its add, a delete, a reset, a sync), by `Library.apply`. The selected

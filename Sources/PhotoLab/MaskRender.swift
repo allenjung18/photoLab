@@ -18,20 +18,29 @@ enum MaskRender {
 
     /// Whether `mask` takes part in a render: enabled, some adjustment that
     /// is not a no-op, and a shape that draws something (a brush with no
-    /// strokes is skipped).
+    /// strokes is skipped; so is an automatic mask whose bitmap is all zero
+    /// and that has no paint stroke, since erasing nothing leaves nothing).
     static func renders(_ mask: LocalMask) -> Bool {
         if mask.isNoop { return false }
-        if case .brush(let strokes) = mask.shape, strokes.isEmpty { return false }
-        return true
+        switch mask.shape {
+        case .brush(let strokes) where strokes.isEmpty:
+            return false
+        case .auto(let auto) where auto.bitmap.isBlank && !auto.strokes.contains(where: { !$0.erase }):
+            return false
+        default:
+            return true
+        }
     }
 
     /// The shape's mask before geometry: white (weight 1) to black (0) over
     /// `extent` (Core Image coordinates, origin bottom-left), cropped to it.
     /// Nil for a degenerate shape (zero-length gradient, zero radius) or a
-    /// brush with no strokes. Not inverted; `compose` swaps the two images
+    /// brush with no strokes, or an automatic mask that selects nothing. Not inverted; `compose` swaps the two images
     /// for that. A brush is rastered at `extent`'s size (long side capped at
     /// `BrushRaster.maxLongSide`) through `brushes`, and scaled by Core Image
-    /// to the extent beyond the cap.
+    /// to the extent beyond the cap. An automatic mask's bitmap is stretched
+    /// onto the extent the same way; with strokes, the bitmap resampled to
+    /// the brush raster size with the strokes over it.
     static func image(for shape: MaskShape, over extent: CGRect,
                       brushes: BrushRasterCache = .shared) -> CIImage? {
         guard !extent.isInfinite, extent.width > 0, extent.height > 0 else { return nil }
@@ -75,6 +84,33 @@ enum MaskRender {
             // are the source points the raster sampled); edges clamped so the
             // scale does not fade the border.
             let t = CGAffineTransform(scaleX: extent.width / CGFloat(size.width), y: extent.height / CGFloat(size.height))
+                .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY))
+            return raster.clampedToExtent().transformed(by: t).cropped(to: extent)
+        case .auto(let auto):
+            if auto.bitmap.isBlank, !auto.strokes.contains(where: { !$0.erase }) { return nil }
+            // No strokes: the bitmap itself, stretched by Core Image. With
+            // strokes: the bitmap resampled (bilinear, as `MaskMath` reads it)
+            // to the extent's raster size, the strokes laid over it there, so
+            // a dab is round and as large as `MaskMath` says whatever the
+            // bitmap's own size or aspect.
+            let bitmap: (pixels: Data, width: Int, height: Int)
+            if auto.strokes.isEmpty {
+                bitmap = (auto.bitmap.pixels, auto.bitmap.width, auto.bitmap.height)
+            } else {
+                let size = BrushRaster.rasterSize(for: extent.size)
+                let base = auto.bitmap.resampled(width: size.width, height: size.height)
+                bitmap = (Data(BrushRaster.render(strokes: auto.strokes, over: base, width: size.width, height: size.height)),
+                          size.width, size.height)
+            }
+            let pixels = bitmap.pixels
+            // `CIImage(bitmapData:)` reads row 0 as the TOP row of the image
+            // (Core Image's y runs up, and the initialiser puts the first row
+            // at the top of the extent), so the bitmap's top-down rows need
+            // no flip of their own: placed exactly as the brush raster is,
+            // pixel edges onto the extent's edges, edges clamped.
+            let raster = CIImage(bitmapData: pixels, bytesPerRow: bitmap.width,
+                                 size: CGSize(width: bitmap.width, height: bitmap.height), format: .L8, colorSpace: nil)
+            let t = CGAffineTransform(scaleX: extent.width / CGFloat(bitmap.width), y: extent.height / CGFloat(bitmap.height))
                 .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY))
             return raster.clampedToExtent().transformed(by: t).cropped(to: extent)
         }

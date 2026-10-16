@@ -16,20 +16,22 @@ import Foundation
 /// original is never written to.
 ///
 /// `version` is the format: 1 is a recipe of sliders; 2 adds local
-/// adjustments (`Recipe.masks`). A file is written at the LOWEST version
+/// adjustments (`Recipe.masks`); 3 adds automatic masks (`MaskShape.auto`,
+/// a PNG bitmap in the mask). A file is written at the LOWEST version
 /// that holds its content (`Sidecar.version(for:)`), so an unmasked edit
 /// stays readable by a build that predates masks, and a masked one is
 /// refused there as unreadable (and backed up) rather than read without its
 /// masks and written back without them.
 struct Sidecar: Codable, Equatable {
     /// The newest format this build reads and writes.
-    static let currentVersion = 2
+    static let currentVersion = 3
 
-    /// The lowest format version that holds `recipe`: 2 when it has masks,
-    /// else 1. Every writer (`SidecarStore.save`, `PhotosAdjustment`) stamps
+    /// The lowest format version that holds `recipe`: 3 when any mask is
+    /// automatic, 2 when it has masks, else 1. Every writer (`SidecarStore.save`, `PhotosAdjustment`) stamps
     /// this, never `currentVersion` blindly.
     static func version(for recipe: Recipe) -> Int {
-        recipe.masks.isEmpty ? 1 : 2
+        if recipe.masks.contains(where: { if case .auto = $0.shape { true } else { false } }) { return 3 }
+        return recipe.masks.isEmpty ? 1 : 2
     }
 
     var version = Sidecar.currentVersion

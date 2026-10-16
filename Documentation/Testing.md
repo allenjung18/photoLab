@@ -477,8 +477,8 @@ not only the pass.
   `type` in the JSON; a version-1 sidecar decodes with no masks; an
   unmasked save writes version 1 byte-identical to the pre-mask sidecar
   type and a masked one version 2 (back to 1 when the last mask goes); a
-  version-3 file is unreadable; `PhotosAdjustment` stamps the same 1 or 2
-  and `canHandle` takes 2 and refuses 3; a disabled or all-neutral mask is
+  version-4 file is unreadable; `PhotosAdjustment` stamps the same 1 or 2
+  and `canHandle` takes 2 and refuses 4; a disabled or all-neutral mask is
   `isNeutral` but not `isDefault`, and a mask's adjustments normalize to
   `LocalMask.kinds` order; a mask cannot carry a kind outside those seven
   (init, subscript, decode); a preset drops masks and applying one keeps
@@ -488,6 +488,34 @@ not only the pass.
   mouse-up, and undo goes back to a version-1 file. Shown to bite by a
   mutant (`normalized` dropping masks: 8 failures in 4 tests, the round
   trip and `isDefault` cases among them).
+- `AutoMaskModelTests.swift` — the automatic mask (`MaskShape.auto`,
+  `AutoMask`, `MaskBitmap`), synthetic bitmaps and temp directories only: a
+  left-half-white bitmap weighs 1 at (0.25, 0.5), 0 at (0.75, 0.5) and 0.5
+  on the edge, inverted the reverse, and an erase and a paint stroke over it
+  follow the brush's rule; a 6000x4000 bitmap is box-filtered to 2048x1365
+  with its edge on the same column; rendered through rotate 7.5 and a crop,
+  in a 2600 px preview and a full-size 6000x4000 export, a vertical edge
+  lands on source column 3000 and a horizontal one (top 30%) on source row
+  1200, each within 2 source pixels (read in linear light, mapped back by
+  `MaskMath.source`); the drawn mask is `MaskMath`'s weight within 0.01
+  for an extent-size bitmap with strokes, a smaller square one with
+  strokes, a smaller one without, and the 1x1 blank with a paint stroke
+  (a second mutant, strokes rastered at the bitmap's size, fails the last
+  two); an all-zero bitmap renders nothing (a paint stroke over it
+  does, an erase alone does not); equality and the hash are the pixels'
+  digest, so an interlaced re-encoding of the same pixels is equal and one
+  changed pixel is not; a PNG of the wrong size or not a PNG does not
+  decode; a sidecar round-trips two automatic masks (kind, strokes) as
+  version 3 with `"type": "auto"`, and a shape without `strokes` reads as
+  none; the version is 1, 2 or 3 only with an automatic mask, the same in
+  `PhotosAdjustment`; the masks of a version-2 file match a golden written
+  by the build before automatic masks; a soft-edged 2048 px disc keeps the
+  sidecar under 200 KB; Subject, Person and Sky name masks "Subject 1" and
+  so on, with no handles and no placement. Shown to bite by a mutant (a row
+  flip added to the bitmap's placement in `MaskRender`: the horizontal edge
+  case fails, the top no longer lifted). `CIImage(bitmapData:)` already
+  reads row 0 as the top, so there is no explicit flip to remove; the mutant
+  adds one.
 - `MaskMathTests.swift` — `MaskMath.weight(of:at:in:)`, the mask weights
   without Core Image: a linear gradient is 1 at the start, 0.5 half way, 0 at
   the end and holds its end values beyond, constant along the perpendicular

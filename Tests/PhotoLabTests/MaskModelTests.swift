@@ -162,19 +162,19 @@ final class MaskModelTests: XCTestCase {
         XCTAssertEqual(try json(file)["version"] as? Int, 1)
         XCTAssertEqual(Sidecar.version(for: r), 1)
         XCTAssertEqual(Sidecar.version(for: masksOnly), 2)
-        XCTAssertEqual(Sidecar.currentVersion, 2)
+        XCTAssertEqual(Sidecar.currentVersion, 3)
     }
 
-    func testAVersion3FileIsUnreadable() throws {
+    func testAVersion4FileIsUnreadable() throws {
         let store = SidecarStore(folder: folder)
         let photo = folder.appendingPathComponent("a.png")
         try store.save(masksOnly, for: photo, now: fixed)
         let file = store.url(for: photo)
         var obj = try json(file)
-        obj["version"] = 3
+        obj["version"] = 4
         try JSONSerialization.data(withJSONObject: obj).write(to: file)
         XCTAssertThrowsError(try store.read(for: photo)) { error in
-            XCTAssertEqual(error as? SidecarError, .unsupportedVersion(3))
+            XCTAssertEqual(error as? SidecarError, .unsupportedVersion(4))
         }
         XCTAssertEqual(store.loadAll(for: [.file(photo)]).unreadable, [.file(photo)])
     }
@@ -195,7 +195,7 @@ final class MaskModelTests: XCTestCase {
         XCTAssertEqual(try masked.recipe(), masksOnly)
 
         XCTAssertTrue(PhotosAdjustment.canHandle(identifier: PhotosAdjustment.formatIdentifier, version: "2"))
-        XCTAssertFalse(PhotosAdjustment.canHandle(identifier: PhotosAdjustment.formatIdentifier, version: "3"))
+        XCTAssertFalse(PhotosAdjustment.canHandle(identifier: PhotosAdjustment.formatIdentifier, version: "4"))
     }
 
     // MARK: Recipe identity

@@ -103,12 +103,15 @@ enum BrushRaster {
     }
 
     /// The brush's weight at `point` (source frame) over a source of `size`
-    /// pixels: the rule above evaluated at one point (no quantisation).
-    static func weight(of strokes: [BrushStroke], at point: MaskPoint, in size: CGSize) -> Double {
+    /// pixels: the rule above evaluated at one point (no quantisation),
+    /// starting from `base` (0 for a brush mask; an automatic mask's bitmap
+    /// weight for its refining strokes).
+    static func weight(of strokes: [BrushStroke], at point: MaskPoint, in size: CGSize,
+                       over base: Double = 0) -> Double {
         let w = Double(size.width), h = Double(size.height)
-        guard w > 0, h > 0 else { return 0 }
+        guard w > 0, h > 0 else { return base }
         let px = point.x * w, py = point.y * h
-        var v = 0.0
+        var v = base
         for stroke in strokes {
             let (centres, r) = dabs(of: stroke, width: w, height: h)
             var cover = 0.0
@@ -131,6 +134,35 @@ enum BrushRaster {
         let live = LiveRaster(width: width, height: height)
         live.rebuild(strokes)
         return live.out
+    }
+
+    /// `strokes` applied over `base` (an 8-bit raster, rows top-down, the
+    /// starting weights) at `width` x `height`: each stroke's dabs
+    /// max-merged, then composed in order by the rule above, then quantised.
+    /// The same C loops as `render(strokes:width:height:)`. An automatic
+    /// mask's refined raster.
+    static func render(strokes: [BrushStroke], over base: [UInt8], width: Int, height: Int) -> [UInt8] {
+        guard width > 0, height > 0, base.count == width * height else { return base }
+        var acc = base.map { Float($0) / 255 }
+        var cover = [Float](repeating: 0, count: width * height)
+        let x1 = Int32(width - 1), y1 = Int32(height - 1)
+        for stroke in strokes {
+            let d = dabs(of: stroke, width: Double(width), height: Double(height))
+            guard !d.centres.isEmpty else { continue }
+            cover.withUnsafeMutableBufferPointer { c in
+                bk_stamp(c.baseAddress!, Int32(width), 0, 0, x1, y1, d.centres.map(\.x), d.centres.map(\.y),
+                         Int32(d.centres.count), d.radius, stroke.feather, stroke.flow)
+                acc.withUnsafeMutableBufferPointer { a in
+                    bk_compose(a.baseAddress!, c.baseAddress!, Int32(width), 0, 0, x1, y1, stroke.erase ? 1 : 0)
+                }
+                bk_clear(c.baseAddress!, Int32(width), 0, 0, x1, y1)
+            }
+        }
+        var out = [UInt8](repeating: 0, count: width * height)
+        acc.withUnsafeBufferPointer { a in
+            out.withUnsafeMutableBufferPointer { o in bk_quantize(o.baseAddress!, a.baseAddress!, Int32(width * height)) }
+        }
+        return out
     }
 }
 
