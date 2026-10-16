@@ -199,6 +199,9 @@ enum Exporter {
         if options.keepMetadata && options.removesLocation {
             properties = ExportMetadata.removingLocation(from: properties)
         }
+        if options.keepMetadata, let space = options.colorSpace {
+            properties = ExportMetadata.setting(colorSpace: space, in: properties)
+        }
         if options.format.isLossy {
             properties[kCGImageDestinationLossyCompressionQuality] = options.clampedQuality
         }

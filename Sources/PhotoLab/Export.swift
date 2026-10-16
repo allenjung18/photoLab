@@ -246,6 +246,18 @@ enum ExportMetadata {
         return p
     }
 
+    /// `properties` with the EXIF ColorSpace tag made true for a converted
+    /// file: 1 for sRGB, 65535 (uncalibrated: read the profile) for Display
+    /// P3. The source's tag would otherwise claim its own space, and a reader
+    /// that trusts EXIF over the ICC profile would show the colours wrong.
+    static func setting(colorSpace: ExportOptions.ColorSpace, in properties: [CFString: Any]) -> [CFString: Any] {
+        var p = properties
+        var exif = p[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+        exif[kCGImagePropertyExifColorSpace] = colorSpace == .sRGB ? 1 : 65535
+        p[kCGImagePropertyExifDictionary] = exif
+        return p
+    }
+
     /// `properties` with the IPTC Keywords set to the photo's `keywords`
     /// (`Library.keywords(for:)`), replacing any the source carried and
     /// keeping the rest of its IPTC block. No keywords leaves `properties`

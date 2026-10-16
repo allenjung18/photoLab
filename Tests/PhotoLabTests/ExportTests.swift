@@ -408,6 +408,23 @@ final class ExportTests: XCTestCase {
         for c in 0..<3 { XCTAssertEqual(k[c], want[c], accuracy: 4, "channel \(c): \(k) vs \(want)") }
     }
 
+    func testAConvertedExportsEXIFColorSpaceTagFollowsTheNewSpace() throws {
+        let src = try writeSource("srgb.heic", gray(0.5, width: 16, height: 16), type: .heic, properties: [
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifColorSpace: 1],
+        ])
+        for (space, want) in [(ExportOptions.ColorSpace.displayP3, 65535), (.sRGB, 1)] {
+            for format in [ExportOptions.Format.heic, .tiff] {
+                var o = ExportOptions()
+                o.format = format
+                o.colorSpace = space
+                o.suffix = "-\(space.rawValue)"
+                guard case .written(let url) = try Exporter.export(src, recipe: .neutral, into: outDir, options: o) else { return XCTFail() }
+                let exif = try properties(url)[kCGImagePropertyExifDictionary] as? [CFString: Any]
+                XCTAssertEqual(exif?[kCGImagePropertyExifColorSpace] as? Int, want, "\(format) as \(space)")
+            }
+        }
+    }
+
     /// The sum of |step| along the middle row: the more an edge overshoots,
     /// the larger.
     private func rowVariation(_ url: URL) throws -> Int {

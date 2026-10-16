@@ -244,7 +244,7 @@ not only the pass.
   without the field decodes with it off; shown to bite by skipping the
   removal), an sRGB export of a Display P3 HEIC is CONVERTED (sRGB profile and
   the colour's sRGB numbers, in JPEG and HEIC; nil keeps P3; shown to bite by
-  retagging), output sharpening after a resize to 100 px grows the edge
+  retagging; the EXIF ColorSpace tag follows a conversion, 1 for sRGB and 65535 for P3, shown to bite by skipping it), output sharpening after a resize to 100 px grows the edge
   overshoot Off < Low < High (shown to bite by skipping it), HEIC and
   TIFF round trip, the collision policy (number, skip, overwrite) and the
   original is never written, not even under a case-variant name on a
