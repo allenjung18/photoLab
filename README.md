@@ -69,7 +69,7 @@ in Xcode works too.
 | `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
 | `W` | In the loupe, the white-balance eyedropper (or **White Balance** in Color): click something that should be neutral grey or white, at fit or 1:1, and temperature and tint are set so it renders grey, one undo step; a clipped or near-black spot is refused with a note and changes nothing; `W` or `Esc` puts it down |
 | `M` / `⇧M` | In the loupe, arm a new linear / radial gradient mask: drag on the photo to place it (start to end; centre to edge), or click for the default shape there; again or `Esc` disarms (see Masks) |
-| `K` | In the loupe, paint: arms the selected brush mask, or adds a new one; drag on the photo to paint, hold `⌥` at the start of a drag to erase; `K` again or `Esc` puts the brush down |
+| `K` | In the loupe, paint: arms the selected brush or automatic mask, or adds a new brush mask; drag on the photo to paint, hold `⌥` at the start of a drag to erase; `K` again or `Esc` puts the brush down |
 | `[` / `]` | While the brush is armed, a smaller / larger brush (a quarter each step, Photo › Smaller Brush / Larger Brush) |
 | `O` | Show the selected mask as a red tint over the loupe photo (View › Show Mask Overlay); never in Before or an export |
 | `Esc` | Stop a running Auto batch (nothing is applied); else put the white-balance eyedropper down; else the brush; else a new mask's placement; else the straighten tool; else leave crop mode; else deselect the mask (its handles go); else back to the grid; in the grid, collapse the selection to the anchor |
@@ -221,7 +221,9 @@ gradient 40% of the photo tall, or a 0.2 × 0.15 ellipse, centred there).
 paint into it (a circle shows the brush's size and, dashed, where its soft
 edge starts), hold `⌥` as a drag starts to erase instead, and set the next
 strokes' **Size**, **Feather** and **Flow** in its rows (`[` and `]` for
-the size). Picking a brush mask in the list arms it again. Each stroke is
+the size). Picking a brush mask in the list arms it again. With an
+automatic mask selected, `K` arms the brush on it instead: paint adds to
+what was detected, `⌥` erases from it. Each stroke is
 one undo step. The selected linear or radial has handles on the
 photo, at fit and at 1:1: a linear's centre pin moves it and the handles
 on its start and end lines turn it and set the fade's length about the

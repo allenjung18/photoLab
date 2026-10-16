@@ -110,12 +110,12 @@ to `end`, or `CIRadialGradient` on a unit circle with its inner ring at
 screen by `angle` and moved to the centre, a brush's CPU raster, below,
 or an automatic mask's bitmap, placed as the brush raster is: its pixel
 edges onto the extent's, clamped at the edges; `CIImage(bitmapData:)` reads
-row 0 as the top, so the top-down rows need no flip; with strokes, the
-bitmap is first resampled to the brush's raster size for the extent
-(`MaskBitmap.resampled(width:height:)`, `BrushRaster.rasterSize(for:)`) and
-the strokes laid over it there by
-`BrushRaster.render(strokes:over:width:height:)`, so a dab is round and
-the size `MaskMath` says whatever the bitmap's size),
+row 0 as the top, so the top-down rows need no flip; with strokes, it
+goes through `BrushRasterCache` like a brush (`image(for:base:width:height:)`):
+the strokes are rastered at the brush's raster size for the extent
+(`BrushRaster.rasterSize(for:)`) over the bitmap resampled to that size
+(`MaskBitmap.resampled(width:height:)`, the seed of a `LiveRaster`), so a
+dab is round and the size `MaskMath` says whatever the bitmap's size),
 runs it through the recipe's
 own geometry kinds (`AdjustmentKind.geometryKinds`, by `apply` itself, so
 rotate and crop are not written twice), applies the mask's adjustments to
@@ -137,8 +137,10 @@ A brush mask is rastered on the CPU (`BrushRaster.swift`, its pixel loops
 in the `BrushKernel` C target, `Sources/BrushKernel`, built with `-O3` in
 every configuration: unoptimised Swift loops cost about 250 ns a pixel, so
 a debug build could not paint live).
-`BrushRaster.render(strokes:width:height:)` is pure: one byte per pixel,
-rows top-down, each pixel the brush's weight at its centre. A stroke is
+`BrushRaster.render(strokes:base:width:height:)` is pure: one byte per pixel,
+rows top-down, each pixel the brush's weight at its centre, starting from
+0 for a brush mask or from `base` (an automatic mask's bitmap resampled to
+the raster size) for an automatic mask's refining strokes. A stroke is
 round dabs every `BrushRaster.dabSpacing` (a quarter of the radius) of arc
 length along its points, plus one on the last point (`BrushRaster.dabs`);
 a dab weighs `flow` inside `radius x (1 - feather)` and eases to 0 at
@@ -152,15 +154,19 @@ drawn over (the scaled source), its long side capped at
 `BrushRaster.maxLongSide` (4096, `BrushRaster.rasterSize(for:)`); beyond
 the cap `MaskRender.image(for:over:)` scales it up with Core Image. It is
 held as a one-channel, unmanaged `CIImage` (`.L8`, no colour space, so the
-bytes are the weights) in `BrushRasterCache.shared`, keyed by the strokes
-and the raster size (the `CubeCache` pattern, a handful of entries): a
+bytes are the weights) in `BrushRasterCache.shared`, keyed by the strokes,
+the raster size and, for an automatic mask, its bitmap's
+`MaskBitmap.digest` (`BrushRasterCache.Key.base`: two detections with the
+same strokes never share a raster) (the `CubeCache` pattern, a handful of entries): a
 render whose strokes have not changed (a mask or global slider, a rotate or
 crop, which act on the mask after it is drawn) never rasters again, and
 `BrushRasterCache.rasters` counts the misses for the tests. A stroke being
 painted changes the strokes on every point, so every frame misses; a miss
-therefore rasters through a `LiveRaster` kept per raster size (at most
-three, the loupe, the 1:1 view and the preset strip, the most recent
-kept). It holds the weight of every stroke but the last (`acc`), the last
+therefore rasters through a `LiveRaster` kept per raster size and base
+digest (at most three, the loupe, the 1:1 view and the preset strip, the
+most recent kept; one for an automatic mask is seeded with its resampled
+bitmap, `LiveRaster.init(width:height:base:)`, and every rebuild starts
+from that seed). It holds the weight of every stroke but the last (`acc`), the last
 stroke's walked dabs max-merged (`cover`) and the bytes. When the last
 stroke only grew (`LiveRaster.grows`: its points a prefix, the same radius,
 feather, flow and erase) only its new walked dabs (`BrushRaster.walk`, the

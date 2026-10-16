@@ -47,20 +47,52 @@ enum BrushThinning {
     }
 }
 
+// MARK: - The shapes a brush paints into
+
+extension MaskShape {
+    /// The strokes a brush paints into: a brush mask's own, or an automatic
+    /// mask's refining strokes (`AutoMask.strokes`, laid over its bitmap).
+    /// Nil for a gradient, which takes no strokes.
+    var paintStrokes: [BrushStroke]? {
+        switch self {
+        case .brush(let strokes): strokes
+        case .auto(let auto): auto.strokes
+        case .linear, .radial: nil
+        }
+    }
+
+    /// True for a brush mask.
+    var isBrush: Bool { if case .brush = self { true } else { false } }
+
+    /// This shape with its paint strokes replaced by `strokes` (the bitmap
+    /// and kind of an automatic mask kept); a gradient unchanged.
+    func withPaintStrokes(_ strokes: [BrushStroke]) -> MaskShape {
+        switch self {
+        case .brush: return .brush(strokes)
+        case .auto(var auto):
+            auto.strokes = strokes
+            return .auto(auto)
+        case .linear, .radial: return self
+        }
+    }
+}
+
 // MARK: - The library's painting
 
 /// Painting goes through `Library.setRecipe` like every other mask edit: a
 /// stroke opens one `beginEdit` on its first point and grows the selected
-/// brush mask's last stroke in place on every later one (so the loupe
-/// re-renders as it grows, latest-wins), and its mouse-up closes the edit:
-/// ONE stroke is ONE undo step and ONE sidecar write.
+/// mask's last stroke in place on every later one (so the loupe re-renders
+/// as it grows, latest-wins), and its mouse-up closes the edit: ONE stroke
+/// is ONE undo step and ONE sidecar write. A brush mask and an automatic
+/// mask paint alike (`MaskShape.paintStrokes`): on an automatic mask a paint
+/// stroke adds over the detected bitmap and an erase stroke takes it away.
 extension Library {
-    /// The brush mask a drag on the photo paints into: the selected mask,
-    /// when it is a brush, the brush is armed and the loupe shows. Nil
-    /// otherwise, and then a drag paints nothing.
+    /// The mask a drag on the photo paints into: the selected mask, when it
+    /// takes strokes (a brush or an automatic mask), the brush is armed and
+    /// the loupe shows. Nil otherwise, and then a drag paints nothing.
     var paintingBrush: UUID? {
         guard loupe, maskBrushArmed, let photo = selection, let id = selectedMask,
-              let mask = mask(id, for: photo), case .brush = mask.shape else { return nil }
+              let mask = mask(id, for: photo), mask.shape.paintStrokes != nil else { return nil }
         return id
     }
 
@@ -78,10 +110,7 @@ extension Library {
         // lands) leaves `brushStrokeMask` behind, and the next point must
         // then start a new stroke, never grow an older one.
         if let maskID = brushStrokeMask {
-            let first: MaskPoint? = {
-                guard case .brush(let strokes) = mask(maskID, for: id)?.shape else { return nil }
-                return strokes.last?.points.first
-            }()
+            let first = mask(maskID, for: id)?.shape.paintStrokes?.last?.points.first
             if !isEditOpen(on: id) || first != start { finishMaskDrag() }
         }
         if brushStrokeMask == nil {
@@ -90,17 +119,17 @@ extension Library {
             let stroke = BrushStroke(points: [start], radius: brush.size, feather: brush.feather,
                                      flow: brush.flow, erase: erase)
             updateMask(maskID, for: id) { mask in
-                if case .brush(let strokes) = mask.shape { mask.shape = .brush(strokes + [stroke]) }
+                if let strokes = mask.shape.paintStrokes { mask.shape = mask.shape.withPaintStrokes(strokes + [stroke]) }
             }
             brushStrokeMask = maskID
         }
         guard let maskID = brushStrokeMask, let mask = mask(maskID, for: id),
-              case .brush(var strokes) = mask.shape, var stroke = strokes.last,
+              var strokes = mask.shape.paintStrokes, var stroke = strokes.last,
               let last = stroke.points.last,
               BrushThinning.keeps(point, after: last, radius: stroke.radius, size: size) else { return }
         stroke.points.append(point)
         strokes[strokes.count - 1] = stroke
-        updateMask(maskID, for: id) { $0.shape = .brush(strokes) }
+        updateMask(maskID, for: id) { $0.shape = $0.shape.withPaintStrokes(strokes) }
     }
 
     /// The stroke's mouse-up: the edit closes, one undo step and one write.
@@ -118,7 +147,7 @@ extension Library {
 
 // MARK: - The painting layer
 
-/// While the brush is armed on a selected brush mask (`Library.paintingBrush`):
+/// While the brush is armed on a selected brush or automatic mask (`Library.paintingBrush`):
 /// the photo takes the drag and paints, Option held at its start erases, and
 /// a circle of the brush's size with an inner ring where the feather starts
 /// follows the pointer over the photo. Points go to the library in the
@@ -205,7 +234,7 @@ struct BrushOverlay: View {
     }
 }
 
-/// The selected brush's three rows in the Masks section: Size, Feather and
+/// The selected brush or automatic mask's three rows in the Masks section: Size, Feather and
 /// Flow of the strokes painted next (`Library.brush`); a double-click on a
 /// name puts it back to its default.
 struct BrushSettingsRows: View {

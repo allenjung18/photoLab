@@ -413,7 +413,7 @@ struct AppCommand: Identifiable {
                        let lib = c.library
                        if lib.maskBrushArmed {
                            lib.maskBrushArmed = false
-                       } else if lib.selectedMaskIsBrush {
+                       } else if lib.selectedMaskIsPaintable {
                            lib.maskBrushArmed = true
                        } else if let id = lib.selection {
                            lib.addMask(.brush, for: id)

@@ -258,7 +258,7 @@ enum MaskTint {
 /// Linear, New Radial and New Brush (the Photo menu's commands and keys),
 /// the photo's masks by kind and order, and for the selected one
 /// (`Library.selectedMask`) its switch, Invert, Duplicate, Delete, for a
-/// brush its Size, Feather and Flow (`BrushSettingsRows`), and the seven
+/// brush or an automatic mask its Size, Feather and Flow (`BrushSettingsRows`), and the seven
 /// sliders of `LocalMask.kinds`. Show Overlay is View › Show Mask
 /// Overlay (O).
 struct MasksSection: View {
@@ -317,7 +317,7 @@ struct MasksSection: View {
             }
             .toggleStyle(.button)
             .disabled(!AppCommand.command(.brushMask).isEnabled(context))
-            .help(help(.brushMask, "Paint the selected brush mask, or a new one"))
+            .help(help(.brushMask, "Paint the selected brush or automatic mask, or a new brush mask"))
         }
         .controlSize(.small)
     }
@@ -407,7 +407,7 @@ struct MasksSection: View {
             .accessibilityLabel("Delete mask")
         }
         .controlSize(.small)
-        if case .brush = mask.shape {
+        if mask.shape.paintStrokes != nil {
             BrushSettingsRows()
         }
         VStack(alignment: .leading, spacing: 14) {

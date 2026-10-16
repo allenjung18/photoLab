@@ -488,6 +488,20 @@ not only the pass.
   mouse-up, and undo goes back to a version-1 file. Shown to bite by a
   mutant (`normalized` dropping masks: 8 failures in 4 tests, the round
   trip and `isDefault` cases among them).
+- `AutoMaskRefineTests.swift` — the brush on an automatic mask: a
+  left-half-white bitmap selected in the loupe does not arm the brush, `K`
+  does (and adds no brush mask); a flow-1 erase stroke down x = 0.25 brings
+  the weight there to 0 and a paint stroke down x = 0.75 to 1, the bitmap
+  unchanged, drawn the same through a fresh `BrushRasterCache` (one raster,
+  reused on a second render); one stroke is one undo step (undo leaves the
+  bitmap, redo restores the stroke) and one sidecar write
+  (`Library.sidecarWrites`); a `LiveRaster` seeded with a resampled bitmap
+  and grown a point at a time over a paint and an erase stroke is
+  byte-identical to `BrushRaster.render(strokes:base:width:height:)` at
+  every step, an undo rebuilds from the base and no strokes is the base;
+  two automatic masks with the same strokes and opposite bitmaps get their
+  own rasters. Mutant: the base digest dropped from `BrushRasterCache.Key`
+  makes the second mask draw the first's raster (4 failures in that test).
 - `AutoMaskModelTests.swift` — the automatic mask (`MaskShape.auto`,
   `AutoMask`, `MaskBitmap`), synthetic bitmaps and temp directories only: a
   left-half-white bitmap weighs 1 at (0.25, 0.5), 0 at (0.75, 0.5) and 0.5

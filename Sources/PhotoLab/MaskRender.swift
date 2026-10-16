@@ -39,8 +39,9 @@ enum MaskRender {
     /// for that. A brush is rastered at `extent`'s size (long side capped at
     /// `BrushRaster.maxLongSide`) through `brushes`, and scaled by Core Image
     /// to the extent beyond the cap. An automatic mask's bitmap is stretched
-    /// onto the extent the same way; with strokes, the bitmap resampled to
-    /// the brush raster size with the strokes over it.
+    /// onto the extent the same way; with strokes, it goes through `brushes`
+    /// too, the strokes rastered over the bitmap resampled to the brush
+    /// raster size.
     static func image(for shape: MaskShape, over extent: CGRect,
                       brushes: BrushRasterCache = .shared) -> CIImage? {
         guard !extent.isInfinite, extent.width > 0, extent.height > 0 else { return nil }
@@ -89,28 +90,28 @@ enum MaskRender {
         case .auto(let auto):
             if auto.bitmap.isBlank, !auto.strokes.contains(where: { !$0.erase }) { return nil }
             // No strokes: the bitmap itself, stretched by Core Image. With
-            // strokes: the bitmap resampled (bilinear, as `MaskMath` reads it)
-            // to the extent's raster size, the strokes laid over it there, so
-            // a dab is round and as large as `MaskMath` says whatever the
-            // bitmap's own size or aspect.
-            let bitmap: (pixels: Data, width: Int, height: Int)
-            if auto.strokes.isEmpty {
-                bitmap = (auto.bitmap.pixels, auto.bitmap.width, auto.bitmap.height)
-            } else {
-                let size = BrushRaster.rasterSize(for: extent.size)
-                let base = auto.bitmap.resampled(width: size.width, height: size.height)
-                bitmap = (Data(BrushRaster.render(strokes: auto.strokes, over: base, width: size.width, height: size.height)),
-                          size.width, size.height)
-            }
-            let pixels = bitmap.pixels
+            // strokes: through `brushes` like a brush, keyed by the strokes,
+            // the raster size and the bitmap's digest, rastered over the
+            // bitmap resampled (bilinear, as `MaskMath` reads it) to the
+            // extent's raster size, so a dab is round and as large as
+            // `MaskMath` says whatever the bitmap's own size or aspect, and a
+            // stroke being painted stamps only its new dabs.
+            //
             // `CIImage(bitmapData:)` reads row 0 as the TOP row of the image
             // (Core Image's y runs up, and the initialiser puts the first row
             // at the top of the extent), so the bitmap's top-down rows need
             // no flip of their own: placed exactly as the brush raster is,
             // pixel edges onto the extent's edges, edges clamped.
-            let raster = CIImage(bitmapData: pixels, bytesPerRow: bitmap.width,
-                                 size: CGSize(width: bitmap.width, height: bitmap.height), format: .L8, colorSpace: nil)
-            let t = CGAffineTransform(scaleX: extent.width / CGFloat(bitmap.width), y: extent.height / CGFloat(bitmap.height))
+            let raster: CIImage, size: (width: Int, height: Int)
+            if auto.strokes.isEmpty {
+                size = (auto.bitmap.width, auto.bitmap.height)
+                raster = CIImage(bitmapData: auto.bitmap.pixels, bytesPerRow: size.width,
+                                 size: CGSize(width: size.width, height: size.height), format: .L8, colorSpace: nil)
+            } else {
+                size = BrushRaster.rasterSize(for: extent.size)
+                raster = brushes.image(for: auto.strokes, base: auto.bitmap, width: size.width, height: size.height)
+            }
+            let t = CGAffineTransform(scaleX: extent.width / CGFloat(size.width), y: extent.height / CGFloat(size.height))
                 .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY))
             return raster.clampedToExtent().transformed(by: t).cropped(to: extent)
         }

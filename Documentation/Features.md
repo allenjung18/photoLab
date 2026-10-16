@@ -953,18 +953,21 @@ redo, Reset, the render time and any sidecar error.
   one `Library.updateMask` / `setRecipe` step, and each slider goes
   through `MaskSliderEdit`, which calls `beginEdit` on mouse-down and
   `endEdit` on mouse-up, so a drag is one undo step and one sidecar write.
-  **Brush** (`K`) arms the selected brush mask, or adds an empty one and
+  **Brush** (`K`) arms the selected brush or automatic mask
+  (`Library.selectedMaskIsPaintable`), or adds an empty brush mask and
   arms it (`Library.maskBrushArmed`: arming leaves crop mode, ends compare
   and puts the eyedropper down; `K` again, `Esc`, another mask selected,
   crop mode, compare, the eyedropper and leaving the loupe disarm it;
-  selecting a brush mask in the loupe arms it, `Library.selectedMask`).
+  selecting a brush mask in the loupe arms it, `Library.selectedMask`;
+  selecting an automatic mask does not, `K` does).
   **Painting** (`BrushTool.swift`): while the brush is armed on the
-  selected brush mask (`Library.paintingBrush`) the loupe photo takes the
+  selected brush or automatic mask (`Library.paintingBrush`) the loupe photo takes the
   drag (`BrushOverlay`, over the After frame at fit or 1:1, on the same
   conditions as the handles). Each pointer position is mapped to the source
   (`MaskMath.viewToSource`) and goes to
   `Library.paintBrush(from:to:erase:size:for:)`: the first opens a
-  `beginEdit` and appends one `BrushStroke` at the drag's start with the
+  `beginEdit` and appends one `BrushStroke` (to the brush's strokes, or to
+  an automatic mask's `AutoMask.strokes`, `MaskShape.paintStrokes`) at the drag's start with the
   brush's size, feather and flow (`Library.brush`, a `BrushSettings`; an
   erase stroke when `⌥` is down as the drag starts, read once); every later
   one is added only at least a quarter of the radius from the last point
@@ -975,8 +978,12 @@ redo, Reset, the render time and any sidecar error.
   step, one sidecar write. A stroke cut off (Esc, compare, crop, another
   mask or photo) ends through `Library.finishMaskDrag` and is kept as one
   step. A circle of the brush's radius in view points, with a dashed ring at
-  radius × (1 − feather), follows the pointer over the photo. The selected
-  brush shows **Size** (`BrushSettings.sizeRange`, 0.5%–30% of the long
+  radius × (1 − feather), follows the pointer over the photo. On an
+  automatic mask the strokes refine the detection: they apply over its
+  bitmap by the brush's rule, a paint stroke adding clipped at 1 and an
+  erase stroke multiplying down (to 0 under a flow-1 erase), and the bitmap
+  itself is never changed. The selected
+  brush or automatic mask shows **Size** (`BrushSettings.sizeRange`, 0.5%–30% of the long
   side, default 5%), **Feather** (0–100%, default 50%) and **Flow**
   (5–100%, default 100%) rows (`BrushSettingsRows`, double-click a name to
   reset) above its sliders; they are tool state, never in a recipe or

@@ -126,43 +126,18 @@ enum BrushRaster {
 
     /// The strokes rastered over `width` x `height` pixels: one byte per
     /// pixel, rows top-down, 255 = weight 1. Each pixel is the rule above at
-    /// its centre, rounded to 8 bits. The pixel loops are BrushKernel's (C,
-    /// optimised in every build); `LiveRaster` runs the same loops a stroke
-    /// at a time, so both give the same bytes.
-    static func render(strokes: [BrushStroke], width: Int, height: Int) -> [UInt8] {
+    /// its centre, rounded to 8 bits, starting from `base` (an 8-bit raster
+    /// of the same size, rows top-down: an automatic mask's bitmap resampled
+    /// to this size, `MaskBitmap.resampled`) or from 0 with none (a brush
+    /// mask): a paint stroke adds over it, clipped at 1, an erase stroke
+    /// multiplies it down. The pixel loops are BrushKernel's (C, optimised in
+    /// every build); `LiveRaster` runs the same loops a stroke at a time, so
+    /// both give the same bytes. A `base` of the wrong size is ignored.
+    static func render(strokes: [BrushStroke], base: [UInt8]? = nil, width: Int, height: Int) -> [UInt8] {
         guard width > 0, height > 0 else { return [] }
-        let live = LiveRaster(width: width, height: height)
+        let live = LiveRaster(width: width, height: height, base: base)
         live.rebuild(strokes)
         return live.out
-    }
-
-    /// `strokes` applied over `base` (an 8-bit raster, rows top-down, the
-    /// starting weights) at `width` x `height`: each stroke's dabs
-    /// max-merged, then composed in order by the rule above, then quantised.
-    /// The same C loops as `render(strokes:width:height:)`. An automatic
-    /// mask's refined raster.
-    static func render(strokes: [BrushStroke], over base: [UInt8], width: Int, height: Int) -> [UInt8] {
-        guard width > 0, height > 0, base.count == width * height else { return base }
-        var acc = base.map { Float($0) / 255 }
-        var cover = [Float](repeating: 0, count: width * height)
-        let x1 = Int32(width - 1), y1 = Int32(height - 1)
-        for stroke in strokes {
-            let d = dabs(of: stroke, width: Double(width), height: Double(height))
-            guard !d.centres.isEmpty else { continue }
-            cover.withUnsafeMutableBufferPointer { c in
-                bk_stamp(c.baseAddress!, Int32(width), 0, 0, x1, y1, d.centres.map(\.x), d.centres.map(\.y),
-                         Int32(d.centres.count), d.radius, stroke.feather, stroke.flow)
-                acc.withUnsafeMutableBufferPointer { a in
-                    bk_compose(a.baseAddress!, c.baseAddress!, Int32(width), 0, 0, x1, y1, stroke.erase ? 1 : 0)
-                }
-                bk_clear(c.baseAddress!, Int32(width), 0, 0, x1, y1)
-            }
-        }
-        var out = [UInt8](repeating: 0, count: width * height)
-        acc.withUnsafeBufferPointer { a in
-            out.withUnsafeMutableBufferPointer { o in bk_quantize(o.baseAddress!, a.baseAddress!, Int32(width * height)) }
-        }
-        return out
     }
 }
 
@@ -178,10 +153,15 @@ enum BrushRaster {
 ///   into `acc` over its own bounds, and the new one starts;
 /// - anything else (an undo, a stroke edited, another brush): a rebuild.
 /// Max-merging is exact and every pixel goes through the same C loops, so
-/// the bytes never depend on the path taken.
+/// the bytes never depend on the path taken. A raster seeded with a `base`
+/// (an automatic mask's bitmap at this size) starts every rebuild from it
+/// rather than from 0.
 final class LiveRaster {
     let width: Int
     let height: Int
+    /// The weights every rebuild starts from: the base's bytes / 255, or nil
+    /// for all 0.
+    private let seed: [Float]?
     private(set) var acc: [Float]
     private var cover: [Float]
     private(set) var out: [UInt8]
@@ -197,12 +177,22 @@ final class LiveRaster {
     enum Path: Equatable { case rebuilt, grew, followed, unchanged }
     private(set) var lastPath = Path.rebuilt
 
-    init(width: Int, height: Int) {
+    /// An empty raster over `width` x `height`, or `base` (one byte per
+    /// pixel, rows top-down) when given at that size; any other `base` is
+    /// ignored.
+    init(width: Int, height: Int, base: [UInt8]? = nil) {
         self.width = width
         self.height = height
-        acc = [Float](repeating: 0, count: width * height)
-        cover = acc
-        out = [UInt8](repeating: 0, count: width * height)
+        let n = width * height
+        if let base, base.count == n {
+            seed = base.map { Float($0) / 255 }
+            out = base
+        } else {
+            seed = nil
+            out = [UInt8](repeating: 0, count: n)
+        }
+        acc = seed ?? [Float](repeating: 0, count: n)
+        cover = [Float](repeating: 0, count: n)
     }
 
     var strokes: [BrushStroke] { stroke.map { base + [$0] } ?? base }
@@ -230,13 +220,14 @@ final class LiveRaster {
             && next.points.prefix(stroke.points.count).elementsEqual(stroke.points)
     }
 
-    /// Everything from nothing: every stroke but the last into `acc`, the
-    /// last one live.
+    /// Everything from the base (or nothing): every stroke but the last
+    /// into `acc`, the last one live.
     func rebuild(_ strokes: [BrushStroke]) {
         lastPath = .rebuilt
+        if let seed { acc = seed }
         acc.withUnsafeMutableBufferPointer { a in
             cover.withUnsafeMutableBufferPointer { c in
-                bk_clear(a.baseAddress!, Int32(width), 0, 0, Int32(width - 1), Int32(height - 1))
+                if seed == nil { bk_clear(a.baseAddress!, Int32(width), 0, 0, Int32(width - 1), Int32(height - 1)) }
                 bk_clear(c.baseAddress!, Int32(width), 0, 0, Int32(width - 1), Int32(height - 1))
             }
         }
@@ -343,8 +334,10 @@ final class LiveRaster {
     }
 }
 
-/// Rastered brush masks keyed by their strokes and raster size (the
-/// `CubeCache` pattern): a render whose brush has not changed (dragging the
+/// Rastered brush masks keyed by their strokes, raster size and base (the
+/// `CubeCache` pattern; the base is an automatic mask's bitmap, keyed by
+/// its `MaskBitmap.digest`, so two automatic masks with the same strokes
+/// over different detections never share a raster): a render whose brush has not changed (dragging the
 /// mask's own exposure, any global slider, a crop or rotate, which act after
 /// the mask is drawn) reuses the image and never re-rasters. The image is the
 /// raster as a one-channel Core Image bitmap at the origin, unscaled and not
@@ -354,7 +347,9 @@ final class LiveRaster {
 /// loupe, the 1:1 view, the preset strip), so a stroke being painted, whose
 /// strokes change on every point and miss every time, stamps only its new
 /// dabs over the buffer it left (a live stroke's frame costs its new dabs,
-/// not the whole brush); any other change rebuilds that size's buffer.
+/// not the whole brush); any other change rebuilds that size's buffer. A
+/// growing raster belongs to one size AND one base: an automatic mask's
+/// strokes grow over a raster seeded with its bitmap.
 final class BrushRasterCache: @unchecked Sendable {
     static let shared = BrushRasterCache()
 
@@ -362,6 +357,8 @@ final class BrushRasterCache: @unchecked Sendable {
         let strokes: [BrushStroke]
         let width: Int
         let height: Int
+        /// The base bitmap's `MaskBitmap.digest`, nil for a brush mask.
+        let base: String?
     }
 
     private let lock = NSLock()
@@ -372,7 +369,7 @@ final class BrushRasterCache: @unchecked Sendable {
     private var rasterCount = 0
     /// One growing raster per size, the most recent last; at most `liveLimit`
     /// (a 4096 px one holds ~100 MB of buffers).
-    private var live: [(width: Int, height: Int, raster: LiveRaster, lock: NSLock)] = []
+    private var live: [(width: Int, height: Int, base: String?, raster: LiveRaster, lock: NSLock)] = []
     private let liveLimit = 3
     /// How the last miss rastered: the test seam for the incremental path.
     var lastPath: LiveRaster.Path? {
@@ -388,24 +385,30 @@ final class BrushRasterCache: @unchecked Sendable {
         return rasterCount
     }
 
-    static func key(for strokes: [BrushStroke], width: Int, height: Int) -> Key {
-        Key(strokes: strokes, width: width, height: height)
+    static func key(for strokes: [BrushStroke], base: MaskBitmap? = nil, width: Int, height: Int) -> Key {
+        Key(strokes: strokes, width: width, height: height, base: base?.digest)
     }
 
-    /// The raster of `strokes` at `width` x `height`, from the cache or
-    /// rastered now.
-    func image(for strokes: [BrushStroke], width: Int, height: Int) -> CIImage {
-        let key = Self.key(for: strokes, width: width, height: height)
+    /// The raster of `strokes` at `width` x `height` over `base` (an
+    /// automatic mask's bitmap, resampled to that size) or over nothing,
+    /// from the cache or rastered now.
+    func image(for strokes: [BrushStroke], base: MaskBitmap? = nil, width: Int, height: Int) -> CIImage {
+        let key = Self.key(for: strokes, base: base, width: width, height: height)
+        let digest = base?.digest
         lock.lock()
         if let hit = entries[key] { lock.unlock(); return hit }
         let entry: (raster: LiveRaster, lock: NSLock)
-        if let i = live.firstIndex(where: { $0.width == width && $0.height == height }) {
+        if let i = live.firstIndex(where: { $0.width == width && $0.height == height && $0.base == digest }) {
             let e = live.remove(at: i)
             live.append(e)
             entry = (e.raster, e.lock)
         } else {
             if live.count >= liveLimit { live.removeFirst() }
-            let e = (width: width, height: height, raster: LiveRaster(width: width, height: height), lock: NSLock())
+            // Seeded once per size and base, under the lock so a second
+            // miss on the same pair finds this raster rather than making one.
+            let seed = base?.resampled(width: width, height: height)
+            let e = (width: width, height: height, base: digest,
+                     raster: LiveRaster(width: width, height: height, base: seed), lock: NSLock())
             live.append(e)
             entry = (e.raster, e.lock)
         }

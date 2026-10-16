@@ -235,20 +235,23 @@ final class Library {
             guard selectedMask != oldValue else { return }
             if maskDragStart?.mask != selectedMask || brushStrokeMask != nil { finishMaskDrag() }
             // A brush mask selected in the loupe is ready to paint into
-            // (`paintingBrush`); any other selection puts the brush down.
-            maskBrushArmed = loupe && selectedMaskIsBrush
+            // (`paintingBrush`); an automatic mask waits for K (a click on
+            // the photo should not refine a detection by accident); any other
+            // selection puts the brush down.
+            maskBrushArmed = loupe && selectedMaskShape?.isBrush == true
         }
     }
-    /// The selected mask is a brush mask of the selected photo.
-    var selectedMaskIsBrush: Bool {
-        guard let photo = selection, let id = selectedMask,
-              let mask = recipe(for: photo).masks.first(where: { $0.id == id }),
-              case .brush = mask.shape else { return false }
-        return true
+    /// The selected mask's shape, when it is a mask of the selected photo.
+    private var selectedMaskShape: MaskShape? {
+        guard let photo = selection, let id = selectedMask else { return nil }
+        return recipe(for: photo).masks.first(where: { $0.id == id })?.shape
     }
-    /// The brush is armed on the selected brush mask (K, Photo › Brush, the
-    /// Masks section's New Brush, or a brush mask picked in the list): drags
-    /// on the photo paint into it (`paintBrush`, `Library.paintingBrush`).
+    /// The selected mask takes brush strokes: a brush mask, or an automatic
+    /// mask (whose strokes refine its bitmap, `AutoMask.strokes`).
+    var selectedMaskIsPaintable: Bool { selectedMaskShape?.paintStrokes != nil }
+    /// The brush is armed on the selected brush or automatic mask (K, Photo ›
+    /// Brush, the Masks section's New Brush, or a brush mask picked in the
+    /// list): drags on the photo paint into it (`paintBrush`, `Library.paintingBrush`).
     /// Tool state like the eyedropper: arming leaves crop mode, ends compare
     /// and puts the eyedropper down; any of those, another mask selected,
     /// Esc and leaving the loupe disarm it, ending a stroke in progress.
