@@ -61,7 +61,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(HiddenShortcuts.commands.map(\.name), AppCommand.all.filter(\.isBareKey).map(\.name))
         XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.isEmpty && $0.key != nil })
         let keys = Set(HiddenShortcuts.commands.map { $0.key!.character })
-        let expected: [KeyEquivalent] = ["g", "e", "y", "\\", "j", "p", "x", "u",
+        let expected: [KeyEquivalent] = ["g", "e", "y", "\\", "j", "f", "p", "x", "u",
                                          "0", "1", "2", "3", "4", "5",
                                          .return, .escape, .leftArrow, .rightArrow]
         XCTAssertEqual(keys, Set(expected.map(\.character)))
@@ -88,7 +88,7 @@ final class CommandsTests: XCTestCase {
 
     func testTheViewAndPhotoMenusListEveryBareKeyButEscapeAndReturn() {
         let view = AppCommand.items(in: .view).map(\.name)
-        XCTAssertEqual(view, [.grid, .loupe, .compare, .showOriginal, .clipping, .previous, .next])
+        XCTAssertEqual(view, [.grid, .loupe, .compare, .showOriginal, .clipping, .filmstrip, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
         XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .resetPhoto])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])

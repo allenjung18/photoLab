@@ -575,7 +575,13 @@ struct LoupeView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            PreviewCanvas(photo: photo, file: resolvedFile, fetch: fetch, preview: preview)
+            VStack(spacing: 0) {
+                PreviewCanvas(photo: photo, file: resolvedFile, fetch: fetch, preview: preview)
+                if library.showFilmstrip {
+                    Divider()
+                    FilmstripView()
+                }
+            }
             Divider()
             AdjustmentsPanel(photo: photo, file: resolvedFile, preview: preview)
                 .frame(width: 280)

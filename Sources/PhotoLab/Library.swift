@@ -112,6 +112,14 @@ final class Library {
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
     var showClipping = false
+    /// The loupe's filmstrip (View menu, F): remembered in `defaults`, next
+    /// to the per-source view state, and kept across sources.
+    var showFilmstrip = true {
+        didSet {
+            guard showFilmstrip != oldValue, rememberFolder else { return }
+            defaults.set(showFilmstrip, forKey: Filmstrip.showKey)
+        }
+    }
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
     /// Why the last `open` was refused (a missing path, an album before
@@ -153,6 +161,9 @@ final class Library {
     init(rememberFolder: Bool = true, defaults: UserDefaults = .standard) {
         self.rememberFolder = rememberFolder
         self.defaults = defaults
+        if rememberFolder, defaults.object(forKey: Filmstrip.showKey) != nil {
+            showFilmstrip = defaults.bool(forKey: Filmstrip.showKey)
+        }
     }
 
     func chooseFolder() {

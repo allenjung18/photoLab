@@ -337,6 +337,17 @@ declaration order (Basic open by default), each with a dot when any of its
 kinds is not a no-op (`Adjustment.isNoop`), then a footer with Before, undo,
 redo, Reset, the render time and any sidecar error.
 
+- **Filmstrip** (`Filmstrip.swift`). A lazy horizontal strip under the loupe
+  canvas over `Library.visiblePhotos`, so a filter shapes it as it shapes the
+  grid. Each cell shows what a grid cell does (thumbnail, flag, stars, edited
+  badge) and keys the grid's one cache with `Thumbnails.Key(photo, recipe)`,
+  never a second cache. The anchor is ringed and scrolled into view; a click
+  goes through `Library.click` with the grid's `⇧` and `⌘` rules, so a batch
+  can be built from the loupe. **View › Filmstrip** (`F`, an `AppCommand`)
+  shows or hides it; `Library.showFilmstrip` is remembered under
+  `showFilmstrip` in the library's `UserDefaults`, shown by default. The item
+  list and the click live in `Filmstrip` (`FilmstripItem`), tested apart
+  from the view (`FilmstripTests`).
 - **Histogram and clipping.** `HistogramView` (`HistogramView.swift`) at the
   top of the panel draws `PreviewModel.histogram`, a `Histogram`
   (`Histogram.swift`) of the latest rendered frame: 256 bins of red, green,

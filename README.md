@@ -62,6 +62,7 @@ in Xcode works too.
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
 | `J` | Toggle the clipping warning (blown pixels red, crushed pixels blue; or click a histogram triangle) |
+| `F` | Show or hide the filmstrip under the loupe (a View menu item; the choice is remembered) |
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
 | `⌘A` | Select All Photos (grid only) |
@@ -74,7 +75,7 @@ in Xcode works too.
 Every key above except `Return` and `Esc` is also a menu item: File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Before and After, Show Original, Clipping
-Warning, Previous and Next Photo) and **Photo** (Pick, Reject, Unflag, the
+Warning, Filmstrip, Previous and Next Photo) and **Photo** (Pick, Reject, Unflag, the
 ratings, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
@@ -95,7 +96,7 @@ the Presets menu have no key.
 With the mouse, in the grid: click selects one photo, `⇧`-click selects
 every photo between the anchor and it (the anchor kept), `⌘`-click adds or
 removes one (the anchor moves to a photo added), double-click opens it in
-the loupe. In the loupe: double-click the photo to go back to the grid,
+the loupe. In the loupe: a filmstrip of the visible photos runs under the photo (click a cell to move there, `⇧`-click to extend the selection, `⌘`-click to toggle); double-click the photo to go back to the grid,
 double-click an adjustment's name to reset it, hold **Before** to see the
 original, press `Y` to see the original and the edit side by side.
 

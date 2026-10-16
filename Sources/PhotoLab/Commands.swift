@@ -37,7 +37,7 @@ struct AppCommand: Identifiable {
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll
         case savePreset
-        case grid, loupe, compare, showOriginal, clipping, previous, next
+        case grid, loupe, compare, showOriginal, clipping, filmstrip, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case resetPhoto
@@ -175,6 +175,9 @@ struct AppCommand: Identifiable {
         AppCommand(name: .clipping, title: "Clipping Warning", key: "j", modifiers: [], placement: .view,
                    section: 1, isOn: { $0.library.showClipping },
                    perform: { $0.library.showClipping.toggle() }),
+        AppCommand(name: .filmstrip, title: "Filmstrip", key: "f", modifiers: [], placement: .view,
+                   section: 1, isOn: { $0.library.showFilmstrip },
+                   perform: { $0.library.showFilmstrip.toggle() }),
         AppCommand(name: .previous, title: "Previous Photo", key: .leftArrow, modifiers: [], placement: .view,
                    section: 2, isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { $0.library.select(offset: -1) }),
