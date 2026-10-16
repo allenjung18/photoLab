@@ -220,6 +220,15 @@ the picture at once. A window whose frame fits inside the view whole
 (`ZoomMath.fits`) is never shown: `renderZoom` sets `zoom` back to `.fit`,
 and the canvas puts `Library.loupeZoom` back too.
 
+The white-balance eyedropper reads a click as a point of the rendered
+frame the same two ways: at fit through `center(forClick:frame:pane:)`,
+at 1:1 through `ZoomMath.point(forClick:region:frame:pane:displayScale:)`,
+which undoes the canvas's layout of the window (`PreviewModel.zoomRegion`
+drawn unscaled, centred in the pane) and returns the clicked pixel's
+centre over `zoomFrameSize`. A normalised point is the same spot of the
+picture at any frame size, so the 5×5 patch `Renderer.Region` cuts from
+the decoded master is the same from either view (`WhiteBalanceTests`).
+
 In compare mode the window request carries `before`, and `renderZoom` cuts
 the neutral render at the same `Renderer.Region` in the same hop into
 `zoomBeforeImage` / `zoomBeforeRegion`, so the halves cannot show different
@@ -739,7 +748,18 @@ the crop it starts from, every move writes the handle's edges through
 without drift), and `Library.endCropDrag(_:)` calls `endEdit`. Picking a
 crop aspect (`Library.setCropAspect(_:frame:for:)`) and the straighten
 line (`Library.straighten(from:to:for:)`) are single `setRecipe` calls,
-one step each, like a menu command.
+one step each, like a menu command; so is the white-balance eyedropper
+(`Library.applyWhiteBalance(_:for:)`), which sets temperature and tint
+together, so one undo takes both back. Its solve
+(`WhiteBalance.neutralising`, `WhiteBalance.swift`) adds no adjustment
+kind and no renderer: it renders the sampled colour as a 1×1
+`CIImage(color:)` through `Renderer.apply` at candidate slider values
+(a 5×5 grid over both ranges, then a compass search halving its step to
+1/32 of a unit, clamped to the ranges), so the filter itself fixes the
+sign and scale of each slider. The colour is the patch of
+`WhiteBalance.base` (every kind from temperature on at neutral: the
+white-balance stage's input), so the sliders' values before the pick do
+not enter it.
 
 ### Undo and redo
 

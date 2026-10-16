@@ -40,7 +40,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, autoTone, resetPhoto
+        case crop, whiteBalance, autoTone, resetPhoto
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
@@ -237,6 +237,14 @@ struct AppCommand: Identifiable {
                    isOn: { c in c.library.loupe && c.library.cropMode },
                    isEnabled: { c in c.library.loupe && c.library.selection != nil },
                    perform: { $0.library.cropMode.toggle() }),
+        // The white-balance eyedropper: the next click on the loupe photo
+        // sets temperature and tint so that spot renders grey
+        // (`Library.pickWhiteBalance`). In the loupe only; Esc puts it down.
+        AppCommand(name: .whiteBalance, title: "White Balance Picker", key: "w", modifiers: [],
+                   placement: .photo, section: 2,
+                   isOn: { c in c.library.loupe && c.library.whiteBalancePicking },
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil },
+                   perform: { $0.library.whiteBalancePicking.toggle() }),
         // Auto: the Basic tone from each photo's histogram (`AutoTone`), on
         // the batch targets as one undo step (Lightroom's Auto Tone key).
         AppCommand(name: .autoTone, title: "Auto Tone", key: "u", placement: .photo, section: 2,
@@ -264,14 +272,16 @@ struct AppCommand: Identifiable {
                    isEnabled: { $0.library.source != nil },
                    perform: { $0.library.sort.ascending = false }),
 
-        // Keys with no menu item: Escape disarms the straighten tool, else
-        // leaves crop mode, else the loupe (from the grid it collapses the
+        // Keys with no menu item: Escape puts the white-balance eyedropper
+        // down, else disarms the straighten tool, else leaves crop mode, else the loupe (from the grid it collapses the
         // selection), Return opens it. Return is enabled only
         // when there is a photo to open, as Loupe (E) is: the Welcome view
         // has none, and its Open Folder… button holds Return there.
         AppCommand(name: .back, title: "Back", key: .escape, modifiers: [], placement: .keysOnly,
                    perform: { c in
-                       if c.library.straightening {
+                       if c.library.whiteBalancePicking {
+                           c.library.whiteBalancePicking = false
+                       } else if c.library.straightening {
                            c.library.straightening = false
                        } else if c.library.cropMode {
                            c.library.cropMode = false

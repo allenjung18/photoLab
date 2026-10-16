@@ -791,6 +791,7 @@ private struct PreviewCanvas: View {
                     zoomable(afterFrame, fitFrame: preview.image)
                         .overlay { cropOverlay }
                         .overlay(alignment: .topLeading) { if library.showBefore { badge("Before") } }
+                        .overlay(alignment: .top) { whiteBalanceHint }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -826,6 +827,8 @@ private struct PreviewCanvas: View {
             preview.setCompare(on)
         }
         .onChange(of: library.showClipping, initial: true) { _, on in preview.setClipping(on) }
+        // The eyedropper's crosshair goes with the tool.
+        .onChange(of: library.whiteBalancePicking) { _, on in if !on { NSCursor.arrow.set() } }
     }
 
     /// The recipe's frame (or, while it is coming, why not); at 1:1 the
@@ -898,6 +901,14 @@ private struct PreviewCanvas: View {
     private func zoomable(_ content: some View, fitFrame: CGImage?) -> some View {
         content
             .contentShape(Rectangle())
+            // A crosshair while the white-balance eyedropper is armed.
+            .onContinuousHover { phase in
+                guard library.whiteBalancePicking else { return }
+                switch phase {
+                case .active: NSCursor.crosshair.set()
+                case .ended: NSCursor.arrow.set()
+                }
+            }
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { g in pan(g.translation) }
@@ -925,15 +936,55 @@ private struct PreviewCanvas: View {
     }
 
     /// At fit, 1:1 at the point clicked (a click on the black around the
-    /// photo does nothing); at 1:1, back to fit.
+    /// photo does nothing); at 1:1, back to fit. While the white-balance
+    /// eyedropper is armed the click samples instead (`pickWhiteBalance`)
+    /// and the zoom stays.
     private func click(at point: CGPoint, fitFrame: CGImage?) {
         guard !library.cropMode else { return }
+        if library.whiteBalancePicking { pickWhiteBalance(at: point, fitFrame: fitFrame); return }
         if zoomed { library.loupeZoom = .fit; return }
         guard let fitFrame,
               let center = ZoomMath.center(forClick: point,
                                            frame: CGSize(width: fitFrame.width, height: fitFrame.height),
                                            pane: pane) else { return }
         library.loupeZoom = .actual(center: center)
+    }
+
+    /// The eyedropper's click mapped to a point normalised in the shown
+    /// frame: through the 1:1 window once it has landed, else through the
+    /// fit frame. Off the photo, or while Show Original shows a different
+    /// frame, nothing happens and the tool stays armed.
+    private func pickWhiteBalance(at point: CGPoint, fitFrame: CGImage?) {
+        guard !library.showBefore else { return }
+        let normalised: CGPoint?
+        if zoomed {
+            guard zoomWindow != nil, let region = preview.zoomRegion else { return }
+            normalised = ZoomMath.point(forClick: point, region: region, frame: preview.zoomFrameSize,
+                                        pane: pane, displayScale: displayScale)
+        } else {
+            guard let fitFrame else { return }
+            normalised = ZoomMath.center(forClick: point, frame: CGSize(width: fitFrame.width, height: fitFrame.height),
+                                         pane: pane)
+        }
+        guard let normalised else { return }
+        let id = photo.id
+        Task { await library.pickWhiteBalance(at: normalised, for: id) }
+    }
+
+    /// While the eyedropper is armed: what a click does, or why the last
+    /// one changed nothing.
+    @ViewBuilder private var whiteBalanceHint: some View {
+        if library.whiteBalancePicking {
+            HStack(spacing: 6) {
+                if library.whiteBalanceReading { ProgressView().controlSize(.small) }
+                Text(library.whiteBalanceNote ?? "Click something that should be neutral grey or white; Esc to cancel")
+            }
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.thinMaterial, in: Capsule())
+            .padding(12)
+            .allowsHitTesting(false)
+        }
     }
 
     /// Crop mode's rectangle and handles, over the fit frame once the frame
@@ -1206,6 +1257,7 @@ struct AdjustmentsPanel: View {
                                         aspectRow
                                     }
                                     if section == .basic { autoButton }
+                                    if section == .color { whiteBalanceButton }
                                     ForEach(section.kinds) { kind in row(kind) }
                                 }
                             }
@@ -1293,6 +1345,31 @@ struct AdjustmentsPanel: View {
             .disabled(!command.isEnabled(context) || file == nil)
             .help("Set exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (⌘U)")
             if library.autoToning { ProgressView().controlSize(.mini) }
+        }
+        .controlSize(.small)
+    }
+
+    /// The white-balance eyedropper, at the head of Color beside Temperature
+    /// and Tint: the same command as Photo › White Balance Picker and its
+    /// key. The last refusal is shown under it.
+    private var whiteBalanceButton: some View {
+        let command = AppCommand.command(.whiteBalance)
+        let key = command.key.map(AppCommand.label(for:)) ?? ""
+        let context = CommandContext(library: library)
+        return VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: Binding(get: { library.whiteBalancePicking },
+                                 set: { if $0 != library.whiteBalancePicking { command.perform(context) } })) {
+                Label("White Balance", systemImage: "eyedropper")
+            }
+            .toggleStyle(.button)
+            .disabled(!command.isEnabled(context) || file == nil)
+            .help("Click a spot on the photo that should be neutral to set temperature and tint (\(key)); Esc to cancel")
+            if let note = library.whiteBalanceNote {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .controlSize(.small)
     }

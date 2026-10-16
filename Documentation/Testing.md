@@ -361,6 +361,23 @@ not only the pass.
   mouse-up, and undo goes back to a version-1 file. Shown to bite by a
   mutant (`normalized` dropping masks: 8 failures in 4 tests, the round
   trip and `isDefault` cases among them).
+- `WhiteBalanceTests.swift` — the white-balance eyedropper
+  (`WhiteBalance`, `Library.pickWhiteBalance`, `ZoomMath.point(forClick:)`):
+  grey patches at three levels given six known casts (warm, cool, magenta,
+  green, mixed) solve back so the rendered patch's channel spread is under
+  0.01 in sRGB; a warm patch takes a cooler temperature and a magenta one a
+  greener tint; a cast past the sliders' reach is clamped and reduced; a
+  neutral patch solves to 0 and 0 within 1; a channel at 0.98 or above, or
+  below 0.02, is refused; the solve is under 50 ms (best of three, gated
+  like the frame budgets); `WhiteBalance.base` keeps geometry and exposure
+  and zeroes every kind from temperature on and the masks; a pixel clicked at 1:1 and the
+  same spot at fit cut the same 5×5 patch of the master (three windows,
+  one slid at a corner). Through a `Library`: a pick on a photo with a
+  cast leaves crop mode on arming, renders the photo grey, switches tint
+  on, writes the sidecar, disarms, and one undo takes both sliders back;
+  a clipped and a black photo change nothing (no step, no sidecar), show
+  the refusal and stay armed. Shown to bite by flipping the temperature
+  sign inside `WhiteBalance.neutralising` (22 failures in 4 tests).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows
@@ -396,7 +413,11 @@ not only the pass.
   leaving the loupe all return to fit; R toggles crop mode in the loupe
   only, entering it returns to fit and ends compare, Esc leaves it before
   the loupe, and Z, Y and leaving the loupe end it; Esc putting the
-  straighten tool down first is in `StraightenTests`).
+  straighten tool down first is in `StraightenTests`; W arms the
+  white-balance eyedropper in the loupe only, arming leaves crop mode and
+  compare, Esc puts it down before the loupe, crop mode, compare and
+  leaving the loupe put it down, a photo change keeps it, and no recipe
+  changes).
 - `WorkflowTests.swift` — one photographer's session through the real
   model layer, nothing faked but the Photos writer (`FakePhotosWriter`):
   six synthetic JPEGs and PNGs (one portrait) open in natural order with a

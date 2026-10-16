@@ -62,7 +62,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.isEmpty && $0.key != nil })
         let keys = Set(HiddenShortcuts.commands.map { $0.key!.character })
         let expected: [KeyEquivalent] = ["g", "e", "z", "y", "\\", "j", "f", "p", "x", "u",
-                                         "0", "1", "2", "3", "4", "5", "r",
+                                         "0", "1", "2", "3", "4", "5", "r", "w",
                                          .return, .escape, .leftArrow, .rightArrow]
         XCTAssertEqual(keys, Set(expected.map(\.character)))
     }
@@ -90,7 +90,7 @@ final class CommandsTests: XCTestCase {
         let view = AppCommand.items(in: .view).map(\.name)
         XCTAssertEqual(view, [.grid, .loupe, .zoom, .compare, .showOriginal, .clipping, .filmstrip, .info, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .autoTone, .resetPhoto])
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos])
@@ -326,6 +326,53 @@ final class CommandsTests: XCTestCase {
         run(.crop, ctx)
         run(.grid, ctx)
         XCTAssertFalse(lib.cropMode, "leaving the loupe leaves crop mode")
+    }
+
+    /// W arms the white-balance eyedropper, in the loupe only, as a bare
+    /// key in the Photo menu; arming it leaves crop mode and compare; Esc
+    /// puts it down before it leaves the loupe; crop mode, compare and
+    /// leaving the loupe disarm it. Tool state: no recipe changes.
+    func testWArmsTheWhiteBalancePickerAndEscPutsItDownFirst() throws {
+        let command = AppCommand.command(.whiteBalance)
+        XCTAssertEqual(command.key, "w")
+        XCTAssertTrue(command.isBareKey)
+        XCTAssertEqual(command.placement, .photo)
+        let (lib, ctx, ids) = try openThree()
+        XCTAssertFalse(command.isEnabled(ctx), "the grid has no eyedropper")
+        run(.loupe, ctx)
+        run(.crop, ctx)
+        run(.whiteBalance, ctx)
+        XCTAssertTrue(lib.whiteBalancePicking)
+        XCTAssertEqual(command.isOn?(ctx), true)
+        XCTAssertFalse(lib.cropMode, "arming leaves crop mode")
+        run(.whiteBalance, ctx)
+        XCTAssertFalse(lib.whiteBalancePicking, "W again puts it down")
+
+        run(.crop, ctx)
+        run(.whiteBalance, ctx)
+        run(.back, ctx)
+        XCTAssertFalse(lib.whiteBalancePicking, "Esc puts it down")
+        XCTAssertTrue(lib.loupe, "and not the loupe")
+        run(.back, ctx)
+        XCTAssertFalse(lib.loupe)
+
+        run(.loupe, ctx)
+        run(.compare, ctx)
+        run(.whiteBalance, ctx)
+        XCTAssertFalse(lib.compare, "arming ends compare")
+        run(.compare, ctx)
+        XCTAssertFalse(lib.whiteBalancePicking, "compare puts it down")
+        run(.compare, ctx)
+        run(.whiteBalance, ctx)
+        run(.crop, ctx)
+        XCTAssertFalse(lib.whiteBalancePicking, "crop mode puts it down")
+        run(.crop, ctx)
+        run(.whiteBalance, ctx)
+        run(.next, ctx)
+        XCTAssertTrue(lib.whiteBalancePicking, "kept across photos, like the other tools")
+        run(.grid, ctx)
+        XCTAssertFalse(lib.whiteBalancePicking, "leaving the loupe puts it down")
+        for id in ids { XCTAssertEqual(lib.recipe(for: id), .neutral, "tool state is not an edit") }
     }
 
     func testEditAndPhotoMenuItemsActOnTheSelection() throws {

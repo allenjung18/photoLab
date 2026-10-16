@@ -62,7 +62,8 @@ in Xcode works too.
 | `E` or `Return` | Loupe (the selected photo, or the first) |
 | `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
 | `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
-| `Esc` | Put the straighten tool down; else leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
+| `W` | In the loupe, the white-balance eyedropper (or **White Balance** in Color): click something that should be neutral grey or white, at fit or 1:1, and temperature and tint are set so it renders grey, one undo step; a clipped or near-black spot is refused with a note and changes nothing; `W` or `Esc` puts it down |
+| `Esc` | Put the white-balance eyedropper down; else the straighten tool; else leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
@@ -86,7 +87,7 @@ Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, Auto Tone, Reset Photo). A single-letter key is written after its menu item's
+ratings, Crop, White Balance Picker, Auto Tone, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
@@ -170,7 +171,11 @@ album is open (the last 100 steps per photo) and is not saved.
   brightened, a blown sky pulled in by highlights and whites rather than by
   darkening the whole frame. A RAW is read from its decoded master, never
   from the camera preview the loupe shows first.
-- **Color** — temperature, tint, vibrance, saturation.
+- **Color** — temperature, tint, vibrance, saturation. **White Balance**
+  (or `W`) arms an eyedropper: the next click on the photo sets
+  temperature and tint so the 5×5 pixels under it render grey, measured
+  before any of the colour and tone sliders, so the sliders' old values
+  do not matter. One undo step; a clipped or near-black spot is refused.
 - **Tone Curve** — five points (blacks, shadows, midtones, highlights,
   whites), each moved up or down.
 - **HSL** — hue, saturation and luminance for eight bands (red, orange,

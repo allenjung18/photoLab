@@ -441,6 +441,34 @@ Nothing else; the copied settings live in memory.
   correction is taken off the current rotate (the frame shown is already
   turned by it) and held in the slider's ±45°. A press under
   `StraightenMath.minLength` points changes nothing.
+- **White-balance eyedropper.** **W** (Photo › White Balance Picker,
+  `AppCommand.Name.whiteBalance`) or the Color section's **White Balance**
+  toggle sets `Library.whiteBalancePicking`: tool state, never in a recipe
+  or remembered, kept across photo changes. Arming it leaves crop mode
+  and ends compare; entering crop mode or compare, **Esc** (first, before
+  straighten, crop mode or the loupe), leaving the loupe and a balanced
+  pick clear it. While it is on, the canvas shows a crosshair cursor over
+  the photo and a hint capsule, and `PreviewCanvas`'s click samples
+  instead of zooming (a drag at 1:1 still pans; a click off the photo, or
+  while Show Original is on, does nothing). The click is mapped to a point
+  normalised in the rendered frame: at fit by `ZoomMath.center(forClick:)`
+  over the fit frame, at 1:1 by `ZoomMath.point(forClick:region:frame:pane:displayScale:)`
+  over `PreviewModel.zoomRegion` and `zoomFrameSize` (the pixel clicked,
+  at its centre), so both land on the same spot. `Library.pickWhiteBalance(at:for:)`
+  decodes the master off the main thread (`Renderer.previewMaster` at
+  `PreviewModel.masterPixelSize`; a RAW's master, never its first frame),
+  renders the `WhiteBalance.patchSize` (5×5) patch there through
+  `Renderer.render` with a `Renderer.Region` over `WhiteBalance.base` (the
+  recipe with every kind from temperature on at neutral and no masks: the
+  white-balance stage's own input), averages it in sRGB (`WhiteBalance.meanSRGB`) and
+  hands it to `WhiteBalance.neutralising`. `Library.applyWhiteBalance`
+  sets temperature and tint (switched on) through `setRecipe`: one undo
+  step and one sidecar write, and the tool disarms. A patch with any
+  channel at or above `WhiteBalance.clippedLevel` (0.98) or below
+  `WhiteBalance.darkLevel` (0.02) is refused: no recipe change,
+  `Library.whiteBalanceNote` is shown in the hint and under the button,
+  and the tool stays armed. A second click while one is read
+  (`Library.whiteBalanceReading`) is ignored.
 - **Before.** `BeforeButton(isPressed:)` (`ContentView.swift`) is a
   press-and-hold bound to `Library.showBefore`; `\` toggles the same flag.
   While it is on, `PreviewCanvas` substitutes `Recipe.neutral` for the
@@ -567,6 +595,9 @@ redo, Reset, the render time and any sidecar error.
   kind its section (`section`) and each section its `title` and `kinds`.
   Basic opens with **Auto** (the **Auto Tone** command, `⌘U`, on this
   photo; a small spinner while `Library.autoToning`; see Auto below).
+  Color opens with the **White Balance** eyedropper toggle (the **White
+  Balance Picker** command, **W**; see Loupe, White-balance eyedropper),
+  with the last refusal under it.
   Crop & Rotate opens with **Crop on Photo** / **Done Cropping**, which
   runs the **Crop** command (see Loupe, Crop mode), then the **Aspect**
   menu, its swap button and the **Straighten** toggle (see Loupe, Aspect
@@ -818,7 +849,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.sort.ascending`), enabled while a source is open.
   - **Photo**: **Pick** **P**, **Reject** **X**, **Unflag** **U**, **No
     Rating** **0** to **5 Stars** **5**, then **Crop** **R**
-    (`Library.cropMode`, loupe only), **Auto Tone** **⌘U**
+    (`Library.cropMode`, loupe only), **White Balance Picker** **W**
+    (`Library.whiteBalancePicking`, loupe only), **Auto Tone** **⌘U**
     (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
     Auto) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited).
@@ -828,9 +860,10 @@ key is typed anywhere else; the README's Keys table is the user's list.
   (selecting the first photo when none is), and both are disabled while
   `Library.visiblePhotos` is empty, so on the Welcome view **Return** is its
   **Open Folder…** default button; **Esc** clears
-  `Library.straightening`, else leaves crop mode, else the
+  `Library.whiteBalancePicking`, else `Library.straightening`, else leaves crop mode, else the
   loupe or, in the grid, collapses the selection; **R** toggles
-  `Library.cropMode` in the loupe; **←** / **→** are `Library.select(offset:)`;
+  `Library.cropMode` in the loupe; **W** toggles
+  `Library.whiteBalancePicking` in the loupe; **←** / **→** are `Library.select(offset:)`;
   **Z** toggles `Library.loupeZoom` in the loupe;
   `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and
   from the grid enters the loupe with it on); **J** toggles `Library.showClipping`

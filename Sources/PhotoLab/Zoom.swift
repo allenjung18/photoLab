@@ -48,6 +48,25 @@ enum ZoomMath {
         return CGPoint(x: (point.x - r.minX) / r.width, y: (point.y - r.minY) / r.height)
     }
 
+    /// A click at `point` (pane points) on the 1:1 window: `region` is the
+    /// window's pixels in a frame of `frame` pixels (origin top-left,
+    /// `PreviewModel.zoomRegion`), drawn unscaled at `displayScale` and
+    /// centred in `pane`. The normalised point of the frame under the click,
+    /// at the centre of the pixel clicked, or nil off the window. With
+    /// `center(forClick:)` at fit, the white-balance eyedropper's mapping:
+    /// both land on one point of the rendered frame, whatever its size.
+    static func point(forClick point: CGPoint, region: CGRect, frame: CGSize, pane: CGSize,
+                      displayScale: CGFloat) -> CGPoint? {
+        guard frame.width > 0, frame.height > 0, displayScale > 0, !region.isEmpty else { return nil }
+        let shown = CGRect(x: (pane.width - region.width / displayScale) / 2,
+                           y: (pane.height - region.height / displayScale) / 2,
+                           width: region.width / displayScale, height: region.height / displayScale)
+        guard shown.contains(point) else { return nil }
+        let px = region.minX + ((point.x - shown.minX) * displayScale).rounded(.down) + 0.5
+        let py = region.minY + ((point.y - shown.minY) * displayScale).rounded(.down) + 0.5
+        return CGPoint(x: px / frame.width, y: py / frame.height)
+    }
+
     /// The centre held so a window of `window` pixels around it stays inside
     /// a frame of `frame` pixels: never closer to an edge than half the
     /// window, and the middle on an axis where the window covers the whole

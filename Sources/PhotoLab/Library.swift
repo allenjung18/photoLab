@@ -117,7 +117,7 @@ final class Library {
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false {
         didSet {
-            if !loupe { loupeZoom = .fit; cropMode = false }
+            if !loupe { loupeZoom = .fit; cropMode = false; whiteBalancePicking = false }
             saveViewState()
         }
     }
@@ -138,6 +138,7 @@ final class Library {
             if cropMode {
                 loupeZoom = .fit
                 compare = false
+                whiteBalancePicking = false
             } else {
                 cropDragStart = nil
                 straightening = false
@@ -156,6 +157,30 @@ final class Library {
     var straightening = false {
         didSet { if straightening, !cropMode { cropMode = true } }
     }
+    /// The white-balance eyedropper is armed (W, Photo › White Balance
+    /// Picker, the Color section's eyedropper): the next click on the loupe
+    /// photo, at fit or 1:1, samples the patch under it and sets temperature
+    /// and tint so it renders grey (`pickWhiteBalance`). Tool state like
+    /// straightening: never in a recipe, never remembered, kept across
+    /// photo changes. Arming it leaves crop mode and ends compare; entering
+    /// crop mode or compare, Esc, leaving the loupe and a balanced pick
+    /// disarm it.
+    var whiteBalancePicking = false {
+        didSet {
+            guard whiteBalancePicking != oldValue else { return }
+            if whiteBalancePicking {
+                cropMode = false
+                compare = false
+                whiteBalanceNote = nil
+            }
+        }
+    }
+    /// Why the last eyedropper click changed nothing (a clipped or too dark
+    /// patch, an unreadable photo), for the panel's status line; cleared by
+    /// arming the tool again and by a balanced pick.
+    private(set) var whiteBalanceNote: String?
+    /// True while `pickWhiteBalance` reads a photo: a second click waits.
+    private(set) var whiteBalanceReading = false
     /// The crop a handle drag started from, while one is in progress.
     private var cropDragStart: CropMath.Crop?
     /// Copy Settings: the recipe and the name of the photo it came from.
@@ -174,7 +199,7 @@ final class Library {
     /// Before / After side by side in the loupe (Y, or the toolbar toggle):
     /// the canvas splits into the neutral render and the recipe's.
     var compare = false {
-        didSet { if compare { cropMode = false } }
+        didSet { if compare { cropMode = false; whiteBalancePicking = false } }
     }
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
@@ -328,6 +353,7 @@ final class Library {
         syncRequest = nil
         history = [:]
         sidecarError = nil
+        whiteBalanceNote = nil
         photosSave = .idle
         filter = .all
         sort = storedSort(for: sortKind)
@@ -905,6 +931,62 @@ final class Library {
         var r = current
         r.set(.rotate, to: value)
         r.setEnabled(.rotate, true)
+        setRecipe(r, for: id)
+    }
+
+    /// The eyedropper's click at `point`, normalised in the shown frame
+    /// (after crop and rotate, origin top-left: `ZoomMath.center(forClick:)`
+    /// at fit, `ZoomMath.point(forClick:)` at 1:1). The photo's master is
+    /// decoded off the main thread (`Renderer.previewMaster` at
+    /// `PreviewModel.masterPixelSize`, the loupe's own decode, so a RAW is
+    /// read from its master, never its embedded first frame), the
+    /// `WhiteBalance.patchSize` patch under the point is rendered with the
+    /// recipe up to the white-balance stage (`WhiteBalance.base`), and
+    /// `WhiteBalance.neutralising` solves it. Applied by `applyWhiteBalance`.
+    /// Returns the solve, nil when the photo could not be read.
+    @discardableResult
+    func pickWhiteBalance(at point: CGPoint, for id: Photo.ID) async -> WhiteBalance.Solve? {
+        guard !whiteBalanceReading else { return nil }
+        whiteBalanceReading = true
+        defer { whiteBalanceReading = false }
+        let base = WhiteBalance.base(recipe(for: id))
+        guard let url = try? await originalFile(for: id) else {
+            whiteBalanceNote = "White balance: the original could not be read."
+            return nil
+        }
+        let solve = await Task.detached(priority: .userInitiated) { () -> WhiteBalance.Solve? in
+            guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize),
+                  let rgb = WhiteBalance.patch(of: master, recipe: base, at: point) else { return nil }
+            return WhiteBalance.neutralising(rgb)
+        }.value
+        guard let solve else {
+            whiteBalanceNote = "White balance: the original could not be read."
+            return nil
+        }
+        applyWhiteBalance(solve, for: id)
+        return solve
+    }
+
+    /// A solve onto the photo: balanced, temperature and tint are set (and
+    /// switched on) through `setRecipe`, ONE undo step and one sidecar
+    /// write, and the tool disarms; a refusal sets `whiteBalanceNote`,
+    /// changes no recipe and leaves the tool armed for another click. A
+    /// photo the open source no longer lists is left alone.
+    func applyWhiteBalance(_ solve: WhiteBalance.Solve, for id: Photo.ID) {
+        guard photos.contains(where: { $0.id == id }) else { return }
+        guard case let .balanced(temperature, tint) = solve else {
+            whiteBalanceNote = solve.refusal
+            return
+        }
+        whiteBalanceNote = nil
+        whiteBalancePicking = false
+        // A drag left open would fold the pick into its step.
+        closeOpenEdit()
+        var r = recipe(for: id)
+        r.set(.temperature, to: temperature)
+        r.setEnabled(.temperature, true)
+        r.set(.tint, to: tint)
+        r.setEnabled(.tint, true)
         setRecipe(r, for: id)
     }
 
