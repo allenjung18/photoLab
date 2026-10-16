@@ -310,13 +310,13 @@ final class Library {
     private(set) var whiteBalanceNote: String?
     /// True while `pickWhiteBalance` reads a photo: a second click waits.
     private(set) var whiteBalanceReading = false
-    /// Why the last Select Subject, Person or Faces added no mask ("No
-    /// subject found", "No person found", "No faces found", an unreadable
+    /// Why the last Select Subject, Person, Faces or Sky added no mask ("No
+    /// subject found", "No person found", "No faces found", "No sky found", an unreadable
     /// photo), for the Masks section; cleared by the next run and by a photo
     /// change.
     private(set) var autoMaskMessage: String?
     /// True while `selectAuto` or `selectFaces` runs a detection: Select
-    /// Subject, Select Person and Select Faces are disabled.
+    /// Subject, Select Person, Select Faces and Select Sky (guess) are disabled.
     private(set) var autoMaskDetecting = false
     /// Bumped by a photo change and by opening a source: a detection that
     /// finishes under another generation is dropped (`selectAuto`,
@@ -1668,8 +1668,9 @@ final class Library {
         return sync(sources, mask: mask)
     }
 
-    /// Detects the automatic masks `kinds` (`AutoMaskKind`, `.sky` has no
-    /// detector yet and is left out) on each photo of `ids` through
+    /// Detects the automatic masks `kinds` (`AutoMaskKind`; `.sky` is a
+    /// guess, `SkyGuess`, not re-detected here: it is left out, and a sync
+    /// copies a sky mask as it was) on each photo of `ids` through
     /// `autoMaskDetector`: the batch entry point `syncRedetecting` uses and
     /// the one a later detect-on-import flow can call. Nothing is written to
     /// a recipe. Each photo is read once (the oriented decode at
@@ -2009,19 +2010,26 @@ final class Library {
     /// nothing (no step, no write); so does an unreadable original or a
     /// detector error, with its own message. A photo change or a source
     /// opened while it runs drops the result. One run at a time
-    /// (`autoMaskDetecting`): a second call meanwhile returns nil. Sky has
-    /// no detector yet. Returns the new mask's id.
+    /// (`autoMaskDetecting`): a second call meanwhile returns nil. Select Sky
+    /// (guess) (`kind` `.sky`) is the same flow with no model: the detector's
+    /// `horizon(in:)` (nil when none) and `SkyGuess.mask(in:horizon:)` on
+    /// the same decode; nothing found is "No sky found". Returns the new
+    /// mask's id.
     @discardableResult
     func selectAuto(_ kind: AutoMaskKind, for id: Photo.ID) async -> UUID? {
         let title: String
         switch kind {
         case .subject: title = "Subject"
         case .person: title = "Person"
-        case .sky: return nil
+        case .sky: title = "Sky"
         }
         let detector = autoMaskDetector
         let found: MaskBitmap?? = await runAutoDetection(title, for: id) { image in
-            kind == .person ? try await detector.person(in: image) : try await detector.subject(in: image)
+            switch kind {
+            case .subject: return try await detector.subject(in: image)
+            case .person: return try await detector.person(in: image)
+            case .sky: return SkyGuess.mask(in: image, horizon: try await detector.horizon(in: image))
+            }
         }
         guard let found else { return nil }
         guard let bitmap = found, !bitmap.isBlank else {

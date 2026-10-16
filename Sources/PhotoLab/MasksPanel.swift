@@ -10,7 +10,7 @@ import CoreImage.CIFilterBuiltins
 /// the click) and what `Library.addMask` adds: a linear from the top edge
 /// to 40% down, a radial ellipse centred at a third of the frame, an empty
 /// brush. Subject, Person and Sky name automatic masks (`MaskShape.auto`)
-/// in the list ("Subject 1"); Subject and Person in the add row detect one.
+/// in the list ("Subject 1"); Subject, Person and Sky in the add row detect one.
 enum MaskKind: CaseIterable {
     case linear, radial, brush
     /// Automatic masks (`MaskShape.auto`), named by what they select.
@@ -255,7 +255,7 @@ enum MaskTint {
 // MARK: - The Masks section
 
 /// The adjustments panel's Masks section (after the preset strip): New
-/// Linear, New Radial, New Brush, Subject, Person and Faces (the Photo
+/// Linear, New Radial, New Brush, Subject, Person, Faces and Sky (the Photo
 /// menu's commands and keys),
 /// the photo's masks by kind and order, and for the selected one
 /// (`Library.selectedMask`) its switch, Invert, Duplicate, Delete, for a
@@ -348,6 +348,13 @@ struct MasksSection: View {
             }
             .disabled(!AppCommand.command(.selectFaces).isEnabled(context))
             .help("Select Faces: one radial mask per face found on this Mac (Apple Vision)")
+            Button {
+                AppCommand.command(.selectSky).perform(context)
+            } label: {
+                Label("Sky", systemImage: MaskKind.sky.systemImage)
+            }
+            .disabled(!AppCommand.command(.selectSky).isEnabled(context))
+            .help("Select Sky (guess): mask the sky by its colour and its place above the horizon, on this Mac; refine it with the brush")
         }
         .controlSize(.small)
     }

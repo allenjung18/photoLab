@@ -926,8 +926,8 @@ redo, Reset, the render time and any sidecar error.
   recipe).
 - **Masks** (`MasksPanel.swift`). `MasksSection(photo:)` is a
   `DisclosureGroup` after the Presets strip (open, with a dot while the
-  photo has a mask). **Linear**, **Radial**, **Brush**, **Subject**, **Person** and **Faces** run the Photo
-  menu's commands (**M**, **⇧M**, **K**; Select Subject, Select Person and Select Faces with no key). **Linear** and **Radial** are
+  photo has a mask). **Linear**, **Radial**, **Brush**, **Subject**, **Person**, **Faces** and **Sky** run the Photo
+  menu's commands (**M**, **⇧M**, **K**; Select Subject, Select Person, Select Faces and Select Sky (guess) with no key). **Linear** and **Radial** are
   toggles: they arm placement (`Library.maskPlacement`, checked in the
   menu; the same key again, `Esc`, crop mode, compare, the eyedropper, the
   brush and leaving the loupe disarm it; arming leaves crop mode, ends
@@ -978,8 +978,24 @@ redo, Reset, the render time and any sidecar error.
   centre, radii `FaceMasks.margin` (1.4) times half the box over the long
   side, angle minus Vision's roll in degrees, feather 0.4), all appended in
   one `setRecipe` (one undo step, one sidecar write), the first selected; none
-  found sets "No faces found" and changes nothing. All three commands share
-  `autoMaskDetecting`, so one detection runs at a time. Sky has no detector yet.
+  found sets "No faces found" and changes nothing.
+  **Sky** (`AppCommand.Name.selectSky`, Photo › Select Sky (guess)) is
+  `Library.selectAuto(.sky, for:)`, the same flow with no model:
+  `SkyGuess.mask(in:horizon:)` on the same decode, against
+  `AutoMaskDetector.horizon(in:)` (`VisionDetector`: `VNDetectHorizonRequest`,
+  which gives a tilt only, so the line is that tilt through the centre column
+  at `SkyGuess.defaultHorizonY`, 70% down; nil means level there). The guess
+  runs on a decode of at most `SkyGuess.analysisLongSide` (512) px: a pixel
+  scores 1 when blue (hue 190-250 deg, saturation > 0.15, luminance > 0.35)
+  or overcast (luminance > 0.75, saturation < 0.12) (`SkyGuess.score`),
+  times `SkyGuess.prior` (1 at the top edge, falling linearly to 0 at the
+  horizon in that column), doubled and capped at 1; it is kept only where
+  4-connected to the top edge through weights above
+  `SkyGuess.connectThreshold` (`connectedToTop`), then box-blurred by 1% of
+  the long side. Under 2% of the frame (`SkyGuess.minCoverage`) it is nil:
+  "No sky found". One `.auto` mask of kind sky ("Sky 1"). A sync copies a
+  sky mask as it is (it is not re-guessed per target). All four commands
+  share `autoMaskDetecting`, so one detection runs at a time.
   `Library.selectedMask` is tool state: never in a recipe, cleared when the
   photo changes and whenever the photo's recipe stops holding it (an undo
   of its add, a delete, a reset, a sync), by `Library.apply`. The selected

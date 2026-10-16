@@ -104,7 +104,7 @@ Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and Afte
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
-to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Move Rejected Photos to Trash…). Select Subject, Select Person and Select Faces have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
+to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Select Sky (guess), Move Rejected Photos to Trash…). Select Subject, Select Person, Select Faces and Select Sky (guess) have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
 
@@ -233,7 +233,11 @@ one mask ("Person 1"), or says "No person found". **Faces** (Photo › Select
 Faces) adds one radial mask per face it finds, a feathered ellipse a little
 larger than the face and turned with it, all in one undo step with the
 first selected, or says "No faces found"; each is an ordinary radial with
-handles. They are off while a detection runs, and switching photos
+handles. **Sky** (Photo › Select Sky (guess)) is a guess, not a model: it
+masks the blue or overcast-white area above the horizon that reaches the
+top edge, fading toward the horizon (Vision's horizon tilt when it finds
+one, else level 70% down), as one mask ("Sky 1"), or says "No sky found";
+refine it with the brush. They are off while a detection runs, and switching photos
 meanwhile drops the result. The selected linear or radial has handles on the
 photo, at fit and at 1:1: a linear's centre pin moves it and the handles
 on its start and end lines turn it and set the fade's length about the

@@ -17,6 +17,15 @@ protocol AutoMaskDetector: Sendable {
     /// One observation per face found (Vision's normalised, bottom-left
     /// `boundingBox` and its `roll`); empty when there is none.
     func faces(in image: CGImage) async throws -> [VNFaceObservation]
+    /// The horizon Select Sky (guess) cuts its guess along
+    /// (`SkyGuess.Horizon`), or nil when none is found.
+    func horizon(in image: CGImage) async throws -> SkyGuess.Horizon?
+}
+
+extension AutoMaskDetector {
+    /// No horizon: `SkyGuess` falls back to a level one at
+    /// `SkyGuess.defaultHorizonY`. A test fake that does not care inherits it.
+    func horizon(in image: CGImage) async throws -> SkyGuess.Horizon? { nil }
 }
 
 /// The on-device detector: Apple Vision, run on this Mac with no network.
@@ -25,7 +34,10 @@ protocol AutoMaskDetector: Sendable {
 /// (`generateScaledMaskForImage(forInstances:from:)`), so a person holding
 /// a dog selects both, as Lightroom's Select Subject does. Person is
 /// `VNGeneratePersonInstanceMaskRequest` (macOS 14) the same way, every
-/// person merged; faces are `VNDetectFaceRectanglesRequest`.
+/// person merged; faces are `VNDetectFaceRectanglesRequest`; the horizon
+/// is `VNDetectHorizonRequest`, which reports a tilt only, so the line it
+/// gives is that tilt through the frame's centre column at
+/// `SkyGuess.defaultHorizonY`.
 struct VisionDetector: AutoMaskDetector {
     /// The long side, in pixels, of the decode a detection runs on: the
     /// bitmap's own cap (`MaskBitmap.maxLongSide`), so nothing is detected
@@ -51,6 +63,14 @@ struct VisionDetector: AutoMaskDetector {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
         return request.results ?? []
+    }
+
+    func horizon(in image: CGImage) async throws -> SkyGuess.Horizon? {
+        let request = VNDetectHorizonRequest()
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try handler.perform([request])
+        guard let found = request.results?.first, found.angle.isFinite else { return nil }
+        return SkyGuess.Horizon(centerY: SkyGuess.defaultHorizonY, angle: Double(found.angle))
     }
 
     /// Every instance of `observation` merged into one bitmap the size of

@@ -1310,7 +1310,7 @@ calls it; without such a mask it is `sync`). It asks
 `Library.detectAutoMasks(_:for:)` for each target's bitmap per `AutoMaskKind`
 (each photo decoded once at `VisionDetector.inputPixelSize`, at most
 `autoConcurrency` at a time off the main actor, `autoProgress` and
-`cancelAuto()` shared with Auto; `.sky` has no detector and is left out;
+`cancelAuto()` shared with Auto; `.sky` is a guess (`SkyGuess`), not re-detected: it is left out and a sky mask is copied as it is;
 nothing is written to a recipe, so a later detect-on-import flow can call it
 too), then builds one source recipe per target: each `.auto` mask becomes
 `AutoMask(kind:bitmap:)` with the target's bitmap (strokes dropped, the
@@ -1322,7 +1322,7 @@ batch tag, one undo step.
 
 ### Detecting an automatic mask
 
-`Library.selectAuto(_:for:)` (Select Subject, Select Person) is the one path
+`Library.selectAuto(_:for:)` (Select Subject, Select Person, Select Sky (guess)) is the one path
 that makes an `.auto` mask from pixels; `Library.selectFaces(for:)` (Select
 Faces) shares its run (`runAutoDetection`) and makes radial masks instead. It reads the photo's oriented decode,
 `ImageLoading.downsampledCGImage` at `VisionDetector.inputPixelSize`
@@ -1332,12 +1332,24 @@ decode is the top of the photo as displayed, which is the source frame a
 `MaskBitmap` is defined over. A detached task hands it to
 `Library.autoMaskDetector`, an `AutoMaskDetector` (AutoMasks.swift,
 `Sendable`, `subject(in:)` and `person(in:) async throws -> MaskBitmap?`,
-`faces(in:) async throws -> [VNFaceObservation]`); the app's is
+`faces(in:) async throws -> [VNFaceObservation]`, `horizon(in:) async throws
+-> SkyGuess.Horizon?`, nil by default in a protocol extension); the app's is
 `VisionDetector`: `VNGenerateForegroundInstanceMaskRequest` for a subject and
 `VNGeneratePersonInstanceMaskRequest` for a person (both macOS 14, on
 device) with `allInstances` merged by
 `generateScaledMaskForImage(forInstances:from:)` into a buffer the size of
-the input, and `VNDetectFaceRectanglesRequest` for faces. A face's
+the input, `VNDetectFaceRectanglesRequest` for faces and
+`VNDetectHorizonRequest` for the horizon (its `angle` only: Vision reports
+no height, so the line passes through the centre column at
+`SkyGuess.defaultHorizonY`). Sky has no model: in the detached task
+`SkyGuess.mask(in:horizon:)` (SkyGuess.swift, pure) redraws the decode at
+most `SkyGuess.analysisLongSide` px into an sRGB RGBA8 buffer, scores each
+pixel (`score`), multiplies by the position prior (`prior`, via
+`Horizon.y(atColumn:width:height:)`), doubles and caps at 1, keeps the
+4-connected region reached from the top row above `connectThreshold`
+(`connectedToTop`, an explicit stack), returns nil under `minCoverage`, and
+box-blurs rows then columns (`boxBlur`, radius `blurFraction` of the long
+side) into a `MaskBitmap` at the analysis size. A face's
 observation never leaves the detached task: there
 `FaceMasks.radial(for:roll:imageSize:)` turns its `boundingBox` (normalised,
 origin bottom-left) into a `.radial` in the source frame, the centre's y

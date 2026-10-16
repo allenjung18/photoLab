@@ -563,6 +563,20 @@ not only the pass.
   on a flat grey 640 x 480 image finds no person and no faces, or throws
   `XCTSkip` when a request throws. Mutant: the roll's sign kept turns the
   angle assertion red.
+- `SkyGuessTests.swift` — Select Sky (guess), images drawn in the test, no
+  Vision: a blue gradient over the top 40% and green below weighs > 0.9
+  above and < 0.05 below; a blue rectangle low in the frame, cut off from the
+  sky by green, stays < 0.01 (horizon passed at the bottom edge, so the prior
+  alone would keep it); an overcast grey-white top is selected; an all-green
+  frame and a 1% sliver of blue are nil; a horizon tilted 0.3 rad leaves every
+  column 0 below its line and > 0.9 well above it (row 160 kept on the left,
+  0 on the right, 0 for a level line); the score and prior at their edges; a
+  1200 x 900 image is analysed at 512 x 384. Through `Library` with a fake
+  detector: one selected `.auto` sky mask "Sky 1" in one undo step and one
+  sidecar write, cut at the detector's horizon (30% down, not the default);
+  all green says "No sky found" and changes nothing; the command is "Select
+  Sky (guess)", has no key and needs the loupe. Mutant: dropping
+  `connectedToTop` turns the rectangle test red.
 - `AutoMaskModelTests.swift` — the automatic mask (`MaskShape.auto`,
   `AutoMask`, `MaskBitmap`), synthetic bitmaps and temp directories only: a
   left-half-white bitmap weighs 1 at (0.25, 0.5), 0 at (0.75, 0.5) and 0.5

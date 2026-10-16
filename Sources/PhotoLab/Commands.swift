@@ -46,7 +46,7 @@ struct AppCommand: Identifiable {
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, autoWhiteBalance, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
-        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject, selectPerson, selectFaces
+        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject, selectPerson, selectFaces, selectSky
         case trashRejects
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
@@ -463,6 +463,17 @@ struct AppCommand: Identifiable {
                        let lib = c.library
                        guard let id = lib.selection else { return }
                        Task { await lib.selectFaces(for: id) }
+                   }),
+        // Select Sky (guess): a colour-and-position guess at the sky
+        // (`SkyGuess`, no model, on this Mac) as one new automatic mask, as
+        // Select Subject (`Library.selectAuto(.sky, for:)`). No key.
+        AppCommand(name: .selectSky, title: "Select Sky (guess)", key: nil,
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil && !c.library.autoMaskDetecting },
+                   perform: { c in
+                       let lib = c.library
+                       guard let id = lib.selection else { return }
+                       Task { await lib.selectAuto(.sky, for: id) }
                    }),
         // Every rejected photo of the open folder or collection, visible or
         // not, to the macOS Trash after a confirm (`TrashRequest`); the one

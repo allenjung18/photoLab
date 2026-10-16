@@ -144,7 +144,7 @@ final class AutoMaskSyncTests: XCTestCase {
         XCTAssertEqual(found.count, 1)
         XCTAssertEqual(found[ids[1]]?[.subject]?.digest, bitmap(row: 1).digest)
         XCTAssertEqual(found[ids[1]]?[.person]?.digest, bitmap(row: 1).digest)
-        XCTAssertNil(found[ids[1]]?[.sky], "no detector for sky yet")
+        XCTAssertNil(found[ids[1]]?[.sky], "sky is a guess, not re-detected")
         XCTAssertEqual(lib.sidecarWrites, writes)
     }
 
@@ -154,7 +154,7 @@ final class AutoMaskSyncTests: XCTestCase {
         r.masks = [LocalMask(shape: .auto(AutoMask(kind: .sky, bitmap: bitmap(row: 4))))]
         lib.setRecipe(r, for: ids[0])
         _ = await lib.syncRedetecting(lib.recipe(for: ids[0]), mask: .everything, from: ids[0], to: [ids[1]])
-        XCTAssertEqual(auto(lib, ids[1])?.bitmap.digest, bitmap(row: 4).digest, "no sky detector: copied")
+        XCTAssertEqual(auto(lib, ids[1])?.bitmap.digest, bitmap(row: 4).digest, "sky is not re-detected: copied")
         XCTAssertNil(lib.autoNote)
     }
 }
