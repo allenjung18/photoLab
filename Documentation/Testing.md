@@ -533,6 +533,19 @@ not only the pass.
   `AppSettings.exportPreset` round-trips, clears, and a quiet store writes
   nothing. Shown to bite by keeping the previous watermark across a pick
   (8 failures in 3 tests).
+- `RenameTemplateTests.swift` — the export name template (`RenameTemplate`,
+  `ExportOptions.nameTemplate`): each token (`{name}`, `{date}` and
+  `undated`, `{seq}` 1-based) with literal text kept, `{seq}` padded to the
+  batch's width at 9, 10 and 100 photos and from a start number (95…104 is
+  three digits; a negative start is 0), an empty or all-unsafe template
+  falling back to the name, `/ : \` NUL and line breaks removed by the
+  suffix's rule, an `exportOptions` JSON from before the field decoding with
+  no template (directly and through `AppSettings`), a template round trip,
+  `ExportForm`'s Name choice and two-name preview, and a real three-photo
+  export into a temporary folder writing the templated names in
+  `batchTargets` order, `{date}` names numbered by Add a number, the
+  originals untouched. Shown to bite by counting `{seq}` from 0 (red in the
+  token, padding, preview and export tests).
 - `MapTests.swift` — `MapPins.group(_:cellDegrees:)` at two spans (a 12°
   span merges two nearby photos into one pin, in the order of their first
   photo, at their mean; a 0.012° span splits all three);

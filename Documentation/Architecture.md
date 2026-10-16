@@ -828,7 +828,20 @@ One value per export run, carried unchanged through the queue to every item:
 - `quality`, clamped to `ExportOptions.qualityRange` by `clampedQuality`.
 - `resize`, an optional `OutputSize`; nil writes the rendered size.
 - `suffix`, appended to the original's stem (`fileName(for:)` gives
-  `<stem><suffix>.<ext>`), cleaned of anything a file name cannot hold.
+  `<stem><suffix>.<ext>`), cleaned of anything a file name cannot hold
+  (`RenameTemplate.clean`: `/`, `:`, `\`, NUL, line breaks).
+- `nameTemplate`, an optional `RenameTemplate` (`Rename.swift`: `pattern`,
+  `start`) that replaces `<stem><suffix>`: `{name}` the original's stem,
+  `{date}` the capture date (`yyyy-MM-dd` in the local calendar, `undated`
+  when none), `{seq}` the 1-based place in the batch from `start`, padded to
+  the digits of `start + count - 1`; cleaned by the same rule, and an empty
+  result is the original's stem. `ExportQueue.start` resolves it once per
+  run (`templatedStems(for:)`) and hands each item's stem to the worker,
+  which passes it to `Exporter.destination` in place of
+  `fileName(for:)`'s. nil = `<stem><suffix>`; options stored by a build
+  without the field decode with nil, and a stored template missing a field
+  takes its default (`RenameTemplate.init(from:)`). The template is a stem
+  only, so a later rename-in-place can reuse it.
 - `collision`, an `ExportOptions.Collision`: `number`, `skip` or
   `overwrite` (section 4).
 - `keepMetadata`, whether the source's camera metadata travels.

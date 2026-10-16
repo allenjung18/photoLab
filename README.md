@@ -97,7 +97,7 @@ menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…, Add
 to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush). A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
-into a text field (a preset's name, the export suffix) types the letter.
+into a text field (a preset's name, the export suffix or name template) types the letter.
 
 **View › Show** also picks the grid's filter (All, Picks, Unflagged, Rejected, 1 to 5
 stars), the same choice as the bar above the grid, and the empty-filter message has a
@@ -323,8 +323,14 @@ selection back to the anchor:
   anywhere exports the selection, or the loupe's photo). A sheet asks, and
   remembers for next time: the format (**JPEG**, **HEIC**, or lossless
   LZW **TIFF**), the JPEG/HEIC quality, the size (as edited, an exact long
-  side in pixels, or a percentage; never upscaled), a name suffix
-  (`DSC06727` + `-edit` → `DSC06727-edit.jpg`), what to do when the file
+  side in pixels, or a percentage; never upscaled), the file name (the
+  original's name plus a suffix, `DSC06727` + `-edit` → `DSC06727-edit.jpg`,
+  or a **Template** of literal text and the tokens `{name}` (the original's
+  name), `{date}` (its capture date, `2026-03-14`; `undated` without one)
+  and `{seq}` (its place in the batch from a settable start number,
+  zero-padded to the batch's widest number: `01`…`10` for ten photos), with
+  `/`, `:` and `\` removed and the original's name used when nothing is
+  left; the sheet previews the first two names), what to do when the file
   exists (**Add a number** `<photo> 2.jpg`, **Skip**, or **Overwrite**;
   the original is never overwritten, even when exporting into its own
   folder, and neither is any other photo of the open library: an Overwrite
@@ -428,7 +434,7 @@ Everything the app writes, and nothing else:
   collections, once for Photos albums),
   whether the filmstrip and the Info and History sections are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
-  last export options (format, quality, size, suffix, collision policy,
+  last export options (format, quality, size, suffix or name template, collision policy,
   metadata, watermark) and the last picked export preset's name, so the
   next export sheet opens with them, and the import root once changed.
 - **Imports** — the photos you import, under the import root

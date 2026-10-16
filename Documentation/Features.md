@@ -946,7 +946,8 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
 
 - **The request.** `ExportQueue.requestExport(_:)` (`Batch.swift`) takes
   the `ExportQueue.Item` list from `Library.exportItems(for:)` (each a
-  source URL, its recipe, its keywords (`Library.keywords(for:)`) and, for a Photos photo, its own file name: the
+  source URL, its recipe, its keywords (`Library.keywords(for:)`), its capture date
+  (`Library.captureDates`, for a name template's `{date}`) and, for a Photos photo, its own file name: the
   output is `<original name><suffix>.<ext>`, never the cached copy's id;
   a folder photo keeps its file's name) and sets `ExportQueue.request`; `ContentView`
   presents `ExportSheet(request:options:folder:album:toPhotos:)` for it with
@@ -954,12 +955,16 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   going.
 - **The sheet.** `ExportSheet` (`ExportSheet.swift`) edits one
   `ExportOptions` through its `ExportForm` (`ExportPresets.swift`: the
-  options plus the Size and Watermark controls, folded by
+  options plus the Size, Name and Watermark controls, folded by
   `ExportForm.resolved`): **Format** (`ExportOptions.Format`: JPEG, HEIC, TIFF)
   with a quality slider for the lossy two; **Size** as edited, an exact
   long side or a percentage (`OutputSize.longSide`, `OutputSize.percent`,
-  nil for as edited; never upscaled); **File**: a name suffix with a live
-  preview from `ExportOptions.fileName(for:)`, what to do when the file
+  nil for as edited; never upscaled); **File**: **Name** is Original name +
+  suffix (`suffix`) or Template (`ExportForm.NameMode`; a `RenameTemplate`
+  pattern and start number, `Rename.swift`, folded into
+  `ExportOptions.nameTemplate`), with a live preview of the first two names
+  (`ExportForm.previewNames(for:)`, the template's `{seq}` padded for the
+  whole batch), what to do when the file
   exists (`ExportOptions.Collision`: add a number, skip, overwrite) and
   **Keep camera info** (`keepMetadata`); **Watermark**: a toggle, then the
   text, a position (`Watermark.Position`: the four corners or the centre),
@@ -1012,7 +1017,11 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   photo's own file, `Exporter.Failure.isTheOriginal`; any other original of
   the open library, `Exporter.Failure.isALibraryOriginal`, matched by
   `Exporter.isSameFile` against the item's `protected` set) are in
-  `Exporter.destination(for:in:options:)` and `Exporter.export`. A refused
+  `Exporter.destination(for:name:stem:in:options:)` and `Exporter.export`.
+  Under a name template `ExportQueue.start` makes every item's stem first
+  (`ExportOptions.templatedStems(for:)`, in the order of the items, which is
+  `Library.batchTargets`), and that stem meets the collision policy as a plain
+  `<stem><suffix>` does (`<stem> 2.jpg` under Add a number). A refused
   photo counts as failed and the bar shows its message. A Photos run
   writes each file into its staging directory the same way, hands it to
   `PhotosWriter.importImage(at:intoAlbum:)` and removes it.
@@ -1138,7 +1147,7 @@ key is typed anywhere else; the README's Keys table is the user's list.
   `HiddenShortcuts` and written after the menu item's title ("Pick (P)",
   `AppCommand.menuTitle(_:)`): a menu key equivalent is global to the app
   and would take the letter from a text field in a sheet or an alert (the
-  Save Preset name, the export suffix), while the hidden buttons sit in the
+  Save Preset name, the export suffix or name template), while the hidden buttons sit in the
   main window and never see those keystrokes. The main window's own text
   field, the grid's search, is covered by the table itself: `AppCommand.all`
   is the entries passed through `AppCommand.offWhileTyping`, which makes

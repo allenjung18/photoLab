@@ -75,15 +75,20 @@ struct ExportOptions: Codable, Hashable, Sendable {
     /// (`Watermark`). nil = none; options stored by a build without the
     /// field decode with nil.
     var watermark: Watermark? = nil
+    /// The file name as a template (`RenameTemplate`: `{name}`, `{date}`,
+    /// `{seq}`) in place of `<stem><suffix>`; `suffix` is then not used.
+    /// nil = `<stem><suffix>`; options stored by a build without the field
+    /// decode with nil. The export queue resolves it to one stem per photo
+    /// (`ExportQueue.start`), and that stem meets the collision policy as a
+    /// plain name would (`Exporter.destination`).
+    var nameTemplate: RenameTemplate? = nil
 
     static let `default` = ExportOptions()
 
     var clampedQuality: Double { min(max(quality, Self.qualityRange.lowerBound), Self.qualityRange.upperBound) }
 
     /// The suffix with anything a file name cannot hold removed.
-    var cleanSuffix: String {
-        String(suffix.filter { !"/:\\\u{0}".contains($0) && !$0.isNewline })
-    }
+    var cleanSuffix: String { RenameTemplate.clean(suffix) }
 
     /// `<stem><suffix>.<ext>` for `source`, before any collision handling.
     /// `name` is the photo's own file name when the source file is a cache
@@ -100,8 +105,21 @@ struct ExportOptions: Codable, Hashable, Sendable {
 
     /// `fileName(for:)` with a counter: `<stem><suffix> 2.<ext>` (n = 2).
     func fileName(for source: URL, name: String? = nil, number n: Int) -> String {
-        let stem = Self.stem(of: source, name: name) + cleanSuffix
-        return (n <= 1 ? stem : "\(stem) \(n)") + "." + format.fileExtension
+        fileName(stem: Self.stem(of: source, name: name) + cleanSuffix, number: n)
+    }
+
+    /// `<stem>.<ext>`, or `<stem> <n>.<ext>` for n > 1: a stem already
+    /// made (a `nameTemplate`'s), with this format's extension.
+    func fileName(stem: String, number n: Int = 1) -> String {
+        (n <= 1 ? stem : "\(stem) \(n)") + "." + format.fileExtension
+    }
+
+    /// One stem per photo of a batch under `nameTemplate`, in order, with
+    /// `{name}` the photo's own stem (as `fileName(for:name:)` takes it);
+    /// before any collision handling, without the extension. nil without a
+    /// template.
+    func templatedStems(for photos: [(source: URL, name: String?, date: Date?)]) -> [String]? {
+        nameTemplate?.stems(for: photos.map { (Self.stem(of: $0.source, name: $0.name), $0.date) })
     }
 }
 

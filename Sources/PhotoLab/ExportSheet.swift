@@ -105,12 +105,26 @@ struct ExportSheet: View {
                     }
                 }
                 Section("File") {
-                    HStack {
-                        Text("Name")
+                    Picker("Name", selection: $form.nameMode) {
+                        Text("Original name + suffix").tag(ExportForm.NameMode.suffix)
+                        Text("Template").tag(ExportForm.NameMode.template)
+                    }
+                    switch form.nameMode {
+                    case .suffix:
                         TextField("Suffix", text: $form.options.suffix, prompt: Text("e.g. -edit"))
-                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 140)
+                    case .template:
+                        TextField("Template", text: $form.template.pattern, prompt: Text("e.g. {date}-{seq}"))
+                            .textFieldStyle(.roundedBorder)
+                        HStack {
+                            TextField("Start at", value: $form.template.start, format: .number)
+                                .frame(width: 140)
+                            Text("{name} original name · {date} capture date · {seq} number")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                    LabeledContent("Preview") {
                         Text(namePreview)
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle)
@@ -240,9 +254,10 @@ struct ExportSheet: View {
         }
     }
 
+    /// The first two names the run would write, before any collision
+    /// handling (`ExportForm.previewNames`).
     private var namePreview: String {
-        guard let first = request.items.first else { return "" }
-        return resolved.fileName(for: first.source, name: first.name)
+        form.previewNames(for: request.items).joined(separator: ", ")
     }
 
     /// The options a run would use (`ExportForm.resolved`).

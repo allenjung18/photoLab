@@ -1072,9 +1072,11 @@ final class Library {
     /// the queue runs does not change what is written for a photo already in it.
     /// Every item carries the library's originals as `protected`: each
     /// photo's own file plus the files resolved for this export (a Photos
-    /// original's cached copy), so an Overwrite never lands on one.
+    /// original's cached copy), so an Overwrite never lands on one, and
+    /// its capture date (`captureDates`), which a name template's `{date}`
+    /// reads.
     func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
-        var resolved: [(URL, Recipe, String?, [String])] = []
+        var resolved: [(URL, Recipe, String?, [String], Date?)] = []
         for id in ids {
             // A Photos original's cached copy is named by its id: the output
             // takes the photo's own name instead. Folder photos keep theirs.
@@ -1083,11 +1085,12 @@ final class Library {
                 await resolveName(id)
                 own = name(for: id)
             }
-            resolved.append((try await originalFile(for: id), recipe(for: id), own, keywords(for: id)))
+            let date = photos.first(where: { $0.id == id }).flatMap { captureDates.date(for: $0) }
+            resolved.append((try await originalFile(for: id), recipe(for: id), own, keywords(for: id), date))
         }
         let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))
         return resolved.map {
-            ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected, keywords: $0.3)
+            ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected, keywords: $0.3, captureDate: $0.4)
         }
     }
 

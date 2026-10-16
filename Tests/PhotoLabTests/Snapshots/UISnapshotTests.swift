@@ -463,7 +463,7 @@ final class UISnapshotTests: XCTestCase {
     private func runningExport() async throws -> SnapshotHarness.Scene {
         let gate = Gate()
         let out = FileManager.default.temporaryDirectory
-        let (scene, exports, items) = try await exportScene(items: 5) { source, _, _, _, _, _, _ in
+        let (scene, exports, items) = try await exportScene(items: 5) { source, _, _, _, _, _, _, _ in
             if gate.next() > 2 { gate.semaphore.wait() }
             return .written(out.appendingPathComponent(source.lastPathComponent))
         }
@@ -484,7 +484,7 @@ final class UISnapshotTests: XCTestCase {
 
     private func finishedExport() async throws -> SnapshotHarness.Scene {
         let out = FileManager.default.temporaryDirectory
-        let (scene, exports, items) = try await exportScene(items: 6) { source, _, _, _, _, _, _ in
+        let (scene, exports, items) = try await exportScene(items: 6) { source, _, _, _, _, _, _, _ in
             let name = source.lastPathComponent
             if name == "IMG_0003.jpg" { throw DiskFull() }
             if name == "IMG_0004.jpg" { return .skipped(out.appendingPathComponent(name)) }

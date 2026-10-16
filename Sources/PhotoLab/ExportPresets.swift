@@ -168,6 +168,9 @@ struct ExportPresetStore {
 /// here: it is the sheet's own state.
 struct ExportForm: Equatable {
     enum SizeMode: Hashable { case original, longSide, percent }
+    /// The File row's Name: the original's name plus `suffix`, or a
+    /// `RenameTemplate`.
+    enum NameMode: Hashable { case suffix, template }
 
     var options: ExportOptions
     var sizeMode: SizeMode
@@ -177,6 +180,10 @@ struct ExportForm: Equatable {
     /// it is off, and `resolved` drops them.
     var watermarkOn: Bool
     var watermark: Watermark
+    /// The File row's Name choice; the template's fields stay in `template`
+    /// while it is off, and `resolved` drops them.
+    var nameMode: NameMode
+    var template: RenameTemplate
     /// The preset last picked (or saved) in this sheet, as it was then.
     var picked: ExportPreset?
 
@@ -184,6 +191,8 @@ struct ExportForm: Equatable {
         self.options = options
         watermarkOn = options.watermark != nil
         watermark = options.watermark ?? Watermark()
+        nameMode = options.nameTemplate == nil ? .suffix : .template
+        template = options.nameTemplate ?? RenameTemplate()
         switch options.resize {
         case .longSide(let n): sizeMode = .longSide; longSide = n; percent = 50
         case .percent(let p): sizeMode = .percent; longSide = 2048; percent = p
@@ -192,11 +201,13 @@ struct ExportForm: Equatable {
         self.picked = picked
     }
 
-    /// `options` with the size controls folded into `resize` and the
-    /// Watermark section into `watermark` (nil when off or blank).
+    /// `options` with the size controls folded into `resize`, the
+    /// Watermark section into `watermark` (nil when off or blank) and the
+    /// Name choice into `nameTemplate` (nil for original name + suffix).
     var resolved: ExportOptions {
         var o = options
         o.watermark = watermarkOn && !watermark.isBlank ? watermark : nil
+        o.nameTemplate = nameMode == .template ? template : nil
         switch sizeMode {
         case .original: o.resize = nil
         case .longSide: o.resize = .longSide(max(1, longSide))
@@ -217,6 +228,17 @@ struct ExportForm: Equatable {
     var isEdited: Bool {
         guard let picked else { return false }
         return resolved != ExportForm(options: picked.options).resolved
+    }
+
+    /// The first `limit` file names an export of `items` writes under
+    /// `resolved`, in order and before any collision handling: a template's
+    /// `{seq}` is padded for the whole batch, so the preview matches the run.
+    func previewNames(for items: [ExportQueue.Item], limit: Int = 2) -> [String] {
+        let o = resolved
+        if let stems = o.templatedStems(for: items.map { ($0.source, $0.name, $0.captureDate) }) {
+            return stems.prefix(limit).map { o.fileName(stem: $0) }
+        }
+        return items.prefix(limit).map { o.fileName(for: $0.source, name: $0.name) }
     }
 
     /// The Preset menu's title: "None", the picked name, or
