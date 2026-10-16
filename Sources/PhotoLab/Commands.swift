@@ -459,7 +459,9 @@ struct AppCommand: Identifiable {
         // has none, and its Open Folder… button holds Return there.
         AppCommand(name: .back, title: "Back", key: .escape, modifiers: [], placement: .keysOnly,
                    perform: { c in
-                       if c.library.whiteBalancePicking {
+                       if c.library.autoToning {
+                           c.library.cancelAuto()
+                       } else if c.library.whiteBalancePicking {
                            c.library.whiteBalancePicking = false
                        } else if c.library.maskBrushArmed {
                            c.library.maskBrushArmed = false

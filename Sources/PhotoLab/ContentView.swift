@@ -73,7 +73,10 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if exports.state != .idle { ExportBar() }
+            VStack(spacing: 0) {
+                if library.autoToning && library.autoProgress.total > 1 || library.autoNote != nil { AutoBar() }
+                if exports.state != .idle { ExportBar() }
+            }
         }
         .sheet(item: $library.syncRequest) { request in
             SyncSheet(request: request)
@@ -708,6 +711,36 @@ struct SyncSheet: View {
         if mask == .grade { return "Grade: the look without exposure" }
         if mask == .everything { return "Everything, framing included" }
         return "\(n) of \(AdjustmentKind.allCases.count) adjustments" + (mask.masks ? " and the masks" : "")
+    }
+}
+
+/// The Auto batch at the bottom of the window, above the export bar: "Auto
+/// n of N" with Cancel (Esc does the same) while it reads, then its note
+/// (photos skipped, or cancelled with nothing changed).
+private struct AutoBar: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if library.autoToning {
+                ProgressView(value: Double(library.autoProgress.done), total: Double(max(1, library.autoProgress.total)))
+                    .frame(width: 160)
+                Text("Auto \(library.autoProgress.done) of \(library.autoProgress.total)")
+                    .font(.callout.monospacedDigit())
+                Spacer()
+                Button("Cancel") { library.cancelAuto() }
+                    .help("Stop and apply nothing (Esc)")
+            } else if let note = library.autoNote {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(note).font(.callout).lineLimit(2)
+                Spacer()
+                Button("Done") { library.dismissAutoNote() }
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 

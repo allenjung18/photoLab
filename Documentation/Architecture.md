@@ -473,6 +473,12 @@ the saturation and chroma differences), zero to itself and symmetric.
 `AutoTone.histogram(of:recipe:)` does without its neutral base, and
 measures that frame. Nothing reads it yet: it has no UI and touches no
 `Library` state.
+=======
+`Library.autoTone` reads its photos in a task group of at most
+`Library.autoConcurrency`, each through `Library.autoMeasure` (off the main
+thread; a test replaces it), results keyed by `Photo.ID` and applied by one
+`sync` after the last; `Library.cancelAuto()` drops them all.
+>>>>>>> 8189708 (Auto over a selection is a cancellable job: at most 4 reads at once keyed by photo id, Auto n of N with Cancel/Esc applying nothing, unreadable originals skipped and counted)
 
 ### The preset strip
 

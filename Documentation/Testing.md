@@ -429,6 +429,13 @@ not only the pass.
   reads and writes nothing. Shown to bite by four mutants (no reopen guard,
   the grid ignoring the size, a renamed `showFilmstrip` key, the Settings
   sort never applied live), one or more failures each.
+- `AutoBatchTests.swift` — Auto over twelve synthetic photos in a temp
+  folder: each gets the values single-photo Auto gives it (results out of
+  order), one undo step, `Library.autoLastRun` reaches 12 of 12 and
+  `autoProgress` resets; a cancel after the first result applies none and
+  leaves every sidecar absent; two missing originals are skipped and counted;
+  an injected `autoMeasure` never sees more than `Library.autoConcurrency` in
+  flight; Esc (the Back command) cancels and the command is disabled meanwhile.
 - `AutoToneTests.swift` — Auto (`AutoTone`, `Library.autoTone`) on
   synthetic grays: a dark frame gets more than +0.5 EV and its median
   comes at least half way to `AutoTone.midTarget`; a frame with a third of

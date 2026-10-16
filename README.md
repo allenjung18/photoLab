@@ -72,7 +72,7 @@ in Xcode works too.
 | `K` | In the loupe, paint: arms the selected brush mask, or adds a new one; drag on the photo to paint, hold `⌥` at the start of a drag to erase; `K` again or `Esc` puts the brush down |
 | `[` / `]` | While the brush is armed, a smaller / larger brush (a quarter each step, Photo › Smaller Brush / Larger Brush) |
 | `O` | Show the selected mask as a red tint over the loupe photo (View › Show Mask Overlay); never in Before or an export |
-| `Esc` | Put the white-balance eyedropper down; else the brush; else a new mask's placement; else the straighten tool; else leave crop mode; else deselect the mask (its handles go); else back to the grid; in the grid, collapse the selection to the anchor |
+| `Esc` | Stop a running Auto batch (nothing is applied); else put the white-balance eyedropper down; else the brush; else a new mask's placement; else the straighten tool; else leave crop mode; else deselect the mask (its handles go); else back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
@@ -87,7 +87,7 @@ in Xcode works too.
 | `⌘F` | Search Photos: the search field at the left of the bar above the grid (from the loupe it goes back to the grid); every word typed must match a photo's name or one of its keywords, ignoring case and accents, on top of the filter; `Esc` clears it, `Return` leaves it; not remembered when you open another folder or album. While it has the focus every single-key shortcut (`P`, `X`, `0`–`5`, the arrows, `Esc`, `Return`…) types into it instead |
 | `⌘A` | Select All Photos (grid only) |
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
-| `⌘U` | Auto Tone: temperature and tint from the photo's average colour, then exposure, contrast, highlights, shadows, whites and blacks from its histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
+| `⌘U` | Auto Tone: temperature and tint from the photo's average colour, then exposure, contrast, highlights, shadows, whites and blacks from its histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot; a large selection shows "Auto n of N" with Cancel, and `Esc` or Cancel stops it with nothing applied |
 | `⇧⌘U` | Auto White Balance: temperature and tint only (or **Auto** beside White Balance in Color) |
 | `⇧⌘R` | Reset Photo (back to the original) |
 | `⌘'` | Create Virtual Copy: a second edit of the selected photo (grid or loupe), starting from its current one, listed right after it with a small number badge and captioned "<name> Copy 2"; **Photo › Remove Virtual Copy…** (also in a cell's right-click menu) deletes a copy's edit after a confirm and is not undoable. A copy is flagged, rated, synced, batch-edited and exported like any photo; its export is named `<name>-copy2.jpg` so it never lands on its master's; Save to Photos is off on a copy (Photos keeps one edit per photo) |

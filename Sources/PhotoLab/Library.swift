@@ -368,6 +368,30 @@ final class Library {
     private(set) var photosSave = PhotosSaveState.idle
     /// True while `autoTone` reads its photos (Auto is disabled meanwhile).
     private(set) var autoToning = false
+    /// Photos `autoTone` has finished reading (measured or skipped) of the
+    /// photos it was given; (0, 0) when no Auto is running.
+    private(set) var autoProgress: (done: Int, total: Int) = (0, 0)
+    /// How far the last `autoTone` got when it ended: photos read of those
+    /// given (all of them unless it was cancelled).
+    private(set) var autoLastRun: (done: Int, total: Int) = (0, 0)
+    /// The last Auto batch's outcome worth saying: photos skipped, or that
+    /// it was cancelled and applied nothing; nil when it needs no word.
+    private(set) var autoNote: String?
+    /// Set by `cancelAuto()`; read as each photo's result arrives.
+    @ObservationIgnored private var autoCancelled = false
+    /// Reads one photo for Auto: (original, its recipe, white balance
+    /// only) to the values to apply, nil when it cannot be read. Runs off
+    /// the main thread; a test replaces it to count calls in flight.
+    @ObservationIgnored var autoMeasure: @Sendable (URL, Recipe, Bool) -> [AdjustmentKind: Double]? = { url, recipe, whiteBalanceOnly in
+        guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
+        else { return nil }
+        guard whiteBalanceOnly else { return AutoTone.values(for: master, recipe: recipe) }
+        return WhiteBalance.auto(for: master, recipe: recipe).map {
+            [.temperature: $0.temperature, .tint: $0.tint]
+        }
+    }
+    /// Most photos Auto reads at once: 4, or half the processors if fewer.
+    static var autoConcurrency: Int { min(4, max(1, ProcessInfo.processInfo.activeProcessorCount / 2)) }
     /// Where collections are saved (`CollectionStore`); nil keeps every
     /// collection command off (a library made without one).
     let collectionStore: CollectionStore?
@@ -1554,39 +1578,74 @@ final class Library {
     /// (`Renderer.previewMaster` at `PreviewModel.masterPixelSize`, the
     /// loupe's own decode), never from a camera RAW's embedded first frame:
     /// that preview is the camera's rendering, and Auto on it would not
-    /// match the photo once the master replaced it. The decode runs off the
-    /// main thread, so a RAW still on its first frame simply takes the
-    /// master's time. A photo whose original cannot be read is skipped; a
-    /// source opened meanwhile drops the lot (`sync` skips photos it does
-    /// not list). `mask` `AutoTone.whiteBalanceMask` is Auto White Balance:
-    /// only temperature and tint, measured the same way.
+    /// match the photo once the master replaced it. The reads run off the
+    /// main thread, at most `autoConcurrency` at a time in a task group, and
+    /// their results are keyed by `Photo.ID`, so the order they finish in
+    /// never matters. `autoProgress` counts them. `cancelAuto()` stops it
+    /// and applies nothing (`autoNote` says so): all or nothing, never a
+    /// partial batch. A photo whose original cannot be read is skipped and
+    /// counted in `autoNote`; a source opened meanwhile drops the lot
+    /// (`sync` skips photos it does not list). The one `sync` at the end is
+    /// the only way the values are applied. `mask`
+    /// `AutoTone.whiteBalanceMask` is Auto White Balance: only temperature
+    /// and tint, measured the same way.
     @discardableResult
     func autoTone(_ ids: [Photo.ID], mask: SyncMask = AutoTone.mask) async -> Int {
         guard !autoToning, !ids.isEmpty else { return 0 }
         autoToning = true
-        defer { autoToning = false }
-        var sources: [(id: Photo.ID, source: Recipe)] = []
-        for id in ids {
-            guard let url = try? await originalFile(for: id) else { continue }
-            let recipe = recipe(for: id)
-            let whiteBalanceOnly = mask == AutoTone.whiteBalanceMask
-            let values = await Task.detached(priority: .userInitiated) { () -> [AdjustmentKind: Double]? in
-                guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
-                else { return nil }
-                guard whiteBalanceOnly else { return AutoTone.values(for: master, recipe: recipe) }
-                return WhiteBalance.auto(for: master, recipe: recipe).map {
-                    [.temperature: $0.temperature, .tint: $0.tint]
+        autoCancelled = false
+        autoNote = nil
+        autoProgress = (0, ids.count)
+        defer { autoToning = false; autoLastRun = autoProgress; autoProgress = (0, 0) }
+        let whiteBalanceOnly = mask == AutoTone.whiteBalanceMask
+        let measure = autoMeasure
+        let cap = Self.autoConcurrency
+        var measured: [Photo.ID: [AdjustmentKind: Double]] = [:]
+        var skipped = 0
+        let recipes = Dictionary(ids.map { ($0, recipe(for: $0)) }, uniquingKeysWith: { a, _ in a })
+        await withTaskGroup(of: (Photo.ID, [AdjustmentKind: Double]?).self) { group in
+            var next = 0
+            func start(_ id: Photo.ID) {
+                let recipe = recipes[id] ?? .neutral
+                group.addTask { [weak self] in
+                    guard let self, let url = try? await self.originalFile(for: id) else { return (id, nil) }
+                    let values = await Task.detached(priority: .userInitiated) {
+                        measure(url, recipe, whiteBalanceOnly)
+                    }.value
+                    return (id, values)
                 }
-            }.value
-            guard let values else { continue }
-            // The photo's own recipe underneath: a white balance Auto could
-            // not read stays as it is.
-            sources.append((id, AutoTone.applying(values, to: recipe)))
+            }
+            while next < min(cap, ids.count) { start(ids[next]); next += 1 }
+            for await (id, values) in group {
+                autoProgress = (autoProgress.done + 1, ids.count)
+                if let values { measured[id] = values } else { skipped += 1 }
+                if autoCancelled { group.cancelAll(); continue }
+                if next < ids.count { start(ids[next]); next += 1 }
+            }
+        }
+        if autoCancelled {
+            autoNote = "Auto cancelled: nothing changed (one batch, all or nothing)"
+            return 0
+        }
+        if skipped > 0 { autoNote = "Auto: \(skipped) photo\(skipped == 1 ? "" : "s") skipped" }
+        // The photo's own recipe underneath: a white balance Auto could
+        // not read stays as it is. In the order given, whatever finished first.
+        let sources = ids.compactMap { id in
+            measured[id].map { (id, AutoTone.applying($0, to: recipe(for: id))) }
         }
         // A drag left open would fold Auto into its step.
         closeOpenEdit()
         return sync(sources, mask: mask)
     }
+
+    /// Stops a running Auto: nothing is applied (`autoTone` returns 0).
+    func cancelAuto() {
+        guard autoToning else { return }
+        autoCancelled = true
+    }
+
+    /// Clears the Auto status line.
+    func dismissAutoNote() { autoNote = nil }
 
     /// Applies a preset to many photos as one batch: the preset's look (the
     /// kinds in `mask`, never geometry, which a preset does not carry) over

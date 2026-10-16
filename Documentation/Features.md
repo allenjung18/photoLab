@@ -1123,6 +1123,15 @@ redo, Reset, the render time and any sidecar error.
   one sidecar write per photo changed. The command (`AppCommand.Name.autoTone`)
   acts on `CommandContext.targets`, so in the grid it is every selected
   photo, each with its own values; it is disabled while `Library.autoToning`.
+  The photos are read as a cancellable job: at most `Library.autoConcurrency`
+  at once (4, or half of `ProcessInfo.activeProcessorCount` if fewer) in a
+  task group, each result keyed by `Photo.ID` so the order they finish in
+  never matters, counted in `Library.autoProgress` and shown as "Auto n of N"
+  with a Cancel button in `AutoBar` (above the export bar, for more than one
+  photo). Cancel or `Esc` (`Library.cancelAuto()`, first in the Back command)
+  applies nothing, one batch, all or nothing, and `Library.autoNote` says so;
+  a photo whose original cannot be read is skipped and counted there ("Auto:
+  2 photos skipped"). The one `sync` at the end is still the only apply.
 
 Writes: the photo's sidecar, through `setRecipe`, once per change and once
 per drag; the default recipe removes it.
