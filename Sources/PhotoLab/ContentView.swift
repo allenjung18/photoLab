@@ -64,6 +64,9 @@ struct ContentView: View {
             }
         }
         .background(HiddenShortcuts())
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if library.trashBannerShown, library.trashUndo != nil || library.trashError != nil { TrashBanner() }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if exports.state != .idle { ExportBar() }
         }
@@ -90,6 +93,13 @@ struct ContentView: View {
         } message: { _ in
             Text("Only the collection is deleted. Its photos and their edits stay in their folders.")
         }
+        .alert(library.trashRequest?.title ?? "", isPresented: trashBinding,
+               presenting: library.trashRequest) { request in
+            Button("Move to Trash", role: .destructive) { library.moveToTrash(request.targets) }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            Text(request.message)
+        }
         .sheet(isPresented: Binding(get: { imports?.sheetShown ?? false },
                                     set: { if !$0 { imports?.dismiss() } })) {
             if let imports { ImportSheet().environment(imports) }
@@ -100,6 +110,12 @@ struct ContentView: View {
     private var deleteCollectionBinding: Binding<Bool> {
         Binding(get: { library.deleteCollectionRequest != nil },
                 set: { if !$0 { library.deleteCollectionRequest = nil } })
+    }
+
+    /// The Move Rejected Photos to Trash… confirm is up while a request is pending.
+    private var trashBinding: Binding<Bool> {
+        Binding(get: { library.trashRequest != nil },
+                set: { if !$0 { library.trashRequest = nil } })
     }
 
     /// The toolbar picker's three segments.
@@ -277,6 +293,45 @@ struct GridView: View {
 /// The strip under the grid: how many photos it shows and the thumbnail
 /// size slider, bound to `AppSettings.gridThumbnailSize` like the Settings
 /// window's.
+/// Over the grid or the loupe after a Move Rejected Photos to Trash…: how
+/// many went (`TrashUndo.banner`) with Undo (`Library.undoMoveToTrash`), and
+/// any file that could not move or come back (`Library.trashError`). Its
+/// close button hides it; Edit › Undo Move to Trash stays until the next open.
+private struct TrashBanner: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "trash")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                if let undo = library.trashUndo {
+                    Text(undo.banner).font(.callout)
+                }
+                if let error = library.trashError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(4)
+                }
+            }
+            Spacer()
+            if library.trashUndo != nil {
+                Button("Undo") { library.undoMoveToTrash() }
+                    .help("Put the photos back where they were (Edit › Undo Move to Trash)")
+            }
+            Button { library.trashBannerShown = false } label: { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Close")
+                .help("Hide this banner; Edit › Undo Move to Trash still works until you open another source")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
 private struct ThumbnailSizeBar: View {
     @Environment(Library.self) private var library
 

@@ -561,6 +561,20 @@ not only the pass.
   `batchTargets` order, `{date}` names numbered by Add a number, the
   originals untouched. Shown to bite by counting `{seq}` from 0 (red in the
   token, padding, preview and export tests).
+- `TrashTests.swift` — Move Rejected Photos to Trash… over a fake
+  `FileTrasher` that moves into a temporary directory (never the real
+  Trash): only the rejects move whatever is selected, picks and unflagged
+  stay; a reject the filter hides moves too and `TrashRequest` names the
+  count and the first three names; each sidecar stays byte-identical and
+  every map drops the photo; a moved anchor goes to the next kept photo
+  (the last one to the one before); a failing file stays, is reported and
+  the rest move; Undo (the `undoTrash` command) puts the files back with
+  their recipe, flag and keywords, refuses a path taken since and leaves
+  that file in the fake Trash, and is gone after the next `open`; a
+  library with no trasher and an album of assets offer nothing; a
+  collection member moves, is counted missing and comes back; ⌘⌫ asks
+  first and a stale request moves nothing. Shown to bite by trashing every
+  batch target instead of only the rejects (30 failures in 9 tests).
 - `MapTests.swift` — `MapPins.group(_:cellDegrees:)` at two spans (a 12°
   span merges two nearby photos into one pin, in the order of their first
   photo, at their mean; a 0.012° span splits all three);
@@ -853,6 +867,9 @@ place the app writes is injected:
 - `CollectionStore(directory:)` and `Library(collections:)`: a temporary
   directory, never `CollectionStore.app`; a library made without one has
   no collections at all.
+- `Library(trasher:)`: `TrashTests`' fake `FileTrasher` moves into a
+  temporary directory; `LiveFileTrasher` (the real Trash) is the app's
+  alone, and a library made without one cannot move anything.
 - `Library(rememberFolder: false)`: the opened source and every choice stay
   out of UserDefaults (its `AppSettings` is not `persistent`);
   `Library(rememberFolder:defaults:)` and `AppSettings(defaults:)` take a

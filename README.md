@@ -2,7 +2,9 @@
 
 A Lightroom-style photo editor for the Mac: non-destructive adjustments you
 can toggle one by one, named presets, and batch apply to many photos at once.
-Native Swift, SwiftUI and Core Image. Originals are never written to.
+Native Swift, SwiftUI and Core Image. Originals are never written to; the
+one command that changes a file is Move Rejected Photos to Trash…, which
+moves a folder's rejects to the macOS Trash after a confirm, undoably.
 
 ## Run
 
@@ -76,6 +78,7 @@ in Xcode works too.
 | `⌘I` | Show or hide the Info section of the loupe panel (from the grid it opens the loupe with it shown; the choice is remembered) |
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
+| `⌘⌫` | Move Rejected Photos to Trash…: every rejected photo of the open folder or collection, shown by the filter or not, to the macOS Trash after a confirm that names the count and the first names. Each edit and its marks stay in `.photolab/`, so the Finder's **Put Back** restores the photo with them; the banner's **Undo** or **Edit › Undo Move to Trash** brings them back until you open another folder, album or collection. A file that cannot move stays and is named in the banner. Photos album photos are never offered |
 | `⌘K` | Keywords… on the selection: a sheet with a field that adds comma-separated keywords to every selected photo and each keyword already on any of them, with "all" or "n of N" and a remove button; not an undo step, and Reset leaves keywords |
 | `⌘F` | Search Photos: the search field at the left of the bar above the grid (from the loupe it goes back to the grid); every word typed must match a photo's name or one of its keywords, ignoring case and accents, on top of the filter; `Esc` clears it, `Return` leaves it; not remembered when you open another folder or album. While it has the focus every single-key shortcut (`P`, `X`, `0`–`5`, the arrows, `Esc`, `Return`…) types into it instead |
 | `⌘A` | Select All Photos (grid only) |
@@ -90,12 +93,12 @@ in Xcode works too.
 
 Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
 PhotoLab › Settings…): File (open, Open Collection, Open Recent, Delete
-Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
+Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Redo, Undo Move to Trash, the settings items, Select All
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…, Add
-to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush). A single-letter key (alone or with `⇧`) is written after its menu item's
+to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Move Rejected Photos to Trash…). A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
 
@@ -465,7 +468,10 @@ Everything the app writes, and nothing else:
   (signed with `PHOTOLAB_SIGN_IDENTITY`, default ad hoc; `swift build` puts
   debug builds under `.build/`).
 
-The original photo is never written to, under any of these.
+The original photo is never written to, under any of these. The one
+exception is **Photo › Move Rejected Photos to Trash…** (`⌘⌫`): it moves
+the rejected files themselves to the macOS Trash (`~/.Trash`), and leaves
+their sidecars in `.photolab/`.
 
 ## Design
 

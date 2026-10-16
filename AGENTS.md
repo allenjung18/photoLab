@@ -18,7 +18,11 @@ to run it, the timing tests, adding an adjustment).
 
 ## Rules
 
-- **Never write to a photo's original file.** Edits live in sidecar JSON
+- **Never write to a photo's original file.** The one exception (D-465):
+  Move Rejected Photos to Trash… moves a folder photo's rejected original
+  to the Trash and back, only through the injected `FileTrasher`
+  (`Library.moveToTrash`, `Library.undoMoveToTrash`), never a Photos asset
+  and never its sidecar. Edits live in sidecar JSON
   (`SidecarStore`, `<folder>/.photolab/<file>.json`, atomic; the file goes
   only when the recipe is the default and the photo has no flag or rating,
   a disabled-only edit keeps it); exports go to a separate output folder,
@@ -54,7 +58,8 @@ to run it, the timing tests, adding an adjustment).
   source per photo under the one tag). (Architecture 3, Batch.)
 - **Injected directories.** `PresetStore(directory:)`,
   `SidecarStore(folder:)`, `CollectionStore(directory:)` (through
-  `Library(collections:)`), `Library(rememberFolder:)`, `ExportQueue`'s
+  `Library(collections:)`), `Library(trasher:)` (a fake that moves into a
+  temp directory; never the real Trash), `Library(rememberFolder:)`, `ExportQueue`'s
   `Worker`, `remember:`, `photos:` (the `PhotosWriter`) and
   `stagingDirectory:`, `Thumbnails`' decoder and renderer, `PhotosAccess` (the
   `PhotoKitClient`, the sidecar and originals directories). Every test

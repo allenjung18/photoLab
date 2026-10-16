@@ -798,6 +798,11 @@ enter a `Recipe`, a `Preset` or a `SyncMask` (the types do not meet).
 list of photos and write each sidecar at once through the same `persist`
 that writes a recipe, so a reset keeps the flag and a flag keeps a default
 recipe's file. `PhotoFilter` (`Library.swift`) reads them for the grid.
+A reject is also what `Library.rejectedPhotos` collects for Move Rejected
+Photos to Trash…: the one path that changes an original, through the
+injected `FileTrasher` (`Trash.swift`; `Library(trasher:)`, the app's
+`LiveFileTrasher`), leaving the sidecar where it is (Features: Move rejects
+to the Trash).
 
 ### Keywords
 

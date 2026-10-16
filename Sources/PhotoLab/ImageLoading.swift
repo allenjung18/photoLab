@@ -197,6 +197,13 @@ final class Thumbnails: @unchecked Sendable {
     }
 
     func cached(_ key: Key) -> NSImage? { cache.object(forKey: CacheKey(key)) }
+
+    /// Drops the photo's plain entry and the entry of each recipe given (a
+    /// photo moved to the Trash, `Library.moveToTrash`): its cell is gone,
+    /// and a file put back at that path decodes afresh.
+    func forget(_ id: PhotoID, recipes: [Recipe] = []) {
+        for recipe in [Recipe.neutral] + recipes { cache.removeObject(forKey: CacheKey(Key(id, recipe: recipe))) }
+    }
     func cached(_ id: PhotoID, recipe: Recipe = .neutral) -> NSImage? { cached(Key(id, recipe: recipe)) }
     func cached(_ url: URL) -> NSImage? { cached(.file(url)) }
 

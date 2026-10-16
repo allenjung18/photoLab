@@ -367,6 +367,21 @@ final class Library {
     /// Sidecar writes made since launch (`persist`), so a test can say an
     /// edit was written once; never shown.
     @ObservationIgnored private(set) var sidecarWrites = 0
+    /// Moves files to the Trash and back (`FileTrasher`): the app passes
+    /// `LiveFileTrasher`, a test a fake over a temporary directory; nil
+    /// keeps Move Rejected Photos to Trash… off.
+    let trasher: (any FileTrasher)?
+    /// The Move Rejected Photos to Trash… confirm the window should show.
+    var trashRequest: TrashRequest?
+    /// The last move to the Trash, for Undo; nil after an undo, an `open`
+    /// or `closeSource`.
+    private(set) var trashUndo: TrashUndo?
+    /// The banner over the grid shows `trashUndo` (its own close button
+    /// hides it; Edit › Undo Move to Trash stays).
+    var trashBannerShown = false
+    /// What the last move or undo could not do (one line per file), for the
+    /// banner; the rest of the photos went ahead.
+    private(set) var trashError: String?
 
     private var store: SidecarStore?
     private var history: [Photo.ID: EditHistory] = [:]
@@ -393,8 +408,10 @@ final class Library {
     init(rememberFolder: Bool = true, defaults: UserDefaults = .standard,
          settings: AppSettings? = nil,
          captureDates: CaptureDates = CaptureDates(),
-         collections: CollectionStore? = nil) {
+         collections: CollectionStore? = nil,
+         trasher: (any FileTrasher)? = nil) {
         self.settings = settings ?? AppSettings(defaults: defaults, persistent: rememberFolder)
+        self.trasher = trasher
         self.captureDates = captureDates
         self.collectionStore = collections
         self.photoInfo = PhotoInfoStore(captureDates: captureDates)
@@ -486,6 +503,7 @@ final class Library {
         syncRequest = nil
         keywordsRequest = nil
         newCollectionRequest = nil
+        clearTrash()
         history = [:]
         sidecarError = nil
         whiteBalanceNote = nil
@@ -525,6 +543,7 @@ final class Library {
         syncRequest = nil
         keywordsRequest = nil
         newCollectionRequest = nil
+        clearTrash()
         history = [:]
         recipes = [:]
         marks = [:]
@@ -843,6 +862,130 @@ final class Library {
     private func setMarks(_ m: Marks, for id: Photo.ID) {
         if m.isEmpty { marks.removeValue(forKey: id) } else { marks[id] = m }
         persist(id)
+    }
+
+    // MARK: Move to Trash
+
+    /// Every rejected photo of the open source, visible or not, in sort
+    /// order: what Move Rejected Photos to Trash… acts on. Folder photos only
+    /// (a `FolderSource`, or a collection's members): a Photos album's are
+    /// never offered (D-465).
+    var rejectedPhotos: [Photo.ID] {
+        guard source is FolderSource || source is CollectionSource else { return [] }
+        return photos.filter { $0.fileURL != nil && marks(for: $0.id).flag == .reject }.map(\.id)
+    }
+
+    /// The command is on when there is a trasher and a rejected folder photo.
+    var canTrashRejects: Bool { trasher != nil && !rejectedPhotos.isEmpty }
+
+    /// Asks the window for the confirm over every rejected photo.
+    func requestTrashRejects() {
+        guard canTrashRejects else { return }
+        let ids = rejectedPhotos
+        trashRequest = TrashRequest(targets: ids, names: ids.map(name(for:)))
+    }
+
+    /// Moves `ids` to the Trash through `trasher`: only the ones still listed,
+    /// still rejected and files of a folder or a collection (a request made
+    /// before a mark changed moves nothing it no longer names). Each sidecar
+    /// stays in its `.photolab/`, so Put Back restores the edit and the marks.
+    /// A moved photo leaves `photos`, every map, the selection (a moved
+    /// anchor goes to the nearest kept visible photo after it, else before)
+    /// and the thumbnail cache. A file that fails stays, is named in
+    /// `trashError`, and the rest go ahead. Returns how many moved.
+    @discardableResult
+    func moveToTrash(_ ids: [Photo.ID]) -> Int {
+        guard let trasher else { return 0 }
+        let eligible = Set(rejectedPhotos)
+        closeOpenEdit()
+        var moved: [TrashedPhoto] = []
+        var failures: [String] = []
+        for id in ids where eligible.contains(id) {
+            guard let photo = photos.first(where: { $0.id == id }), let url = photo.fileURL else { continue }
+            do {
+                moved.append(TrashedPhoto(photo: photo, trashedURL: try trasher.trash(url)))
+            } catch {
+                failures.append("Could not move \(photo.name) to the Trash: \(error.localizedDescription)")
+            }
+        }
+        trashError = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        guard !moved.isEmpty else { trashBannerShown = !failures.isEmpty; return 0 }
+        let gone = Set(moved.map(\.photo.id))
+        // The anchor's successor is found while the anchor is still listed.
+        var anchor = selection
+        if let a = anchor, gone.contains(a) {
+            let shown = Set(visiblePhotos.map(\.id)).subtracting(gone)
+            let pos = selectedIndex ?? 0
+            let kept = photos.indices.filter { shown.contains(photos[$0].id) }
+            anchor = (kept.first { $0 > pos } ?? kept.last { $0 < pos }).map { photos[$0].id }
+        }
+        let keptSelection = selectedIDs.subtracting(gone)
+        for id in gone {
+            Thumbnails.shared.forget(id, recipes: [recipe(for: id)])
+            recipes.removeValue(forKey: id)
+            marks.removeValue(forKey: id)
+            keywords.removeValue(forKey: id)
+            history.removeValue(forKey: id)
+            unreadableSidecars.remove(id)
+        }
+        photos.removeAll { gone.contains($0.id) }
+        if anchor != selection { selection = anchor }
+        if let anchor { selectedIDs = keptSelection.union([anchor]) } else { selectedIDs = [] }
+        if selection == nil { loupe = false }
+        reconcileSelection()
+        missingMembers = (source as? CollectionSource)?.missing.count ?? 0
+        trashUndo = TrashUndo(photos: moved)
+        trashBannerShown = true
+        return moved.count
+    }
+
+    /// Edit › Undo Move to Trash and the banner's Undo: each photo of the
+    /// last move goes back from where the Trash put it to its own path,
+    /// unless a file is there now (refused, named in `trashError`, left in
+    /// the Trash), and is listed again with its edit, marks and keywords read
+    /// from its sidecar, which never moved (the LOAD path, as `open`). The
+    /// selection stays. Returns how many came back.
+    @discardableResult
+    func undoMoveToTrash() -> Int {
+        guard let undo = trashUndo, let trasher, let source else { return 0 }
+        trashUndo = nil
+        var back: [Photo] = []
+        var failures: [String] = []
+        for item in undo.photos {
+            guard let original = item.photo.fileURL else { continue }
+            do {
+                if FileManager.default.fileExists(atPath: original.path) {
+                    throw TrashError.pathTaken(original.lastPathComponent)
+                }
+                try trasher.restore(item.trashedURL, to: original)
+                back.append(item.photo)
+            } catch {
+                failures.append("Could not put \(item.photo.name) back: \(error.localizedDescription)")
+            }
+        }
+        trashError = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        trashBannerShown = !failures.isEmpty
+        guard !back.isEmpty else { return 0 }
+        let listed = Set(photos.map(\.id))
+        let added = back.filter { !listed.contains($0.id) }
+        let loaded = source.loadSidecars(for: added.map(\.id))
+        for (id, r) in loaded.recipes { recipes[id] = r }
+        for (id, m) in loaded.marks { marks[id] = m }
+        for (id, k) in loaded.keywords { keywords[id] = k }
+        unreadableSidecars.formUnion(loaded.unreadable)
+        photos += added
+        resort()
+        missingMembers = (source as? CollectionSource)?.missing.count ?? 0
+        reconcileSelection()
+        return back.count
+    }
+
+    /// Drops the undo and the banner (a new source).
+    private func clearTrash() {
+        trashRequest = nil
+        trashUndo = nil
+        trashError = nil
+        trashBannerShown = false
     }
 
     // MARK: Keywords

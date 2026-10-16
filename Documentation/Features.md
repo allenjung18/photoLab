@@ -317,6 +317,51 @@ default and the photo is unmarked (and has no keywords, see Keywords), so a flag
 sidecar (`SidecarStore.save(_:marks:keywords:for:name:now:)`), and a recipe-only write
 keeps whatever marks the file already held.
 
+## Move rejects to the Trash
+
+The one feature that changes an original (D-465 allows it for folder
+photos only): **Photo › Move Rejected Photos to Trash…** **⌘⌫**
+(`AppCommand.trashRejects`, enabled by `Library.canTrashRejects`).
+
+- **What it takes.** `Library.rejectedPhotos`: every photo of the open
+  `FolderSource` or `CollectionSource` whose flag is reject and whose id is
+  a file, in sort order, whether the filter or the search shows it or not
+  (not `batchTargets`). A Photos album's photos are never offered, and a
+  library made without a `FileTrasher` (`Library(trasher:)`, nil in every
+  test that does not pass a fake) has the command off.
+- **The confirm.** `Library.requestTrashRejects()` sets
+  `Library.trashRequest`, a `TrashRequest` (`Trash.swift`) whose `title`
+  names the count and whose `message` the first
+  `TrashRequest.namedCount` names ("and n more") and says the edits stay
+  for Put Back; `ContentView` shows it as an alert with **Move to Trash**
+  (destructive) and **Cancel**.
+- **The move.** `Library.moveToTrash(_:)` moves each target that is still
+  listed and still rejected through `Library.trasher`
+  (`FileTrasher.trash(_:)`; the app's `LiveFileTrasher` is
+  `FileManager.trashItem(at:resultingItemURL:)`, so the Finder's Put Back
+  knows the path). The sidecar is not touched, so a photo put back opens
+  with its edit, marks and keywords. A moved photo leaves `photos`,
+  `recipes`, `marks`, `keywords`, the undo history and the thumbnail cache
+  (`Thumbnails.forget(_:recipes:)`); a moved anchor goes to the nearest
+  kept visible photo after it, else before it, else none (the loupe
+  closes), and the rest of the selection keeps what stayed. A file the
+  trasher refuses stays listed and is named in `Library.trashError`; the
+  others go ahead. A collection's moved member is counted missing
+  (`Library.missingMembers`), never dropped from the collection.
+- **Undo.** `Library.trashUndo` (`TrashUndo`) holds the last move until the
+  next `open` or `closeSource` (`clearTrash`). `TrashBanner` (over the
+  window, `Library.trashBannerShown`) says "Moved n photos to the Trash"
+  with **Undo**, and **Edit › Undo Move to Trash**
+  (`AppCommand.undoTrash`) does the same: `Library.undoMoveToTrash()` moves
+  each file back from where the Trash put it (`FileTrasher.restore`),
+  refusing one whose path holds a file now (`TrashError.pathTaken`, left in
+  the Trash and named in the banner), and lists it again with its recipe,
+  marks and keywords read from its sidecar (`PhotoSource.loadSidecars`, the
+  load path). It is not an edit: ⌘Z never takes it back.
+
+Writes: the rejected originals, moved to the Trash and back; nothing else
+(no sidecar, no collection file).
+
 ## Keywords
 
 Words on a photo, kept with the marks and like them not an edit.
@@ -1225,7 +1270,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
     while the source has photos.
   - Edit, replacing `.undoRedo`: **Undo** **⌘Z** and **Redo** **⇧⌘Z**
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
-    unused).
+    unused), then **Undo Move to Trash** (`Library.undoMoveToTrash()`,
+    enabled while `Library.trashUndo` holds a move; see Move rejects to the
+    Trash).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
   - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Map** **⌥⌘M**
     (`Library.showMap`, toggled; see Map), **Zoom to 1:1** **Z**
@@ -1255,7 +1302,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     Radial Gradient** **⇧M** and **Brush** **K** (`Library.addMask(_:for:)`
     on the loupe photo, loupe only; Brush is checked while
     `Library.maskBrushArmed` and, checked, puts the brush down; see
-    Adjustments panel, Masks).
+    Adjustments panel, Masks). Last, **Move Rejected Photos to Trash…**
+    **⌘⌫** (`Library.requestTrashRejects()`; see Move rejects to the Trash).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
   background, so they work whatever has focus in the window. **G** leaves the loupe and the map; **E** and **Return** enter it

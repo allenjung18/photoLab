@@ -38,7 +38,7 @@ struct CommandContext {
 struct AppCommand: Identifiable {
     enum Name: String, CaseIterable {
         case openFolder, openPhotos, deleteCollection, importCard, export, saveToPhotos
-        case undo, redo
+        case undo, redo, undoTrash
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
@@ -47,6 +47,7 @@ struct AppCommand: Identifiable {
         case crop, whiteBalance, autoTone, resetPhoto, keywords, removeFromCollection
         case newCollection
         case newLinearMask, newRadialMask, brushMask
+        case trashRejects
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
@@ -197,6 +198,12 @@ struct AppCommand: Identifiable {
                    isEnabled: { $0.library.canUndo }, perform: { $0.library.undo() }),
         AppCommand(name: .redo, title: "Redo", key: "z", modifiers: [.command, .shift], placement: .undoRedo,
                    isEnabled: { $0.library.canRedo }, perform: { $0.library.redo() }),
+        // The last Move Rejected Photos to Trash… taken back: the files come
+        // back from the Trash and the photos are listed again, until the next
+        // open (`Library.undoMoveToTrash`). Not an edit: ⌘Z never does it.
+        AppCommand(name: .undoTrash, title: "Undo Move to Trash", key: nil, placement: .undoRedo, section: 1,
+                   isEnabled: { $0.library.trashUndo != nil },
+                   perform: { $0.library.undoMoveToTrash() }),
         // Copy / paste a photo's settings; select every photo in the grid.
         AppCommand(name: .copySettings, title: "Copy Settings", key: "c", modifiers: [.command, .shift],
                    placement: .pasteboard,
@@ -371,6 +378,14 @@ struct AppCommand: Identifiable {
                            lib.addMask(.brush, for: id)
                        }
                    }),
+        // Every rejected photo of the open folder or collection, visible or
+        // not, to the macOS Trash after a confirm (`TrashRequest`); the one
+        // command that changes an original (D-465). Edit › Undo Move to Trash
+        // takes it back.
+        AppCommand(name: .trashRejects, title: "Move Rejected Photos to Trash…", key: .delete,
+                   placement: .photo, section: 6,
+                   isEnabled: { $0.library.canTrashRejects },
+                   perform: { $0.library.requestTrashRejects() }),
 
         // Sort By: the key (one checked), then the direction. No keys.
         sort(.captureDate, name: .sortCaptureDate),
