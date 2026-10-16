@@ -880,14 +880,14 @@ menu's title ("None", the name, or "<name> (edited)").
 one injected `UserDefaults`: the Settings window's `gridThumbnailSize`,
 `previewQuality` and `reopenLastSource`, the per-kind sort (`sort(for:)`,
 `setSort(_:for:)`), `showFilmstrip`, `showInfo` and `showHistory`, `lastSource`
-(a folder, an album or a collection, `LastSource`), `recents`, and the export sheet's `exportFolder`, `exportOptions`,
+(a folder, an album or a collection, `LastSource`), `recents`, the export sheet's `exportFolder`, `exportOptions`,
 `exportAlbum`, `exportTarget` and `exportPreset` (the last picked export
-preset's name). The keys (`AppSettings.Key`) are the
+preset's name), and the import sheet's `importRoot`. The keys (`AppSettings.Key`) are the
 strings earlier builds wrote, so nothing saved is lost. It is
 `@Observable`: the grid, the loupe canvas and the Settings window read it
 and redraw when it changes. With `persistent: false` it reads nothing and
 writes nothing. The app makes one (`PhotoLabApp`) and passes it to
-`Library(settings:)` and `ExportQueue(settings:)`.
+`Library(settings:)`, `ExportQueue(settings:)` and `Importer(settings:)`.
 
 ### `ExportTarget`
 
@@ -1119,6 +1119,27 @@ one photo:
 Steps 3 to 5 are `Exporter.write(_:recipe:to:options:renderer:)`, which a
 Save to Photos also calls for the JPEG PhotoKit asks for (section 2,
 Adjustment data).
+
+### Import
+
+The one path that writes photo files the user did not export, and it
+writes only under the import root. `ImportPlan.make(source:root:captureDate:)`
+(`Import.swift`) walks the source (hidden entries and package contents
+skipped), takes every regular file whose type conforms to `public.image`
+(so a RAW+JPEG pair is two items) and counts the rest in `otherFiles`; each
+goes to `<root>/YYYY/YYYY-MM-DD/<name>` by `CaptureDates.read` (the sort's
+rule, read only, unchanged), or `<root>/Undated/` when no date can be read.
+Where it would land, a file of the same name AND byte size
+(`ImportPlan.sizeOnDisk`) makes it `already`; another size moves it on to
+`ImportPlan.numbered` (`<stem> 2.<ext>`, `<stem> 3.<ext>` …), each checked
+the same way, as is a name another file of the same run took. `Importer`
+copies `copies` in order like `ExportQueue` (a main-actor task, each file
+on a detached task, Cancel after the file in flight, one `Failure` per file
+that throws) through `Importer.copy(_:to:)`: `copyItem` to a hidden
+`.<name>.partial` beside the destination, then `moveItem`, which fails
+rather than replace a file; the partial is removed on every failure. The
+source is only read. The capture-date reader, the `VolumeLister`, the
+ejector and the copier are injected; every test passes temporary folders.
 
 ## 5. The picture
 

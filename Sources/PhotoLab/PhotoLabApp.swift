@@ -3,11 +3,12 @@ import AppKit
 
 @main
 struct PhotoLabApp: App {
-    /// The one `AppSettings` (UserDefaults.standard): the library and the
-    /// export queue remember into it, and the Settings window edits it.
+    /// The one `AppSettings` (UserDefaults.standard): the library, the
+    /// export queue and the importer remember into it, and the Settings window edits it.
     @State private var library: Library
     @State private var presets = PresetLibrary()
     @State private var exports: ExportQueue
+    @State private var imports: Importer
     /// The launch open runs once: a window re-created later (the last one
     /// closed, then the Dock icon) must not reopen the argument and wipe the
     /// selection and history.
@@ -17,6 +18,7 @@ struct PhotoLabApp: App {
         let settings = AppSettings()
         _library = State(initialValue: Library(settings: settings, collections: .app))
         _exports = State(initialValue: ExportQueue(settings: settings))
+        _imports = State(initialValue: Importer(settings: settings))
         // Running from `swift run` has no bundle; make the process a real
         // foreground app so the window and menu bar appear.
         NSApplication.shared.setActivationPolicy(.regular)
@@ -28,6 +30,7 @@ struct PhotoLabApp: App {
                 .environment(library)
                 .environment(presets)
                 .environment(exports)
+                .environment(imports)
                 .frame(minWidth: 900, minHeight: 600)
                 .onAppear {
                     NSApp.activate(ignoringOtherApps: true)
@@ -96,6 +99,6 @@ struct PhotoLabApp: App {
     }
 
     private var context: CommandContext {
-        CommandContext(library: library, presets: presets, exports: exports)
+        CommandContext(library: library, presets: presets, exports: exports, imports: imports)
     }
 }

@@ -549,6 +549,26 @@ not only the pass.
   toggles the map, Grid leaves it, an open resets it. No test builds the
   `Map` view. Shown to bite by keeping only the first photo of a cell
   (6 failures in 2 tests).
+- `ImportTests.swift` — import from a card, on a temporary fake card
+  (`DCIM/100MSDCF` with JPEGs at injected capture dates, a RAW+JPEG pair,
+  an `.MP4`, an `.XMP`, a nested folder, a hidden `._` file): the dated
+  layout with videos and other files counted, the EXIF date of a real
+  JPEG, an undated file; a second import skips every photo as already
+  imported; same name and another size numbered with the file there
+  untouched (and that copy skipped next time); two names on one day
+  numbered; a run copies byte for byte and leaves the card's tree
+  byte-identical (bytes and modification dates); Cancel after the file in
+  flight leaves one file and no `.partial`; a copy onto an existing file
+  throws, overwrites nothing and leaves no partial; the common-folder rule
+  (day, year, root, undated); Open opens it through `Library.open`;
+  `CardVolumes.list` over a fake `VolumeLister` keeps only removable or
+  ejectable volumes with a `DCIM` folder (a stick without one and a fixed
+  disk with one are left out, an unreadable one listed); the permission
+  error test; the sheet's listing picks the fake card, the run never
+  ejects and Eject ejects once; the root defaults to `~/Pictures/PhotoLab`
+  and is remembered; ⇧⌘I opens the sheet. No test lists or reads a real
+  volume. Shown to bite by a duplicate check that ignores the size (3
+  failures in 1 test).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows

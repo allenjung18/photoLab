@@ -97,7 +97,7 @@ final class CommandsTests: XCTestCase {
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos, .deleteCollection])
         XCTAssertEqual(AppCommand.items(in: .collection).map(\.name), [.newCollection])
-        XCTAssertEqual(AppCommand.items(in: .importExport).map(\.name), [.export, .saveToPhotos])
+        XCTAssertEqual(AppCommand.items(in: .importExport).map(\.name), [.importCard, .export, .saveToPhotos])
         XCTAssertEqual(AppCommand.items(in: .undoRedo).map(\.name), [.undo, .redo])
         XCTAssertEqual(AppCommand.items(in: .pasteboard).map(\.name),
                        [.copySettings, .pasteSettings, .syncSettings, .selectAll, .search])

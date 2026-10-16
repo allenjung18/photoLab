@@ -47,8 +47,8 @@ enum LastSource: Equatable, Sendable {
 /// Every value PhotoLab keeps between launches, over one injected
 /// `UserDefaults`: the Settings window's choices (grid thumbnail size,
 /// preview quality, reopen the last source, the sort per source kind), the
-/// view toggles (filmstrip, Info, History), the last source and Open Recent, and the
-/// export sheet's last choices. The key strings are the ones earlier builds
+/// view toggles (filmstrip, Info, History), the last source and Open Recent, the
+/// export sheet's last choices and the import root. The key strings are the ones earlier builds
 /// wrote (`Key`), so a saved value is read back as it was.
 ///
 /// `persistent: false` (tests, a `Library(rememberFolder: false)`) reads
@@ -78,6 +78,8 @@ final class AppSettings {
         static let exportTarget = "exportTarget"
         /// The export sheet's last picked preset name (`ExportPresetStore`).
         static let exportPreset = "exportPreset"
+        /// The import sheet's destination root (`Importer.root`).
+        static let importRoot = "importRoot"
         /// Developer only (`DeveloperInfo.showTimings`), never in the window.
         static let showTimings = "showTimings"
     }
@@ -234,6 +236,12 @@ final class AppSettings {
     var exportPreset: String? {
         get { persistent ? defaults.string(forKey: Key.exportPreset) : nil }
         set { if persistent { defaults.set(newValue, forKey: Key.exportPreset) } }
+    }
+    /// The import sheet's destination root, as a path; nil until it is
+    /// changed (`Importer.defaultRoot`, ~/Pictures/PhotoLab).
+    var importRoot: String? {
+        get { persistent ? defaults.string(forKey: Key.importRoot) : nil }
+        set { if persistent { defaults.set(newValue, forKey: Key.importRoot) } }
     }
     var exportOptions: ExportOptions? {
         get {

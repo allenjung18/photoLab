@@ -12,8 +12,8 @@ no source is open (`Library.source` is nil), the loupe while `Library.loupe`
 is on and a photo is selected, the map while `Library.showMap` is on, the
 grid otherwise; a toolbar with Open Folder,
 Open Photos Library (disabled without an app bundle) and a Grid / Loupe / Map picker; the hidden keyboard shortcuts; the export bar at
-the bottom when a run is going; and three sheets, Sync, Export and Open
-Photos Library. The
+the bottom when a run is going; and the sheets Sync, Export, Open
+Photos Library and Import. The
 title is the source's name (the folder's, or the album's), the subtitle "n of N" in the loupe (with the
 photo's flag and stars when it has them) and "N photos · n selected" in the
 grid; under a filter or a search (`Library.isNarrowed`) both count the photos shown, "n of N shown".
@@ -1045,6 +1045,47 @@ atomic write, a different name on the same file refused
 (or whose `version` is above `ExportPreset.currentVersion`) moved aside by
 `UnreadableBackup.moveAside` first; a delete removes that one file.
 
+## Import
+
+`ImportSheet` (`ImportSheet.swift`) over the app's one `Importer`
+(`Import.swift`), shown by File › Import from Card… **⇧⌘I**
+(`AppCommand` `.importCard`, `Importer.request()`, disabled while a run is
+going); `ContentView` reads the `Importer` from the environment as an
+optional, so a view built without one has no import sheet.
+
+- **From**: `Importer.refresh()` runs `CardVolumes.list(_:)` off the main
+  thread over the injected `VolumeLister` (`LiveVolumeLister`:
+  `FileManager.mountedVolumeURLs` with `volumeIsRemovable`,
+  `volumeIsEjectable` and the localized name). A volume that is removable
+  or ejectable and whose top level holds a `DCIM` folder (any case) is a
+  `Card`; one whose top level cannot be read is listed in
+  `CardVolumes.Listing.unreadable` with its error, and a permission refusal
+  (`CardVolumes.isPermissionError`) adds **Open System Settings**
+  (`ImportPanel.openPrivacySettings`, Privacy & Security › Files and
+  Folders). The first card is picked; **Refresh** lists again; **Choose
+  Folder…** (`ImportPanel.chooseSource`) picks any folder
+  (`ImportSource.folder`).
+- **Into**: `Importer.root`, `Importer.defaultRoot` (`~/Pictures/PhotoLab`)
+  until **Change…** (`ImportPanel.chooseRoot`, `Importer.setRoot(_:)`),
+  which remembers it as `AppSettings.importRoot`.
+- **The count**: each pick re-plans off the main thread
+  (`ImportPlan.make(source:root:captureDate:)`, a newer pick wins) and
+  `ImportSheet.summaryLine(_:)` shows "n new · m already imported · k other
+  files skipped".
+- **Import** (`Importer.start()`) copies `ImportPlan.copies` one after the
+  other with "Importing n of N", the file in flight and **Cancel**
+  (`Importer.cancel()`, after the file in flight). When it ends: the
+  result line and the first failures; **Eject** for a card
+  (`Importer.eject()`, the injected ejector, `NSWorkspace.unmountAndEjectDevice`
+  in the app; never called by the run); **Open** (`Importer.open(in:)`:
+  `Library.open` on `Importer.openFolder`, the `ImportPlan.commonFolder(of:root:)`
+  of what was copied and what was already there); **Done**.
+
+Writes: the copied files under the root, each through
+`Importer.partialURL(for:)` (`.<name>.partial`) moved into place by
+`Importer.copy(_:to:)`, which never replaces a file; the `importRoot` key.
+Nothing on the source is written.
+
 ## Settings
 
 `SettingsView` (`SettingsView.swift`), the window of SwiftUI's `Settings`
@@ -1073,10 +1114,11 @@ remembered.
 
 `AppSettings` (`Settings.swift`) is the one store for everything kept
 between launches: these four, the filmstrip and Info toggles, the last
-source and Open Recent, and the export sheet's last choices, each under the
+source and Open Recent, the export sheet's last choices and the import
+root, each under the
 key earlier builds wrote (`AppSettings.Key`), so an upgrade loses no saved
-value. `PhotoLabApp` makes one and hands it to `Library(settings:)` and
-`ExportQueue(settings:)`; a `Library(rememberFolder: false)` gets one that
+value. `PhotoLabApp` makes one and hands it to `Library(settings:)`,
+`ExportQueue(settings:)` and `Importer(settings:)`; a `Library(rememberFolder: false)` gets one that
 is not `persistent` (reads and writes nothing).
 
 Writes: those keys in UserDefaults, nothing else.
@@ -1086,8 +1128,8 @@ Writes: those keys in UserDefaults, nothing else.
 One table defines every key: `AppCommand.all` (`Commands.swift`), each
 entry a title, a key and its modifiers, a placement (the menu group it sits
 in, or `keysOnly`), `isEnabled` and `perform` over a `CommandContext` (the
-`Library`, plus the `PresetLibrary` and `ExportQueue` for Save Preset and
-Export). The menus and the hidden shortcuts are both built from it, so no
+`Library`, plus the `PresetLibrary`, `ExportQueue` and `Importer` for Save
+Preset, Export and Import from Card). The menus and the hidden shortcuts are both built from it, so no
 key is typed anywhere else; the README's Keys table is the user's list.
 
 - **Bare keys stay off the menus.** A key with modifiers is bound on its
@@ -1116,7 +1158,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     Collection** (`OpenCollectionMenu`) and **Open Recent**
     (`OpenRecentMenu`), then **Delete Collection…** (section 1 of
     `.newItem`, drawn after the two submenus through `CommandItems`'
-    `sections`) replace `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
+    `sections`) replace `.newItem`; **Import from Card…** **⇧⌘I** (`Importer.request()`), then
+    after a divider **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
     `batchTargets`, disabled with nothing targeted or a run going) and
     **Save to Photos** (`Library.saveToPhotos()`, enabled by
     `Library.canSaveToPhotos`) replace `.importExport`.

@@ -3,6 +3,9 @@ import SwiftUI
 struct ContentView: View {
     @Environment(Library.self) private var library
     @Environment(ExportQueue.self) private var exports
+    /// Optional: a view built without the importer (the snapshot harness)
+    /// has no import sheet.
+    @Environment(Importer.self) private var imports: Importer?
     @Environment(\.hasBundle) private var hasBundle
 
     var body: some View {
@@ -86,6 +89,10 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Only the collection is deleted. Its photos and their edits stay in their folders.")
+        }
+        .sheet(isPresented: Binding(get: { imports?.sheetShown ?? false },
+                                    set: { if !$0 { imports?.dismiss() } })) {
+            if let imports { ImportSheet().environment(imports) }
         }
     }
 

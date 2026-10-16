@@ -84,12 +84,13 @@ in Xcode works too.
 | `⇧⌘R` | Reset Photo (back to the original) |
 | `⇧⌘P` | Save Preset… (in the loupe) |
 | `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
+| `⇧⌘I` | Import from Card… (a card's photos, or any folder's, copied into `~/Pictures/PhotoLab` by capture date) |
 | `⇧⌘E` | Export… (the grid's selection, or the loupe's photo) |
 | `⌘,` | Settings… (thumbnail size, preview quality, reopen at launch, sort) |
 
 Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
 PhotoLab › Settings…): File (open, Open Collection, Open Recent, Delete
-Collection…, Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
+Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
@@ -358,6 +359,30 @@ slider move: one sidecar per photo, written at once, and the whole batch is
 **one undo step**: `⌘Z` on any photo of the batch takes them all back
 (a photo you edited again since keeps its later edit; undo that first).
 
+## Import
+
+**File › Import from Card…** (`⇧⌘I`) lists the mounted cards: every
+removable or ejectable volume (an SD card in a reader, a camera that mounts
+as a disk) with a `DCIM` folder, with Refresh to list them again; **Choose
+Folder…** imports any other folder instead. Before anything is copied the
+sheet says how many photos are new, how many are already imported and how
+many other files (videos, sidecars) are skipped. Every photo goes to
+`<root>/YYYY/YYYY-MM-DD/<name>` by its capture date (the EXIF date the
+photo was taken, else the file's creation date, else its modification
+date), the root `~/Pictures/PhotoLab` unless you change it in the sheet
+(remembered). A RAW+JPEG pair copies both. A file of the same name and size
+already there is already imported and skipped; same name, another size is
+copied as `<name> 2.<ext>`. Nothing is ever overwritten, and the card is
+only read: nothing on it is moved, renamed or deleted. Cancel stops after
+the file being copied. When it ends, **Eject** ejects the card (never
+automatically) and **Open** opens the imported photos' folder (their day,
+else their year, else the root).
+
+The first time PhotoLab reads a card macOS asks once whether it may access
+files on a removable volume (and may ask again after a rebuild of an ad-hoc
+signed bundle). If that was refused, the sheet shows the card as unreadable
+with **Open System Settings** (Privacy & Security › Files and Folders).
+
 ## On disk
 
 Everything the app writes, and nothing else:
@@ -405,7 +430,11 @@ Everything the app writes, and nothing else:
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,
   metadata, watermark) and the last picked export preset's name, so the
-  next export sheet opens with them.
+  next export sheet opens with them, and the import root once changed.
+- **Imports** — the photos you import, under the import root
+  (`~/Pictures/PhotoLab` unless changed) in `YYYY/YYYY-MM-DD/` folders,
+  each copied through a hidden `.<name>.partial` file and moved into place
+  when complete. The card is never written.
 - **Exports** — the files you ask for, in the folder you choose, written
   through a hidden partial file and moved into place when complete. An
   export to Photos renders each file into `$TMPDIR/PhotoLab-export/<run>/`,

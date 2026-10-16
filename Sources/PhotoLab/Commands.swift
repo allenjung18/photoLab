@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// What a command acts on: the library, plus the preset and export stores
-/// for the two commands that need them (Save Preset, Export). Tests build it
-/// over a library alone.
+/// and the importer for the commands that need them (Save Preset, Export,
+/// Import from Card). Tests build it over a library alone.
 @MainActor
 struct CommandContext {
     let library: Library
     var presets: PresetLibrary? = nil
     var exports: ExportQueue? = nil
+    var imports: Importer? = nil
     /// A context menu on one photo pins what the commands act on: the
     /// targets (`Library.contextTargets(for:)`) and the one photo the
     /// single-photo commands (Copy Settings, Reset Photo) take. Nil for the
@@ -36,7 +37,7 @@ struct CommandContext {
 @MainActor
 struct AppCommand: Identifiable {
     enum Name: String, CaseIterable {
-        case openFolder, openPhotos, deleteCollection, export, saveToPhotos
+        case openFolder, openPhotos, deleteCollection, importCard, export, saveToPhotos
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
@@ -167,10 +168,16 @@ struct AppCommand: Identifiable {
                    perform: { c in
                        if let open = c.library.openCollection { c.library.requestDeleteCollection(open) }
                    }),
+        // The photos on a card (or any folder) copied into the dated import
+        // tree: the import sheet (Import.swift).
+        AppCommand(name: .importCard, title: "Import from Card…", key: "i", modifiers: [.command, .shift],
+                   placement: .importExport,
+                   isEnabled: { $0.imports?.isRunning != true },
+                   perform: { $0.imports?.request() }),
         // Export the selection (one photo in the loupe, the multi-selection
         // in the grid): the options sheet, then the queue.
         AppCommand(name: .export, title: "Export…", key: "e", modifiers: [.command, .shift],
-                   placement: .importExport,
+                   placement: .importExport, section: 1,
                    dynamicTitle: { c in
                        let n = c.targets.count
                        return n > 1 ? "Export \(n) Photos…" : "Export…"
@@ -180,7 +187,7 @@ struct AppCommand: Identifiable {
         // The selected photo's edit written into Photos itself (a Photos
         // album's edited photo only): Photos shows it and can revert it; the
         // export above makes a new asset instead.
-        AppCommand(name: .saveToPhotos, title: "Save to Photos", key: nil, placement: .importExport,
+        AppCommand(name: .saveToPhotos, title: "Save to Photos", key: nil, placement: .importExport, section: 1,
                    isEnabled: { $0.library.canSaveToPhotos },
                    perform: { c in Task { await c.library.saveToPhotos() } }),
 
