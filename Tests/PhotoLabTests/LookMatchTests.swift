@@ -80,6 +80,9 @@ final class LookMatchTests: XCTestCase {
             XCTAssertTrue(kind.range.contains(values[kind]!), "\(kind) inside its range")
             let s = LookMatch.step(of: kind)
             XCTAssertEqual(values[kind]! / s, (values[kind]! / s).rounded(), accuracy: 1e-9, "\(kind) on its slider grid")
+            let perUnit = (1 / s).rounded()
+            XCTAssertEqual(values[kind]!, (values[kind]! * perUnit).rounded() / perUnit,
+                           "\(kind) exactly as AutoTone rounds it, no float noise")
         }
     }
 

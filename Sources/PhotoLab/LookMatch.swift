@@ -150,10 +150,12 @@ enum LookMatch {
 
         var out = search.point
         for pair in gradePairs where out[pair.sat]! == 0 { out[pair.hue] = pair.hue.neutral }
-        // `+ 0` turns a -0 into 0 for the sidecar; rounding drops float noise.
+        // `+ 0` turns a -0 into 0 for the sidecar.
+        // Divided by the steps per unit, as `AutoTone` rounds exposure
+        // (`* 20 / 20`): `3 * 0.05` is 0.15000000000000002, `3 / 20` is 0.15.
         for kind in kinds {
-            let s = step(of: kind)
-            out[kind] = ((out[kind]! / s).rounded() * s) + 0
+            let perUnit = (1 / step(of: kind)).rounded()
+            out[kind] = ((out[kind]! * perUnit).rounded() / perUnit) + 0
         }
         return out
     }
