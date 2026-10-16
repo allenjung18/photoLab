@@ -93,7 +93,7 @@ final class CommandsTests: XCTestCase {
         let photo = AppCommand.items(in: .photo).map(\.name)
         XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .autoWhiteBalance, .resetPhoto,
                                .createVirtualCopy, .removeVirtualCopy, .keywords, .renameInPlace, .removeFromCollection,
-                               .newLinearMask, .newRadialMask, .brushMask, .brushSmaller, .brushLarger, .trashRejects])
+                               .newLinearMask, .newRadialMask, .brushMask, .brushSmaller, .brushLarger, .selectSubject, .trashRejects])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos, .deleteCollection])

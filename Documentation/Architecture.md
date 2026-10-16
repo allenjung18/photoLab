@@ -1262,6 +1262,29 @@ Photo › Auto White Balance, `Library.autoTone(_:mask:)`) under one batch tag, 
 undo step and one sidecar write per photo changed, and a photo Auto would
 not change is skipped.
 
+### Detecting an automatic mask
+
+`Library.selectAuto(_:for:)` (Select Subject) is the one path that makes an
+`.auto` mask from pixels. It reads the photo's oriented decode,
+`ImageLoading.downsampledCGImage` at `VisionDetector.inputPixelSize`
+(`MaskBitmap.maxLongSide`, 2048): the thumbnail options apply the EXIF
+orientation (`kCGImageSourceCreateThumbnailWithTransform`), so row 0 of the
+decode is the top of the photo as displayed, which is the source frame a
+`MaskBitmap` is defined over. A detached task hands it to
+`Library.autoMaskDetector`, an `AutoMaskDetector` (AutoMasks.swift,
+`Sendable`, `subject(in:) async throws -> MaskBitmap?`); the app's is
+`VisionDetector`, `VNGenerateForegroundInstanceMaskRequest` (macOS 14, on
+device) with `allInstances` merged by
+`generateScaledMaskForImage(forInstances:from:)` into a buffer the size of
+the input. `MaskBitmap(pixelBuffer:)` converts a one-component buffer
+(`OneComponent8` as is, `OneComponent32Float` clamped and rounded to 8 bits;
+row padding skipped, any other format nil) keeping row 0 at the top. Back on
+the main actor the result is dropped unless `autoMaskGeneration` (bumped by
+a photo change and by opening a source) and the selection are what they were
+at the start; a nil or blank bitmap sets `autoMaskMessage`; otherwise any open
+edit is closed and one `setRecipe` appends the mask, one undo step and one
+sidecar write. `autoMaskDetecting` holds a second run off.
+
 ## 4. Export pipeline
 
 ### `ExportQueue`

@@ -917,8 +917,8 @@ redo, Reset, the render time and any sidecar error.
   recipe).
 - **Masks** (`MasksPanel.swift`). `MasksSection(photo:)` is a
   `DisclosureGroup` after the Presets strip (open, with a dot while the
-  photo has a mask). **Linear**, **Radial** and **Brush** run the Photo
-  menu's commands (**M**, **⇧M**, **K**). **Linear** and **Radial** are
+  photo has a mask). **Linear**, **Radial**, **Brush** and **Subject** run the Photo
+  menu's commands (**M**, **⇧M**, **K**, Select Subject with no key). **Linear** and **Radial** are
   toggles: they arm placement (`Library.maskPlacement`, checked in the
   menu; the same key again, `Esc`, crop mode, compare, the eyedropper, the
   brush and leaving the loupe disarm it; arming leaves crop mode, ends
@@ -941,7 +941,22 @@ redo, Reset, the render time and any sidecar error.
   order, "Linear 1", "Radial 1", "Linear 2" (`MaskKind.names(of:)`,
   derived, so a delete renumbers); an automatic mask (`MaskShape.auto`) is
   named by what it selects, "Subject 1", "Person 1", "Sky 1", and shows no
-  handles on the photo, though nothing in the section adds one yet; a click selects it, again deselects.
+  handles on the photo; a click selects it, again deselects.
+  **Subject** (`AppCommand.Name.selectSubject`, Photo › Select Subject)
+  calls `Library.selectAuto(.subject, for:)`: the photo's oriented decode
+  (`ImageLoading.downsampledCGImage` at `VisionDetector.inputPixelSize`,
+  2048 px, EXIF applied) goes off the main actor to
+  `Library.autoMaskDetector` (`VisionDetector`, AutoMasks.swift: Apple
+  Vision's foreground instance mask on this Mac, every instance merged), and
+  what it finds becomes one `.auto` mask of kind subject at the end of the
+  list, selected, crop mode and the eyedropper put down; one undo step and
+  one sidecar write. Nothing found (or an all-zero mask) sets
+  `Library.autoMaskMessage` to "No subject found", shown under the add row,
+  and changes nothing (no step, no write); an unreadable original or a
+  Vision error has its own message. The command is disabled while
+  `Library.autoMaskDetecting` (a spinner and "Finding the subject…" in the
+  section); a photo change or a source opened meanwhile drops the result
+  (and clears the message). Person and sky have no detector yet.
   `Library.selectedMask` is tool state: never in a recipe, cleared when the
   photo changes and whenever the photo's recipe stops holding it (an undo
   of its add, a delete, a reset, a sync), by `Library.apply`. The selected

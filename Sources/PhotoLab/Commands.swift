@@ -46,7 +46,7 @@ struct AppCommand: Identifiable {
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, autoWhiteBalance, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
-        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger
+        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject
         case trashRejects
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
@@ -427,6 +427,18 @@ struct AppCommand: Identifiable {
                    placement: .photo, section: 5,
                    isEnabled: { c in c.library.paintingBrush != nil },
                    perform: { $0.library.stepBrushSize(larger: true) }),
+        // Select Subject: Apple Vision on this Mac finds the loupe photo's
+        // subject and it becomes a new automatic mask, selected, one undo
+        // step (`Library.selectAuto`). No key. Disabled while a detection
+        // runs.
+        AppCommand(name: .selectSubject, title: "Select Subject", key: nil,
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil && !c.library.autoMaskDetecting },
+                   perform: { c in
+                       let lib = c.library
+                       guard let id = lib.selection else { return }
+                       Task { await lib.selectAuto(.subject, for: id) }
+                   }),
         // Every rejected photo of the open folder or collection, visible or
         // not, to the macOS Trash after a confirm (`TrashRequest`); the one
         // command that changes an original (D-465). Edit › Undo Move to Trash

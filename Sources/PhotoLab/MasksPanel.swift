@@ -271,6 +271,14 @@ struct MasksSection: View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 10) {
                 addRow
+                if library.autoMaskDetecting {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Finding the subject…").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if let message = library.autoMaskMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
                 if masks.isEmpty {
                     Text("No masks. Pick Linear or Radial, then drag on the photo to place one.")
                         .font(.caption)
@@ -318,6 +326,13 @@ struct MasksSection: View {
             .toggleStyle(.button)
             .disabled(!AppCommand.command(.brushMask).isEnabled(context))
             .help(help(.brushMask, "Paint the selected brush or automatic mask, or a new brush mask"))
+            Button {
+                AppCommand.command(.selectSubject).perform(context)
+            } label: {
+                Label("Subject", systemImage: MaskKind.subject.systemImage)
+            }
+            .disabled(!AppCommand.command(.selectSubject).isEnabled(context))
+            .help("Select Subject: find the photo's subject on this Mac (Apple Vision) and mask it")
         }
         .controlSize(.small)
     }

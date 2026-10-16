@@ -514,6 +514,19 @@ not only the pass.
   two automatic masks with the same strokes and opposite bitmaps get their
   own rasters. Mutant: the base digest dropped from `BrushRasterCache.Key`
   makes the second mask draw the first's raster (4 failures in that test).
+- `AutoMaskDetectTests.swift` — Select Subject (`Library.selectAuto`) with
+  a fake `AutoMaskDetector`: a found bitmap is one `.auto` subject mask at
+  the end of the list, selected, one sidecar write, and one undo removes it;
+  nil or a blank bitmap sets "No subject found" with no step and no write; a
+  photo switched mid-run (also A-B-A) gets nothing, and the command is
+  disabled while a held detection runs. `MaskBitmap(pixelBuffer:)` on a
+  synthetic top-half-1 buffer gives top weight 1 for `OneComponent8` and
+  `OneComponent32Float`. One real-Vision test on a shaded red disc drawn on
+  grey (1024 px, centre > 0.5, corners < 0.1) and the same figure off-centre
+  as an EXIF-orientation-6 JPEG (found where displayed, not mirrored); it
+  throws `XCTSkip` with the reason when the request throws or finds no
+  instance on the host. Mutant: rows flipped in `MaskBitmap(pixelBuffer:)`
+  turns the pixel-buffer test red for both formats.
 - `AutoMaskModelTests.swift` — the automatic mask (`MaskShape.auto`,
   `AutoMask`, `MaskBitmap`), synthetic bitmaps and temp directories only: a
   left-half-white bitmap weighs 1 at (0.25, 0.5), 0 at (0.75, 0.5) and 0.5
