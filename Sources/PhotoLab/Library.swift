@@ -83,7 +83,10 @@ final class Library {
     /// that grows the selection.
     var selection: Photo.ID? {
         didSet {
-            if selection != oldValue { selectedIDs = selection.map { [$0] } ?? [] }
+            if selection != oldValue {
+                selectedIDs = selection.map { [$0] } ?? []
+                loupeZoom = .fit
+            }
             saveViewState()
         }
     }
@@ -91,8 +94,16 @@ final class Library {
     private(set) var selectedIDs: Set<Photo.ID> = []
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false {
-        didSet { saveViewState() }
+        didSet {
+            if !loupe { loupeZoom = .fit }
+            saveViewState()
+        }
     }
+    /// The loupe's zoom: fit, or 1:1 around a centre (Z, a click on the
+    /// photo, a drag to pan). Back to fit whenever the photo changes (the
+    /// arrows, a filmstrip click, any new anchor) and when the loupe closes;
+    /// never remembered.
+    var loupeZoom: PreviewZoom = .fit
     /// Copy Settings: the recipe and the name of the photo it came from.
     private(set) var copiedSettings: (recipe: Recipe, name: String)?
     /// A Sync / Paste Settings sheet the window should show.
@@ -326,6 +337,17 @@ final class Library {
         let i = visibleIndex ?? 0
         let j = min(max(i + offset, 0), visible.count - 1)
         selection = visible[j].id
+        // An arrow at either end moves nothing but still leaves 1:1.
+        loupeZoom = .fit
+    }
+
+    /// Z: 1:1 at the middle of the photo, or back to fit.
+    func toggleZoom() {
+        if case .fit = loupeZoom {
+            loupeZoom = .actual(center: CGPoint(x: 0.5, y: 0.5))
+        } else {
+            loupeZoom = .fit
+        }
     }
 
     // MARK: Multi-selection

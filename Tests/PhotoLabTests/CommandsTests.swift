@@ -61,7 +61,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(HiddenShortcuts.commands.map(\.name), AppCommand.all.filter(\.isBareKey).map(\.name))
         XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.isEmpty && $0.key != nil })
         let keys = Set(HiddenShortcuts.commands.map { $0.key!.character })
-        let expected: [KeyEquivalent] = ["g", "e", "y", "\\", "j", "f", "p", "x", "u",
+        let expected: [KeyEquivalent] = ["g", "e", "z", "y", "\\", "j", "f", "p", "x", "u",
                                          "0", "1", "2", "3", "4", "5",
                                          .return, .escape, .leftArrow, .rightArrow]
         XCTAssertEqual(keys, Set(expected.map(\.character)))
@@ -88,7 +88,7 @@ final class CommandsTests: XCTestCase {
 
     func testTheViewAndPhotoMenusListEveryBareKeyButEscapeAndReturn() {
         let view = AppCommand.items(in: .view).map(\.name)
-        XCTAssertEqual(view, [.grid, .loupe, .compare, .showOriginal, .clipping, .filmstrip, .previous, .next])
+        XCTAssertEqual(view, [.grid, .loupe, .zoom, .compare, .showOriginal, .clipping, .filmstrip, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
         XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .resetPhoto])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
@@ -108,6 +108,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(AppCommand.command(.previous).menuTitle(ctx), "Previous Photo (←)")
         XCTAssertEqual(AppCommand.command(.showOriginal).menuTitle(ctx), "Show Original (\\)")
         XCTAssertEqual(AppCommand.command(.rate3).menuTitle(ctx), "3 Stars (3)")
+        XCTAssertEqual(AppCommand.command(.zoom).menuTitle(ctx), "Zoom to 1:1 (Z)")
         XCTAssertEqual(AppCommand.command(.resetPhoto).menuTitle(ctx), "Reset Photo")
         XCTAssertEqual(AppCommand.command(.export).menuTitle(ctx), "Export…")
     }
@@ -192,6 +193,39 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(lib.selectedIDs, [ids[0]])
         run(.open, ctx)
         XCTAssertTrue(lib.loupe)
+    }
+
+    /// Z toggles fit and 1:1 at the middle, in the loupe only; the arrows
+    /// (even at either end), a new photo and leaving the loupe return to
+    /// fit.
+    func testZTogglesOneToOneAndEveryPhotoChangeReturnsToFit() throws {
+        let (lib, ctx, ids) = try openThree()
+        XCTAssertFalse(AppCommand.command(.zoom).isEnabled(ctx), "the grid has no zoom")
+        run(.loupe, ctx)
+        run(.zoom, ctx)
+        XCTAssertEqual(lib.loupeZoom, .actual(center: CGPoint(x: 0.5, y: 0.5)))
+        XCTAssertEqual(AppCommand.command(.zoom).isOn?(ctx), true)
+        run(.zoom, ctx)
+        XCTAssertEqual(lib.loupeZoom, .fit)
+        XCTAssertEqual(AppCommand.command(.zoom).isOn?(ctx), false)
+
+        run(.zoom, ctx)
+        run(.next, ctx)
+        XCTAssertEqual(lib.selection, ids[1])
+        XCTAssertEqual(lib.loupeZoom, .fit, "→ returns to fit")
+        lib.selection = ids[0]
+        run(.zoom, ctx)
+        run(.previous, ctx)
+        XCTAssertEqual(lib.selection, ids[0], "already the first photo")
+        XCTAssertEqual(lib.loupeZoom, .fit, "← at the first photo still returns to fit")
+        lib.loupeZoom = .actual(center: CGPoint(x: 0.2, y: 0.7))
+        lib.click(ids[2])
+        XCTAssertEqual(lib.loupeZoom, .fit, "a filmstrip click is a photo change")
+        run(.zoom, ctx)
+        run(.back, ctx)
+        XCTAssertFalse(lib.loupe)
+        XCTAssertEqual(lib.loupeZoom, .fit, "leaving the loupe")
+        XCTAssertFalse(AppCommand.command(.zoom).isOn?(ctx) ?? true)
     }
 
     func testEditAndPhotoMenuItemsActOnTheSelection() throws {

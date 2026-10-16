@@ -194,7 +194,10 @@ not only the pass.
   slider drag re-renders After only (latest wins) while a new size renders
   both again; Before lands during a sustained drag rather than after it;
   leaving compare mode drops the second frame, and a Before from an
-  earlier compare session never shows; opening a folder turns it off.
+  earlier compare session never shows; opening a folder turns it off; at
+  1:1 both halves show the same region (Before the neutral window, maxDiff
+  0) at a centre and at a corner, and leaving compare drops only the
+  Before window.
 - `ZoomTests.swift` — 1:1 in `PreviewModel`: on a synthetic 24 MP photo
   with clarity, sharpening and vignette on, the window at a centre and at a
   corner equals the same crop of a full-resolution render of the whole
@@ -206,8 +209,18 @@ not only the pass.
   dropped (with the window) when the photo changes, the new photo decoding
   its own; a window still rendering when fit returns never lands; a drag
   while zoomed ends on the newest recipe in both frames; the timed region
-  step. Shown to bite by rendering the cropped input (maxDiff 114 at the
-  centre, 63 at the corner).
+  step; a photo whose frame fits the view goes back to fit with no window,
+  one wider than the view zooms; the clipping overlay on the window is the
+  same compose over the plain window, before and after a pan. Shown to
+  bite by rendering the cropped input (maxDiff 114 at the centre, 63 at
+  the corner).
+- `ZoomMathTests.swift` — the loupe's zoom arithmetic (`ZoomMath`): the
+  fit rect in the padded pane; a click maps to the centre of the 1:1 window
+  at display scale 1 and 2 (and a click off the photo maps to nothing);
+  the clamp holds the window inside the frame at all four edges and agrees
+  with `Region.rect(in:)`; a photo that fits the view stays at fit; a pan
+  moves the window by the drag times the display scale and stops at the
+  edge. Shown to bite by removing the clamp (7 failures in 2 tests).
 - `CommandsTests.swift` — the command table (`AppCommand.all`): no two
   entries share a key and modifiers, and none takes a system menu key
   (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button
@@ -219,7 +232,9 @@ not only the pass.
   title says (P, X, U and 0–5 mark every batch target, Y from the grid opens
   the loupe in compare, J and backslash toggle their overlays, the arrows,
   G, E, Esc and Return move the view, Reset Photo, Undo, Redo, Copy
-  Settings and Select All act on the selection).
+  Settings and Select All act on the selection; Z toggles 1:1 in the loupe
+  only, and the arrows, even at either end, a click on another photo and
+  leaving the loupe all return to fit).
 - `WorkflowTests.swift` — one photographer's session through the real
   model layer, nothing faked but the Photos writer (`FakePhotosWriter`):
   six synthetic JPEGs and PNGs (one portrait) open in natural order with a

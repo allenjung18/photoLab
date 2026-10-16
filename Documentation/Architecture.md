@@ -152,6 +152,31 @@ Image's result depends on the area it is asked for at about that level
 sharpening across a hard edge can lift it to 2 to 4 on a few edge pixels;
 `ZoomTests` gates within 1 at the documented settings.
 
+The interaction lives in the view and `Library`; the arithmetic is pure, in
+`ZoomMath` (`Zoom.swift`), so it is tested without a window.
+`Library.loupeZoom` holds the zoom (fit whenever `selection` changes, an
+arrow is pressed or the loupe closes); `PreviewCanvas` hands it to
+`setZoom` and passes its pane in pixels (`ZoomMath.window`) as
+`viewPixelSize`. A click maps through the fit frame's rect in the padded
+pane (`ZoomMath.fitRect`, `center(forClick:frame:pane:)`), which is laid out
+in points, so the display scale does not enter; the clicked pixel is the
+window's centre at any scale. A drag moves the centre by the translation
+times the display scale over the frame size, from a start centre clamped
+first, and `ZoomMath.clamp` holds it at least half a window from each edge
+(the middle on an axis the window covers whole), the same place
+`Region.rect(in:)` slides the window to, so a pan back from an edge moves
+the picture at once. A window whose frame fits inside the view whole
+(`ZoomMath.fits`) is never shown: `renderZoom` sets `zoom` back to `.fit`,
+and the canvas puts `Library.loupeZoom` back too.
+
+In compare mode the window request carries `before`, and `renderZoom` cuts
+the neutral render at the same `Renderer.Region` in the same hop into
+`zoomBeforeImage` / `zoomBeforeRegion`, so the halves cannot show different
+regions or land apart. With a crop or rotation on, Before is the uncropped
+photo (as at fit), so the same region is the same normalised window of its
+own frame. Turning compare on or off at 1:1 asks for the window again;
+off drops the Before window.
+
 ### The histogram and the clipping overlay
 
 `Histogram` (`Histogram.swift`) is read off the finished 8-bit preview

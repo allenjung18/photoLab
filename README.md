@@ -57,6 +57,7 @@ in Xcode works too.
 | `⇧⌘O` | Open Photos Library… (the album sheet) |
 | `G` | Grid |
 | `E` or `Return` | Loupe (the selected photo, or the first) |
+| `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
 | `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
@@ -74,7 +75,7 @@ in Xcode works too.
 
 Every key above except `Return` and `Esc` is also a menu item: File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
-Photos), **View** (Grid, Loupe, Before and After, Show Original, Clipping
+Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Previous and Next Photo) and **Photo** (Pick, Reject, Unflag, the
 ratings, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
@@ -96,8 +97,8 @@ the Presets menu have no key.
 With the mouse, in the grid: click selects one photo, `⇧`-click selects
 every photo between the anchor and it (the anchor kept), `⌘`-click adds or
 removes one (the anchor moves to a photo added), double-click opens it in
-the loupe. In the loupe: a filmstrip of the visible photos runs under the photo (click a cell to move there, `⇧`-click to extend the selection, `⌘`-click to toggle); double-click the photo to go back to the grid,
-double-click an adjustment's name to reset it, hold **Before** to see the
+the loupe. In the loupe: a filmstrip of the visible photos runs under the photo (click a cell to move there, `⇧`-click to extend the selection, `⌘`-click to toggle); click the photo to see it at 1:1 at that point, drag to pan, click again
+for fit (`G` or `Esc` go back to the grid); double-click an adjustment's name to reset it, hold **Before** to see the
 original, press `Y` to see the original and the edit side by side.
 
 ## Adjustments

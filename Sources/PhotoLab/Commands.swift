@@ -37,7 +37,7 @@ struct AppCommand: Identifiable {
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll
         case savePreset
-        case grid, loupe, compare, showOriginal, clipping, filmstrip, previous, next
+        case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case resetPhoto
@@ -152,7 +152,7 @@ struct AppCommand: Identifiable {
                    isEnabled: { c in c.library.loupe && c.library.selection != nil },
                    perform: { $0.presets?.saveRequested = true }),
 
-        // View: Lightroom's G / E, the before/after keys, the clipping
+        // View: Lightroom's G / E and Z, the before/after keys, the clipping
         // warning, and the arrows that move the selection.
         AppCommand(name: .grid, title: "Grid", key: "g", modifiers: [], placement: .view,
                    isOn: { !$0.library.loupe },
@@ -161,6 +161,12 @@ struct AppCommand: Identifiable {
                    isOn: { $0.library.loupe },
                    isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { enterLoupe($0.library) }),
+        // Fit or 1:1 at the middle of the photo, in the loupe only (a click
+        // on the photo zooms at that point instead).
+        AppCommand(name: .zoom, title: "Zoom to 1:1", key: "z", modifiers: [], placement: .view,
+                   isOn: { c in c.library.loupe && c.library.loupeZoom != .fit },
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil },
+                   perform: { $0.library.toggleZoom() }),
         // Before and After side by side; from the grid it opens the loupe.
         AppCommand(name: .compare, title: "Before and After", key: "y", modifiers: [], placement: .view, section: 1,
                    isOn: { c in c.library.compare && c.library.loupe },

@@ -62,6 +62,11 @@ final class PreviewModel {
     private(set) var zoomFrameSize: CGSize = .zero
     /// Core Image time of the latest 1:1 window, ms.
     private(set) var zoomMilliseconds: Double = 0
+    /// Compare mode's Before at 1:1: the neutral render's window, cut at the
+    /// same `Renderer.Region` as `zoomImage` in the same hop, so the two
+    /// halves always show the same region. Never carries the overlay.
+    private(set) var zoomBeforeImage: CGImage?
+    private(set) var zoomBeforeRegion: CGRect?
     /// The photo whose full-resolution master is held (decoded on the first
     /// 1:1 of that photo, dropped when the photo changes), and its pixel size.
     private(set) var fullResolutionURL: URL?
@@ -117,6 +122,8 @@ final class PreviewModel {
         let recipe: Recipe
         let region: Renderer.Region
         let overlay: Bool
+        /// Compare mode: the neutral window at the same region rides along.
+        let before: Bool
     }
 
     /// Decodes the master for `url` off the main thread, then renders the
@@ -175,7 +182,10 @@ final class PreviewModel {
     /// request is asked for, decoding the photo's full-resolution master
     /// first if this is its first 1:1. Back to fit: the window is dropped
     /// (and any waiting or rendering); the master stays until the photo
-    /// changes, so zooming in again on the same photo decodes nothing.
+    /// changes, so zooming in again on the same photo decodes nothing. A
+    /// photo whose rendered frame fits inside the view whole
+    /// (`ZoomMath.fits`) goes back to fit by itself once its first window
+    /// says so: 1:1 would only make it smaller.
     func setZoom(_ zoom: PreviewZoom) {
         let zoom = zoom.clamped
         guard zoom != self.zoom else { return }
@@ -196,7 +206,8 @@ final class PreviewModel {
     private func requestZoom() {
         guard case .actual(let center) = zoom, let last = lastRequest else { pendingZoom = nil; return }
         let z = ZoomRequest(url: last.url, recipe: last.recipe,
-                            region: Renderer.Region(center: center, size: lastViewPixelSize), overlay: showClipping)
+                            region: Renderer.Region(center: center, size: lastViewPixelSize), overlay: showClipping,
+                            before: compare)
         guard z != zoomShown, z != zoomInFlight else { pendingZoom = nil; return }
         pendingZoom = z
         loadFullResolution(z.url)
@@ -246,6 +257,8 @@ final class PreviewModel {
         zoomURL = nil
         zoomRegion = nil
         zoomFrameSize = .zero
+        zoomBeforeImage = nil
+        zoomBeforeRegion = nil
     }
 
     /// Turns Before / After side by side on or off. On: the neutral frame for
@@ -256,6 +269,7 @@ final class PreviewModel {
         compare = on
         if on {
             if let lastRequest { requestBefore(for: lastRequest) }
+            requestZoom()
             pump()
         } else {
             pendingBefore = nil
@@ -263,6 +277,10 @@ final class PreviewModel {
             beforeShown = nil
             beforeImage = nil
             beforeURL = nil
+            zoomBeforeImage = nil
+            zoomBeforeRegion = nil
+            requestZoom()
+            pump()
         }
     }
 
@@ -357,21 +375,35 @@ final class PreviewModel {
     /// the output cut to the view's region, never a render of a cropped
     /// input. Kept only if it is still the wanted one and the photo has not
     /// changed. Carries the clipping overlay like the fit frame (the same
-    /// per-pixel rule); the histogram stays the fit frame's.
+    /// per-pixel rule); the histogram stays the fit frame's. In compare mode
+    /// the neutral window at the same region is cut in the same hop. A frame
+    /// that fits the view whole sends the loupe back to fit instead.
     private func renderZoom(_ req: ZoomRequest, from full: CIImage) {
         Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) { () -> (image: CGImage, frame: CGSize, region: CGRect, milliseconds: Double)? in
+            typealias Window = (image: CGImage, frame: CGSize, region: CGRect, milliseconds: Double,
+                                before: CGImage?, beforeRegion: CGRect?)
+            let result = await Task.detached(priority: .userInitiated) { () -> Window? in
                 guard let r = Renderer.shared.render(full, recipe: req.recipe, region: req.region),
                       let region = r.region else { return nil }
+                if ZoomMath.fits(frame: r.frameSize, in: req.region.size) {
+                    return (r.image, r.frameSize, region, r.milliseconds, nil, nil)
+                }
                 let shown = req.overlay ? (ClippingOverlay.compose(over: r.image, context: Renderer.shared.context) ?? r.image) : r.image
-                return (shown, r.frameSize, region, r.milliseconds)
+                let b = req.before ? Renderer.shared.render(full, recipe: .neutral, region: req.region) : nil
+                return (shown, r.frameSize, region, r.milliseconds, b?.image, b?.region)
             }.value
             guard let self else { return }
             self.rendering = false
             let wanted = self.zoomInFlight == req
             if wanted { self.zoomInFlight = nil }
-            if let result, wanted, case .actual = self.zoom, self.masterURL == req.url {
+            if let result, wanted, case .actual = self.zoom, self.masterURL == req.url,
+               ZoomMath.fits(frame: result.frame, in: req.region.size) {
+                self.zoom = .fit
+                self.clearZoomFrame()
+            } else if let result, wanted, case .actual = self.zoom, self.masterURL == req.url {
                 self.zoomImage = result.image
+                self.zoomBeforeImage = result.before
+                self.zoomBeforeRegion = result.beforeRegion
                 self.zoomURL = req.url
                 self.zoomRegion = result.region
                 self.zoomFrameSize = result.frame

@@ -228,6 +228,69 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(PhotoLabTests.maxDiff(try XCTUnwrap(preview.image), fit), 0, "and in the fit frame")
     }
 
+    /// A photo whose rendered frame fits the view whole goes back to fit by
+    /// itself: 1:1 would only show it smaller. One wider than the view on
+    /// one axis zooms.
+    func testAPhotoSmallerThanTheViewStaysAtFit() async throws {
+        let small = try writePNG("small.png", width: 640, height: 480)
+        let preview = PreviewModel()
+        preview.load(small)
+        preview.request(url: small, recipe: spatial, maxPixelSize: 1200, viewPixelSize: CGSize(width: 1200, height: 800))
+        await preview.awaitLoad()
+        preview.setZoom(.actual(center: CGPoint(x: 0.3, y: 0.3)))
+        await preview.awaitFullResolution()
+        await waitUntil { preview.zoom == .fit }
+        XCTAssertEqual(preview.zoom, .fit)
+        await settle()
+        XCTAssertNil(preview.zoomImage, "no window for a photo that fits")
+        XCTAssertNotNil(preview.image)
+
+        let wide = try writePNG("wide.png", width: 2000, height: 400)
+        preview.load(wide)
+        preview.request(url: wide, recipe: spatial, maxPixelSize: 1200, viewPixelSize: CGSize(width: 1200, height: 800))
+        await preview.awaitLoad()
+        preview.setZoom(.actual(center: CGPoint(x: 0.3, y: 0.3)))
+        await preview.awaitFullResolution()
+        await waitUntil { preview.zoomImage != nil }
+        XCTAssertEqual(preview.zoom, .actual(center: CGPoint(x: 0.3, y: 0.3)))
+        XCTAssertEqual(preview.zoomRegion, CGRect(x: 0, y: 0, width: 1200, height: 400),
+                       "the window is the view's width and the photo's height")
+    }
+
+    /// The clipping overlay paints on the 1:1 window exactly as on the fit
+    /// frame: the same compose over the plain window.
+    func testTheClippingOverlayPaintsOnTheWindow() async throws {
+        let url = try writePNG("a.png", width: 2400, height: 1600)
+        var blown = spatial
+        set(&blown, .exposure, 2.5)
+        let view = CGSize(width: 600, height: 400)
+        let preview = PreviewModel()
+        preview.load(url)
+        preview.request(url: url, recipe: blown, maxPixelSize: 600, viewPixelSize: view)
+        await preview.awaitLoad()
+        preview.setZoom(.actual(center: CGPoint(x: 0.5, y: 0.5)))
+        await preview.awaitFullResolution()
+        await waitUntil { preview.zoomImage != nil }
+        let plain = try XCTUnwrap(preview.zoomImage)
+
+        preview.setClipping(true)
+        await waitUntil { preview.zoomImage.map { PhotoLabTests.maxDiff($0, plain) > 0 } ?? false }
+        let painted = try XCTUnwrap(preview.zoomImage)
+        let expected = try XCTUnwrap(ClippingOverlay.compose(over: plain, context: Renderer.shared.context))
+        XCTAssertGreaterThan(PhotoLabTests.maxDiff(painted, plain), 0, "the overlay shows at 1:1")
+        XCTAssertEqual(PhotoLabTests.maxDiff(painted, expected), 0, "and it is the fit frame's overlay")
+
+        // A pan keeps it on.
+        preview.setZoom(.actual(center: CGPoint(x: 0.2, y: 0.7)))
+        await waitUntil { preview.zoomRegion == CGRect(x: 180, y: 920, width: 600, height: 400) }
+        let moved = try XCTUnwrap(preview.zoomImage)
+        let movedPlain = try XCTUnwrap(Renderer.shared.render(try XCTUnwrap(Renderer.fullResolution(url, decodeNow: true)),
+                                                              recipe: blown,
+                                                              region: .init(center: CGPoint(x: 0.2, y: 0.7), size: view))).image
+        let movedExpected = try XCTUnwrap(ClippingOverlay.compose(over: movedPlain, context: Renderer.shared.context))
+        XCTAssertEqual(PhotoLabTests.maxDiff(moved, movedExpected), 0)
+    }
+
     // MARK: Timing
 
     /// A region step (a slider move while zoomed): the window of a 24 MP

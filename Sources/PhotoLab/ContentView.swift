@@ -614,6 +614,12 @@ struct LoupeView: View {
 /// the preview model for a new frame at the view's pixel size. In compare
 /// mode (`Library.compare`, Y) the canvas is two equal halves, Before (the
 /// model's neutral frame) and After (the recipe), each at one half's size.
+///
+/// Zoom (`Library.loupeZoom`): Z, or a click on the photo, shows it at 1:1
+/// (one image pixel per screen pixel) around the middle or the point
+/// clicked; a drag pans, the window held inside the frame; a click at 1:1
+/// goes back to fit. In compare mode both halves show the same region and
+/// either half takes the click and the drag. The arithmetic is `ZoomMath`.
 private struct PreviewCanvas: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
@@ -624,14 +630,28 @@ private struct PreviewCanvas: View {
     let fetch: OriginalFetch
     let preview: PreviewModel
     @State private var viewSize: CGSize = .zero
+    /// The 1:1 centre a pan started from (clamped), while a drag is panning.
+    @State private var panStart: CGPoint?
 
     private var recipe: Recipe { library.showBefore ? .neutral : library.recipe(for: photo.id) }
 
-    /// One pane's longest side in pixels: the whole canvas, or one half of
-    /// it side by side. Both halves are rendered at this size.
-    private var pixelSize: Int {
-        let pane = library.compare ? CGSize(width: viewSize.width / 2, height: viewSize.height) : viewSize
-        return longestSide(pane)
+    /// One pane in points: the whole canvas, or one half of it side by side.
+    private var pane: CGSize {
+        library.compare ? CGSize(width: max(0, viewSize.width - 1) / 2, height: viewSize.height) : viewSize
+    }
+
+    /// One pane's longest side in pixels. Both halves are rendered at this size.
+    private var pixelSize: Int { longestSide(pane) }
+
+    /// The 1:1 window: one pane in pixels.
+    private var window: CGSize { ZoomMath.window(pane: pane, displayScale: displayScale) }
+
+    private var zoomed: Bool { library.loupeZoom != .fit }
+
+    /// The 1:1 window for this photo, once it has landed.
+    private var zoomWindow: CGImage? {
+        guard zoomed, let file, preview.zoomURL == file else { return nil }
+        return preview.zoomImage
     }
 
     var body: some View {
@@ -639,30 +659,40 @@ private struct PreviewCanvas: View {
             Group {
                 if library.compare {
                     HStack(spacing: 0) {
-                        beforeFrame
+                        zoomable(beforeFrame, fitFrame: preview.beforeImage)
                             .overlay(alignment: .topLeading) { badge("Before") }
                         Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1)
-                        afterFrame
+                        zoomable(afterFrame, fitFrame: preview.image)
                             .overlay(alignment: .topLeading) { badge(library.showBefore ? "Before" : "After") }
                     }
                 } else {
-                    afterFrame
+                    zoomable(afterFrame, fitFrame: preview.image)
                         .overlay(alignment: .topLeading) { if library.showBefore { badge("Before") } }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
+            .overlay(alignment: .topTrailing) { zoomBadge }
             .onAppear { viewSize = geo.size }
             .onChange(of: geo.size) { _, size in viewSize = size }
         }
-        .onTapGesture(count: 2) { library.loupe = false }
         .onChange(of: file, initial: true) { _, url in
             guard let url else { return }
+            // A new photo is at fit before its master loads, so it never
+            // starts a full-resolution decode it will not use.
+            preview.setZoom(library.loupeZoom)
             preview.load(url)
             request()
         }
         .onChange(of: recipe) { request() }
         .onChange(of: pixelSize) { request() }
+        .onChange(of: window) { request() }
+        .onChange(of: library.loupeZoom, initial: true) { _, zoom in preview.setZoom(zoom) }
+        // A photo whose frame fits the view whole goes back to fit by itself
+        // (`PreviewModel.setZoom`); the menu's checkmark follows.
+        .onChange(of: preview.zoom) { _, zoom in
+            if zoom == .fit, library.loupeZoom != .fit { library.loupeZoom = .fit }
+        }
         .onChange(of: library.compare, initial: true) { _, on in
             // The half-size request first, so the Before that compare mode
             // asks for is already the half-size one.
@@ -672,11 +702,14 @@ private struct PreviewCanvas: View {
         .onChange(of: library.showClipping, initial: true) { _, on in preview.setClipping(on) }
     }
 
-    /// The recipe's frame (or, while it is coming, why not).
+    /// The recipe's frame (or, while it is coming, why not); at 1:1 the
+    /// window, unscaled, once it has landed (the fit frame until then).
     @ViewBuilder private var afterFrame: some View {
         ZStack {
             Color.black
-            if let cg = preview.image, let file, preview.imageURL == file {
+            if let cg = zoomWindow {
+                Image(decorative: cg, scale: displayScale)
+            } else if let cg = preview.image, let file, preview.imageURL == file {
                 Image(decorative: cg, scale: displayScale)
                     .resizable()
                     .scaledToFit()
@@ -710,11 +743,14 @@ private struct PreviewCanvas: View {
         }
     }
 
-    /// Compare mode's neutral frame; the plain thumbnail until it lands.
+    /// Compare mode's neutral frame; the plain thumbnail until it lands. At
+    /// 1:1 the neutral window at the After window's region.
     @ViewBuilder private var beforeFrame: some View {
         ZStack {
             Color.black
-            if let cg = preview.beforeImage, let file, preview.beforeURL == file {
+            if zoomWindow != nil, let cg = preview.zoomBeforeImage {
+                Image(decorative: cg, scale: displayScale)
+            } else if let cg = preview.beforeImage, let file, preview.beforeURL == file {
                 Image(decorative: cg, scale: displayScale)
                     .resizable()
                     .scaledToFit()
@@ -728,6 +764,62 @@ private struct PreviewCanvas: View {
             } else {
                 ProgressView().controlSize(.regular)
             }
+        }
+    }
+
+    /// A pane that takes the zoom click and the pan drag. `fitFrame` is the
+    /// frame shown at fit in this pane, which a click is mapped through.
+    private func zoomable(_ content: some View, fitFrame: CGImage?) -> some View {
+        content
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in pan(g.translation) }
+                    .onEnded { g in
+                        defer { panStart = nil }
+                        guard panStart == nil, !isDrag(g.translation) else { return }
+                        click(at: g.startLocation, fitFrame: fitFrame)
+                    })
+    }
+
+    /// Under 3 points of movement a press is a click, not a pan.
+    private func isDrag(_ t: CGSize) -> Bool { hypot(t.width, t.height) >= 3 }
+
+    /// At 1:1 a drag moves the window with the pointer, from the centre
+    /// it started at (clamped first, so a centre clicked near an edge pans
+    /// at once). At fit, or before the window has landed, it does nothing.
+    private func pan(_ translation: CGSize) {
+        guard case .actual(let center) = library.loupeZoom, zoomWindow != nil,
+              panStart != nil || isDrag(translation) else { return }
+        let frame = preview.zoomFrameSize
+        let start = panStart ?? ZoomMath.clamp(center, window: window, frame: frame)
+        panStart = start
+        library.loupeZoom = .actual(center: ZoomMath.pan(start, by: translation, displayScale: displayScale,
+                                                         window: window, frame: frame))
+    }
+
+    /// At fit, 1:1 at the point clicked (a click on the black around the
+    /// photo does nothing); at 1:1, back to fit.
+    private func click(at point: CGPoint, fitFrame: CGImage?) {
+        if zoomed { library.loupeZoom = .fit; return }
+        guard let fitFrame,
+              let center = ZoomMath.center(forClick: point,
+                                           frame: CGSize(width: fitFrame.width, height: fitFrame.height),
+                                           pane: pane) else { return }
+        library.loupeZoom = .actual(center: center)
+    }
+
+    /// "1:1" while zoomed, with a spinner until the first window lands.
+    @ViewBuilder private var zoomBadge: some View {
+        if zoomed {
+            HStack(spacing: 6) {
+                if zoomWindow == nil { ProgressView().controlSize(.small) }
+                Text("1:1")
+            }
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.thinMaterial, in: Capsule())
+            .padding(12)
         }
     }
 
@@ -760,7 +852,7 @@ private struct PreviewCanvas: View {
 
     private func request() {
         guard let file else { return }
-        preview.request(url: file, recipe: recipe, maxPixelSize: pixelSize)
+        preview.request(url: file, recipe: recipe, maxPixelSize: pixelSize, viewPixelSize: window)
     }
 }
 

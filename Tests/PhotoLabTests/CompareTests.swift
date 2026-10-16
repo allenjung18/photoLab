@@ -220,6 +220,44 @@ final class CompareTests: XCTestCase {
         XCTAssertNotNil(preview.beforeImage, "Before is not starved by a drag (\(Int(ev * 100)) drag ticks)")
     }
 
+    /// At 1:1 both halves show the same region: the Before window is the
+    /// neutral render cut at the After window's region, in the same hop, and
+    /// a pan moves both. Leaving compare mode drops the Before window only.
+    func testAtOneToOneBothHalvesShowTheSameRegion() async throws {
+        let url = try writePNG("big.png", width: 2400, height: 1600)
+        let half = CGSize(width: 600, height: 400)
+        let preview = PreviewModel()
+        preview.load(url)
+        preview.request(url: url, recipe: exposure(0.8), maxPixelSize: 600, viewPixelSize: half)
+        preview.setCompare(true)
+        await preview.awaitLoad()
+        let full = try XCTUnwrap(Renderer.fullResolution(url, decodeNow: true))
+
+        for center in [CGPoint(x: 0.3, y: 0.6), CGPoint(x: 0.95, y: 0.05)] {
+            preview.setZoom(.actual(center: center))
+            let rect = Renderer.Region(center: center, size: half).rect(in: CGSize(width: 2400, height: 1600))
+            await waitUntil { preview.zoomRegion == rect && preview.zoomBeforeRegion == rect }
+            XCTAssertEqual(preview.zoomRegion, rect, "\(center)")
+            XCTAssertEqual(preview.zoomBeforeRegion, preview.zoomRegion, "\(center): both halves, one region")
+            let after = try XCTUnwrap(preview.zoomImage)
+            let before = try XCTUnwrap(preview.zoomBeforeImage)
+            XCTAssertEqual(before.width, after.width)
+            XCTAssertEqual(before.height, after.height)
+            let neutral = try XCTUnwrap(Renderer.shared.render(full, recipe: .neutral,
+                                                               region: .init(center: center, size: half))).image
+            XCTAssertEqual(PhotoLabTests.maxDiff(before, neutral), 0, "\(center): Before is the neutral window")
+            XCTAssertGreaterThan(PhotoLabTests.maxDiff(before, after), 0, "\(center): and After is the recipe's")
+        }
+
+        preview.setCompare(false)
+        XCTAssertNil(preview.zoomBeforeImage, "leaving compare mode drops the Before window")
+        XCTAssertNil(preview.zoomBeforeRegion)
+        XCTAssertEqual(preview.zoom, .actual(center: CGPoint(x: 0.95, y: 0.05)), "and stays at 1:1")
+        await settle()
+        XCTAssertNotNil(preview.zoomImage)
+        XCTAssertNil(preview.zoomBeforeImage)
+    }
+
     func testOpeningAFolderLeavesCompareMode() throws {
         _ = try writePNG("a.png")
         let library = Library(rememberFolder: false)

@@ -292,8 +292,33 @@ Nothing else; the copied settings live in memory.
   or the asset gone). `PreviewModel` (`Preview.swift`) decodes the master once at
   `PreviewModel.masterPixelSize` through `Renderer.previewMaster`, renders
   through `Renderer.render` off the main thread, and coalesces requests
-  (latest wins, at most one render in flight). Double-click the photo to go
-  back to the grid.
+  (latest wins, at most one render in flight). **G** or **Esc** go back
+  to the grid (a click on the photo zooms, below).
+- **1:1 and pan.** `Library.loupeZoom` is a `PreviewZoom`, fit or 1:1
+  around a centre; `PreviewCanvas` hands it to `PreviewModel.setZoom(_:)`
+  and passes its pane in pixels as `viewPixelSize` on every request (the
+  window's size). **Z** (`Library.toggleZoom()`) goes to 1:1 at the middle
+  of the photo or back to fit. A click on the photo at fit zooms to 1:1 at
+  the pixel clicked (`ZoomMath.center(forClick:frame:pane:)` through the
+  fit frame's place in the padded pane; a click on the black around it
+  does nothing); a click at 1:1 goes back to fit. A drag at 1:1 pans: the
+  picture follows the pointer (`ZoomMath.pan`, view points times the
+  display scale in frame pixels), the centre held so the window never
+  leaves the frame (`ZoomMath.clamp`). Under 3 points of movement a press
+  is a click. Until the first window lands (the full-resolution decode) the
+  fit frame stays up under a "1:1" badge with a spinner. A photo whose
+  rendered frame fits the view whole goes back to fit by itself
+  (`ZoomMath.fits`; 1:1 would only shrink it). The arrows (even at either
+  end), any other photo change (`Library.selection`) and leaving the loupe
+  return to fit; the zoom is never remembered. In compare mode both halves
+  show the same region (`PreviewModel.zoomBeforeImage`, the neutral
+  window cut at the After window's region) and either half takes the
+  click and the drag. The clipping overlay paints on the window as on the
+  fit frame.
+  The click used to be a double-click back to the grid: SwiftUI can only
+  tell a click from a double-click by waiting out the double-click
+  interval, so keeping both would delay every zoom click. **G** and **Esc**
+  were already the way back.
 - **Before.** `BeforeButton(isPressed:)` (`ContentView.swift`) is a
   press-and-hold bound to `Library.showBefore`; `\` toggles the same flag.
   While it is on, `PreviewCanvas` substitutes `Recipe.neutral` for the
@@ -551,7 +576,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
     unused, there are no text fields).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
-  - **View**: **Grid** **G**, **Loupe** **E**, **Before and After** **Y**,
+  - **View**: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
+    (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
     **Show Original** **\\**, **Clipping Warning** **J**, **Previous Photo**
     **←** and **Next Photo** **→** (the keys below).
   - **Photo**: **Pick** **P**, **Reject** **X**, **Unflag** **U**, **No
@@ -562,6 +588,7 @@ key is typed anywhere else; the README's Keys table is the user's list.
   background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it
   (selecting the first photo when none is); **Esc** leaves the loupe or, in
   the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
+  **Z** toggles `Library.loupeZoom` in the loupe;
   `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and
   from the grid enters the loupe with it on); **J** toggles `Library.showClipping`
   (the clipping overlay, see Adjustments panel); **P** / **X** / **U** flag
