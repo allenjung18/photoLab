@@ -18,6 +18,12 @@ enum WhiteBalance {
     /// A channel below this in the patch is too dark to read a cast from:
     /// refused.
     static let darkLevel = 0.02
+    /// A pixel whose channels differ by more than this is a colour, not a
+    /// neutral, and is left out of Auto's grey-world mean.
+    static let saturatedLevel = 0.25
+    /// Fewer than this share of the frame near-neutral: Auto falls back to
+    /// every unclipped pixel.
+    static let neutralShare = 0.05
     /// The patch sampled around the click, in pixels of the sampled frame.
     static let patchSize = 5
 
@@ -53,6 +59,50 @@ enum WhiteBalance {
         guard let first = AdjustmentKind.allCases.firstIndex(of: .temperature) else { return r }
         for kind in AdjustmentKind.allCases[first...] { r.reset(kind) }
         return r
+    }
+
+    /// Auto's answer for one photo: the temperature and tint that render the
+    /// frame's average colour grey (a grey-world estimate), solved by the
+    /// same `neutralising` as the eyedropper. The frame is `recipe` through
+    /// `base` and `AutoTone.base` (so Auto reads it the same however often
+    /// it ran), rendered at `AutoTone.analysisPixelSize`; the average is over
+    /// the pixels that are not clipped, not dark and not strongly saturated
+    /// (`greyWorldMean`). Nil when nothing is readable (an all-black or
+    /// all-white frame): white balance is then left alone.
+    static func auto(for master: CIImage, recipe: Recipe,
+                     renderer: Renderer = .shared) -> (temperature: Double, tint: Double)? {
+        let input = AutoTone.base(base(recipe))
+        guard let frame = renderer.render(master, recipe: input, maxPixelSize: AutoTone.analysisPixelSize),
+              let mean = greyWorldMean(frame.image),
+              case .balanced(let temperature, let tint) = neutralising(mean, renderer: renderer)
+        else { return nil }
+        return (temperature, tint)
+    }
+
+    /// The mean sRGB colour of `cg`'s near-neutral pixels (no channel at or
+    /// above `clippedLevel` or below `darkLevel`, channels within
+    /// `saturatedLevel` of each other); when fewer than `neutralShare` of
+    /// the pixels qualify, the mean of every unclipped pixel. Nil when there
+    /// is none.
+    static func greyWorldMean(_ cg: CGImage) -> SIMD3<Double>? {
+        let w = cg.width, h = cg.height
+        guard w > 0, h > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return nil }
+        let p = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        var neutral = SIMD3<Double>(repeating: 0), unclipped = neutral
+        var nNeutral = 0, nUnclipped = 0
+        for i in 0..<(w * h) {
+            let c = SIMD3(Double(p[i * 4]), Double(p[i * 4 + 1]), Double(p[i * 4 + 2])) / 255
+            if c.max() >= clippedLevel { continue }
+            unclipped += c; nUnclipped += 1
+            if c.min() >= darkLevel, spread(c) <= saturatedLevel { neutral += c; nNeutral += 1 }
+        }
+        if nNeutral > 0, Double(nNeutral) >= neutralShare * Double(w * h) { return neutral / Double(nNeutral) }
+        return nUnclipped > 0 ? unclipped / Double(nUnclipped) : nil
     }
 
     /// The mean colour of the `patchSize`-pixel square around `point`

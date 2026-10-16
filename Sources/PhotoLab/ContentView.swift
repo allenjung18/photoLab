@@ -1724,14 +1724,21 @@ struct AdjustmentsPanel: View {
         let command = AppCommand.command(.whiteBalance)
         let key = command.key.map(AppCommand.label(for:)) ?? ""
         let context = CommandContext(library: library)
+        let auto = AppCommand.command(.autoWhiteBalance)
+        let autoContext = CommandContext(library: library, targetIDs: [photo.id], subjectID: photo.id)
         return VStack(alignment: .leading, spacing: 4) {
-            Toggle(isOn: Binding(get: { library.whiteBalancePicking },
-                                 set: { if $0 != library.whiteBalancePicking { command.perform(context) } })) {
-                Label("White Balance", systemImage: "eyedropper")
+            HStack(spacing: 6) {
+                Toggle(isOn: Binding(get: { library.whiteBalancePicking },
+                                     set: { if $0 != library.whiteBalancePicking { command.perform(context) } })) {
+                    Label("White Balance", systemImage: "eyedropper")
+                }
+                .toggleStyle(.button)
+                .disabled(!command.isEnabled(context) || file == nil)
+                .help("Click a spot on the photo that should be neutral to set temperature and tint (\(key)); Esc to cancel")
+                Button("Auto") { auto.perform(autoContext) }
+                    .disabled(!auto.isEnabled(autoContext) || file == nil)
+                    .help("Set temperature and tint from the photo's average colour (⇧⌘U)")
             }
-            .toggleStyle(.button)
-            .disabled(!command.isEnabled(context) || file == nil)
-            .help("Click a spot on the photo that should be neutral to set temperature and tint (\(key)); Esc to cancel")
             if let note = library.whiteBalanceNote {
                 Text(note)
                     .font(.caption2)

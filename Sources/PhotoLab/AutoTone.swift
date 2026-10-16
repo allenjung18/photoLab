@@ -1,7 +1,8 @@
 import Foundation
 import CoreImage
 
-/// Auto: exposure, contrast, highlights, shadows, whites and blacks set from
+/// Auto: temperature and tint first (`WhiteBalance.auto`), then exposure,
+/// contrast, highlights, shadows, whites and blacks set from
 /// the photo's histogram (the Basic section's **Auto** button, Photo › Auto
 /// Tone, ⌘U). `values(from:)` is a pure function of one `Histogram`; the
 /// rest says which histogram that is.
@@ -32,9 +33,16 @@ import CoreImage
 ///   above `upperZone`, shadows lift when as much sits below `lowerZone`.
 enum AutoTone {
     /// The kinds Auto sets, the Basic section's.
-    static let kinds: [AdjustmentKind] = [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]
+    static let toneKinds: [AdjustmentKind] = [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]
+    /// White balance, set first (`WhiteBalance.auto`) and left alone when
+    /// the photo has no readable cast.
+    static let whiteBalanceKinds: [AdjustmentKind] = [.temperature, .tint]
+    /// Every kind Auto sets: the six tone values and the white balance.
+    static let kinds: [AdjustmentKind] = toneKinds + whiteBalanceKinds
     /// The batch mask Auto applies through (`Library.sync`).
     static let mask = SyncMask(kinds: Set(kinds))
+    /// Auto White Balance alone: temperature and tint only.
+    static let whiteBalanceMask = SyncMask(kinds: Set(whiteBalanceKinds))
     /// The long side the analysis frame is rendered at.
     static let analysisPixelSize = 512
 
@@ -59,7 +67,7 @@ enum AutoTone {
     /// neutral (and enabled, as the default has them).
     static func base(_ recipe: Recipe) -> Recipe {
         var r = recipe.normalized
-        for kind in kinds { r[kind] = Adjustment(kind: kind, value: kind.neutral) }
+        for kind in toneKinds { r[kind] = Adjustment(kind: kind, value: kind.neutral) }
         return r
     }
 
@@ -74,14 +82,28 @@ enum AutoTone {
 
     /// The six values for the photo, or nil when no frame could be made.
     static func values(for master: CIImage, recipe: Recipe) -> [AdjustmentKind: Double]? {
-        histogram(of: master, recipe: recipe).map(values(from:))
+        // White balance first; the six are then measured on the recipe with
+        // it, so the tone is solved for the colours the photo will have.
+        var measured = recipe.normalized
+        var wb: [AdjustmentKind: Double] = [:]
+        if let auto = WhiteBalance.auto(for: master, recipe: recipe) {
+            wb = [.temperature: auto.temperature, .tint: auto.tint]
+            for (kind, value) in wb { measured[kind] = Adjustment(kind: kind, value: value) }
+        }
+        guard var out = histogram(of: master, recipe: measured).map(values(from:)) else { return nil }
+        out.merge(wb) { $1 }
+        return out
     }
 
     /// `recipe` with the six values set and enabled.
     static func applying(_ values: [AdjustmentKind: Double], to recipe: Recipe) -> Recipe {
         var r = recipe.normalized
-        for kind in kinds {
+        for kind in toneKinds {
             r[kind] = Adjustment(kind: kind, value: values[kind] ?? kind.neutral)
+        }
+        // A white balance Auto could not read stays as the recipe has it.
+        for kind in whiteBalanceKinds {
+            if let value = values[kind] { r[kind] = Adjustment(kind: kind, value: value) }
         }
         return r
     }

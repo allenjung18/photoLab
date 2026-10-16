@@ -430,6 +430,13 @@ not only the pass.
   holds the result, a second Auto changes nothing; three selected photos
   are one batch (one sidecar each, one `⌘Z` takes all three back); the
   command is Photo › Auto Tone on `⌘U`, disabled with nothing to tone.
+  (Auto's white balance is in `AutoWhiteBalanceTests.swift`: warm and green
+  casts rendered near neutral with the right slider signs, a neutral scene
+  at 0, a clipped white ignored, an all-black frame nil and white balance
+  kept, eight values idempotent, one `⌘Z` on three photos, Auto White
+  Balance changing only temperature and tint; shown to bite by dropping the
+  white-balance step from `AutoTone.values` (5 failures) and the clipped-pixel
+  exclusion in `WhiteBalance.greyWorldMean` (1 failure).)
   Shown to bite by three mutants (the base keeping the six: 12 failures;
   the exposure sign flipped: 5; a batch tag per photo: 2).
 - `HistoryTests.swift` — the History section: `HistoryLabel` names one

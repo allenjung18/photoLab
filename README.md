@@ -87,7 +87,8 @@ in Xcode works too.
 | `⌘F` | Search Photos: the search field at the left of the bar above the grid (from the loupe it goes back to the grid); every word typed must match a photo's name or one of its keywords, ignoring case and accents, on top of the filter; `Esc` clears it, `Return` leaves it; not remembered when you open another folder or album. While it has the focus every single-key shortcut (`P`, `X`, `0`–`5`, the arrows, `Esc`, `Return`…) types into it instead |
 | `⌘A` | Select All Photos (grid only) |
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
-| `⌘U` | Auto Tone: exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
+| `⌘U` | Auto Tone: temperature and tint from the photo's average colour, then exposure, contrast, highlights, shadows, whites and blacks from its histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
+| `⇧⌘U` | Auto White Balance: temperature and tint only (or **Auto** beside White Balance in Color) |
 | `⇧⌘R` | Reset Photo (back to the original) |
 | `⌘'` | Create Virtual Copy: a second edit of the selected photo (grid or loupe), starting from its current one, listed right after it with a small number badge and captioned "<name> Copy 2"; **Photo › Remove Virtual Copy…** (also in a cell's right-click menu) deletes a copy's edit after a confirm and is not undoable. A copy is flagged, rated, synced, batch-edited and exported like any photo; its export is named `<name>-copy2.jpg` so it never lands on its master's; Save to Photos is off on a copy (Photos keeps one edit per photo) |
 | `⇧⌘P` | Save Preset… (in the loupe) |
@@ -102,7 +103,7 @@ Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Red
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
+ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
 to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Move Rejected Photos to Trash…). A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
@@ -235,9 +236,11 @@ and **Delete**. Every add, delete, switch and slider drag is one undo step.
 **Show Overlay** (or `O`) tints the selected mask red on the photo.
 
 - **Basic** — exposure (EV), contrast, highlights, shadows, whites, blacks.
-  **Auto** (or `⌘U`, Photo › Auto Tone) sets all six from the photo's
-  histogram, measured with those six at zero, so pressing it again changes
-  nothing; it is one undo step and keeps every other edit. A dark photo is
+  **Auto** (or `⌘U`, Photo › Auto Tone) sets temperature and tint from the
+  photo's near-neutral average colour, then all six from the histogram
+  measured with those six at zero, so pressing it again changes
+  nothing (an unreadable frame, all black or all clipped, keeps its white
+  balance); it is one undo step and keeps every other edit. A dark photo is
   brightened, a blown sky pulled in by highlights and whites rather than by
   darkening the whole frame. A RAW is read from its decoded master, never
   from the camera preview the loupe shows first.

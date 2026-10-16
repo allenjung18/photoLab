@@ -44,7 +44,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
+        case crop, whiteBalance, autoTone, autoWhiteBalance, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
         case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger
         case trashRejects
@@ -325,6 +325,15 @@ struct AppCommand: Identifiable {
                    perform: { c in
                        let lib = c.library, ids = c.targets
                        Task { await lib.autoTone(ids) }
+                   }),
+        // Auto White Balance: temperature and tint alone, the same estimate
+        // as Auto (`WhiteBalance.auto`), through `Library.autoTone`'s path.
+        AppCommand(name: .autoWhiteBalance, title: "Auto White Balance", key: "u", modifiers: [.command, .shift],
+                   placement: .photo, section: 2,
+                   isEnabled: { c in !c.targets.isEmpty && !c.library.autoToning },
+                   perform: { c in
+                       let lib = c.library, ids = c.targets
+                       Task { await lib.autoTone(ids, mask: AutoTone.whiteBalanceMask) }
                    }),
         AppCommand(name: .resetPhoto, title: "Reset Photo", key: "r", modifiers: [.command, .shift],
                    placement: .photo, section: 2,

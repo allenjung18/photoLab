@@ -441,7 +441,13 @@ pushing the brightest channel's 99.5th percentile past
 `AutoTone.whiteWindow` and `AutoTone.blackWindow`, and highlights and
 shadows answer the mass above `AutoTone.upperZone` and below
 `AutoTone.lowerZone`. The measured frame never carries the six, so Auto
-read twice reads the same histogram and sets the same values.
+read twice reads the same histogram and sets the same values. White balance
+comes first: `AutoTone.values(for:recipe:)` asks `WhiteBalance.auto`
+(a grey-world mean over `WhiteBalance.greyWorldMean`'s near-neutral pixels
+of the frame with `WhiteBalance.base` and `AutoTone.base` applied, solved
+by `WhiteBalance.neutralising`) and measures the histogram on the recipe
+with that temperature and tint; `AutoTone.base` zeroes only the six, so the
+second run reads the same frame and sets the same eight values.
 
 ### The preset strip
 
@@ -1154,8 +1160,9 @@ the `SyncSheet` turns into one `sync` call with the mask the user ticked;
 `Library.sync(_:mask:)` is the same call with a source per photo, and
 `sync(_:mask:to:)` is it with one source for all. Auto
 (`Library.autoTone(_:)`) is its one other caller: each photo's six values
-(`AutoTone`, see 1, The histogram) become that photo's source, applied with
-`AutoTone.mask` under one batch tag, so Auto on the grid's selection is one
+(`AutoTone`, see 1, The histogram) and its white balance become that photo's
+source, applied with `AutoTone.mask` (or `AutoTone.whiteBalanceMask` for
+Photo › Auto White Balance, `Library.autoTone(_:mask:)`) under one batch tag, so Auto on the grid's selection is one
 undo step and one sidecar write per photo changed, and a photo Auto would
 not change is skipped.
 

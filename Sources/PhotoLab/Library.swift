@@ -1543,8 +1543,9 @@ final class Library {
         return changed
     }
 
-    /// Auto (`AutoTone`): exposure, contrast, highlights, shadows, whites
-    /// and blacks set from each photo's histogram, applied through `sync`
+    /// Auto (`AutoTone`): temperature and tint (`WhiteBalance.auto`), then
+    /// exposure, contrast, highlights, shadows, whites and blacks set from
+    /// each photo's histogram, applied through `sync`
     /// with one batch tag: one undo step for the lot (one photo or the
     /// grid's selection) and one sidecar write per photo changed. Running it
     /// again changes nothing. Returns how many photos changed.
@@ -1557,9 +1558,10 @@ final class Library {
     /// main thread, so a RAW still on its first frame simply takes the
     /// master's time. A photo whose original cannot be read is skipped; a
     /// source opened meanwhile drops the lot (`sync` skips photos it does
-    /// not list).
+    /// not list). `mask` `AutoTone.whiteBalanceMask` is Auto White Balance:
+    /// only temperature and tint, measured the same way.
     @discardableResult
-    func autoTone(_ ids: [Photo.ID]) async -> Int {
+    func autoTone(_ ids: [Photo.ID], mask: SyncMask = AutoTone.mask) async -> Int {
         guard !autoToning, !ids.isEmpty else { return 0 }
         autoToning = true
         defer { autoToning = false }
@@ -1567,17 +1569,23 @@ final class Library {
         for id in ids {
             guard let url = try? await originalFile(for: id) else { continue }
             let recipe = recipe(for: id)
+            let whiteBalanceOnly = mask == AutoTone.whiteBalanceMask
             let values = await Task.detached(priority: .userInitiated) { () -> [AdjustmentKind: Double]? in
                 guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
                 else { return nil }
-                return AutoTone.values(for: master, recipe: recipe)
+                guard whiteBalanceOnly else { return AutoTone.values(for: master, recipe: recipe) }
+                return WhiteBalance.auto(for: master, recipe: recipe).map {
+                    [.temperature: $0.temperature, .tint: $0.tint]
+                }
             }.value
             guard let values else { continue }
-            sources.append((id, AutoTone.applying(values, to: .neutral)))
+            // The photo's own recipe underneath: a white balance Auto could
+            // not read stays as it is.
+            sources.append((id, AutoTone.applying(values, to: recipe)))
         }
         // A drag left open would fold Auto into its step.
         closeOpenEdit()
-        return sync(sources, mask: AutoTone.mask)
+        return sync(sources, mask: mask)
     }
 
     /// Applies a preset to many photos as one batch: the preset's look (the

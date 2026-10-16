@@ -1099,8 +1099,18 @@ redo, Reset, the render time and any sidecar error.
   `PreviewModel.masterPixelSize` (`Renderer.previewMaster`, the loupe's own
   master decode: a camera RAW is read from its decoded master, never from
   the embedded first frame the loupe shows while that decodes; Auto waits
-  for its own decode). The recipe with the six Basic kinds at neutral
-  (`AutoTone.base`) is rendered over it at `AutoTone.analysisPixelSize`
+  for its own decode). White balance is set first: `WhiteBalance.auto`
+  renders the recipe through `WhiteBalance.base` and `AutoTone.base` at
+  `AutoTone.analysisPixelSize`, takes the mean sRGB of the near-neutral
+  pixels (`WhiteBalance.greyWorldMean`: no channel at or above
+  `WhiteBalance.clippedLevel` or below `darkLevel`, channels within
+  `WhiteBalance.saturatedLevel`; every unclipped pixel when fewer than
+  `WhiteBalance.neutralShare` qualify) and hands it to
+  `WhiteBalance.neutralising`, the eyedropper's solver, so the filter stays
+  the truth and there is no new adjustment kind; nil (all black or all
+  clipped) leaves temperature and tint as they are. The recipe with the
+  six Basic kinds at neutral
+  (`AutoTone.base`, which keeps temperature and tint) and the new white balance is rendered over it at `AutoTone.analysisPixelSize`
   through `Renderer.render` and counted by `Histogram.compute`, and
   `AutoTone.values(from:)`, a pure function of that `Histogram`, gives
   exposure, contrast, highlights, shadows, whites and blacks. Because the
@@ -1108,7 +1118,7 @@ redo, Reset, the render time and any sidecar error.
   histogram and sets the same values (`Library.sync` then skips the photo).
   `AutoTone.base` keeps the photo's masks, so Auto measures the picture with
   its local adjustments rendered; Auto never changes them, so that holds.
-  The values go on through `Library.sync(_:mask:)` with `AutoTone.mask`:
+  The eight values (`AutoTone.kinds`) go on through `Library.sync(_:mask:)` with `AutoTone.mask`:
   one batch tag for every photo given, so one `⌘Z` takes the lot back, and
   one sidecar write per photo changed. The command (`AppCommand.Name.autoTone`)
   acts on `CommandContext.targets`, so in the grid it is every selected
@@ -1442,7 +1452,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.cropMode`, loupe only), **White Balance Picker** **W**
     (`Library.whiteBalancePicking`, loupe only), **Auto Tone** **⌘U**
     (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
-    Auto) and **Reset Photo** **⇧⌘R**
+    Auto), **Auto White Balance** **⇧⌘U** (the same call with
+    `AutoTone.whiteBalanceMask`: temperature and tint only; also the **Auto**
+    button beside White Balance in Color) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited), **Create
     Virtual Copy** **⌘'** and **Remove Virtual Copy…** (see Virtual copies); then
     **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch

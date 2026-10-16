@@ -102,14 +102,14 @@ final class AutoToneTests: XCTestCase {
         for level in [dark, clipped, wellExposed] {
             // Another edit (warmth, a crop) rides along and is measured as is.
             var start = Recipe.neutral
-            start.set(.temperature, to: 30)
+            start.set(.vibrance, to: 30)
             start.set(.cropLeft, to: 10)
             let first = try values(level, recipe: start)
             let once = AutoTone.applying(first, to: start)
             let second = try values(level, recipe: once)
             XCTAssertEqual(first, second)
             XCTAssertEqual(AutoTone.applying(second, to: once), once)
-            XCTAssertEqual(once.value(of: .temperature), 30)
+            XCTAssertEqual(once.value(of: .vibrance), 30)
             XCTAssertEqual(once.value(of: .cropLeft), 10)
         }
     }
@@ -121,13 +121,13 @@ final class AutoToneTests: XCTestCase {
         r.set(.contrast, to: 40)
         r.set(.vibrance, to: 20)
         let base = AutoTone.base(r)
-        for kind in AutoTone.kinds { XCTAssertEqual(base[kind], Adjustment(kind: kind, value: kind.neutral)) }
+        for kind in AutoTone.toneKinds { XCTAssertEqual(base[kind], Adjustment(kind: kind, value: kind.neutral)) }
         XCTAssertEqual(base.value(of: .vibrance), 20)
         let applied = AutoTone.applying([.contrast: 5], to: r)
         XCTAssertTrue(applied.isEnabled(.contrast))
         XCTAssertEqual(applied.value(of: .contrast), 5)
         XCTAssertEqual(applied.value(of: .exposure), 0)
-        XCTAssertEqual(Set(AutoTone.kinds), Set(AdjustmentKind.Section.basic.kinds))
+        XCTAssertEqual(Set(AutoTone.toneKinds), Set(AdjustmentKind.Section.basic.kinds))
     }
 
     // MARK: Through the library
