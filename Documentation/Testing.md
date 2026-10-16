@@ -378,6 +378,19 @@ not only the pass.
   a clipped and a black photo change nothing (no step, no sidecar), show
   the refusal and stay armed. Shown to bite by flipping the temperature
   sign inside `WhiteBalance.neutralising` (22 failures in 4 tests).
+- `WatermarkTests.swift` — the export watermark (`Watermark`,
+  `Renderer.render`'s `watermark:`): on a 400x300 black render a white
+  mark lights the chosen corner and leaves the opposite one black, for
+  every position (the centre mark leaves all four corners black); the mark
+  keeps the 2% margin; its lit height halves when the same 800x600 render
+  is resized to 400 px (the size follows the OUTPUT's short side) and grows
+  with the size control; opacity dims it; a nil, empty or whitespace
+  watermark is pixel-identical to a render with no watermark argument; a
+  region render ignores it; options JSON stored before the field decodes
+  with nil, a watermark round-trips and a partial one takes the defaults;
+  `PhotosSource.saveOptions.watermark` is nil; a folder export through
+  `Exporter.export` writes the mark into the JPEG. Shown to bite by
+  ignoring the position (always bottom right; 7 failures in 2 tests).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows

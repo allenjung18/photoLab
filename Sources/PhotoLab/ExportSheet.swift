@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Export…: the options for one run (format, quality, size, name, collision,
-/// metadata) and the target (a folder, or the Photos library with an
+/// metadata, watermark) and the target (a folder, or the Photos library with an
 /// album), offered as last time, then the run starts through
 /// `ExportQueue.start(_:to:options:)`. For Photos the collision policy is
 /// hidden (every export is a new asset) and the access status is shown,
@@ -21,6 +21,10 @@ struct ExportSheet: View {
     @State private var destination: Destination
     @State private var albumText: String
     @State private var photosStatus: PhotosAuthorization?
+    /// The Watermark section's toggle; its fields stay in `watermark` while
+    /// it is off, and `resolved` drops them.
+    @State private var watermarkOn: Bool
+    @State private var watermark: Watermark
 
     private enum SizeMode: Hashable { case original, longSide, percent }
     private enum Destination: Hashable { case folder, photos }
@@ -32,6 +36,8 @@ struct ExportSheet: View {
         _folder = State(initialValue: folder)
         _destination = State(initialValue: toPhotos ? .photos : .folder)
         _albumText = State(initialValue: album ?? "")
+        _watermarkOn = State(initialValue: options.watermark != nil)
+        _watermark = State(initialValue: options.watermark ?? Watermark())
         switch options.resize {
         case .longSide(let n):
             _sizeMode = State(initialValue: .longSide); _longSide = State(initialValue: n); _percent = State(initialValue: 50)
@@ -117,6 +123,32 @@ struct ExportSheet: View {
                         }
                     }
                     Toggle("Keep camera info (EXIF, GPS, IPTC) from the original", isOn: $options.keepMetadata)
+                }
+                Section("Watermark") {
+                    Toggle("Add a text watermark", isOn: $watermarkOn)
+                    if watermarkOn {
+                        TextField("Text", text: $watermark.text, prompt: Text("e.g. © Your Name"))
+                            .textFieldStyle(.roundedBorder)
+                        Picker("Position", selection: $watermark.position) {
+                            ForEach(Watermark.Position.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        HStack {
+                            Slider(value: $watermark.size, in: Watermark.sizeRange, step: 0.005) { Text("Size") }
+                            Text(String(format: "%.1f%%", watermark.size * 100))
+                                .monospacedDigit()
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                        HStack {
+                            Slider(value: $watermark.opacity, in: Watermark.opacityRange, step: 0.05) { Text("Opacity") }
+                            Text("\(Int((watermark.opacity * 100).rounded()))%")
+                                .monospacedDigit()
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                        Text(watermark.isBlank
+                             ? "Blank text adds no watermark."
+                             : "White with a soft shadow; size is the text height as a share of the photo's short side.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section("Export to") {
                     Picker("Export to", selection: Binding(get: { shownDestination }, set: { destination = $0 })) {
@@ -215,9 +247,11 @@ struct ExportSheet: View {
         return resolved.fileName(for: first.source, name: first.name)
     }
 
-    /// `options` with the size controls folded into `resize`.
+    /// `options` with the size controls folded into `resize` and the
+    /// Watermark section into `watermark` (nil when off or blank).
     private var resolved: ExportOptions {
         var o = options
+        o.watermark = watermarkOn && !watermark.isBlank ? watermark : nil
         switch sizeMode {
         case .original: o.resize = nil
         case .longSide: o.resize = .longSide(max(1, longSide))

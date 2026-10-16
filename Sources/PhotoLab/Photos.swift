@@ -517,7 +517,8 @@ struct PhotosSource: PhotoSource {
     }
 
     /// How a Save to Photos renders: JPEG (PhotoKit's rendered content is
-    /// JPEG, a RAW original's too), full size, the original's metadata.
+    /// JPEG, a RAW original's too), full size, the original's metadata,
+    /// never a watermark (the asset's edit is the photo, not an export).
     static let saveOptions = ExportOptions(format: .jpeg, quality: 0.9, resize: nil, keepMetadata: true)
 
     /// Save to Photos: writes `recipe` into the library as the asset's edit

@@ -346,8 +346,15 @@ final class Renderer: @unchecked Sendable {
     /// would change clarity, sharpening, grain and vignette. Core Image
     /// evaluates only what the window needs, so a region of a 24 MP source
     /// costs about the window's pixels. Not combined with `resize`.
+    ///
+    /// `watermark` is the export's text mark (`ExportOptions.watermark`),
+    /// drawn as the LAST stage, after `resize`, inside the output rect
+    /// (`Watermark.composite(over:in:)`), so its size follows the written
+    /// file's short side. Only `Exporter.write` passes one; the loupe, the
+    /// preset strip, thumbnails and Save to Photos never do. Nil or blank
+    /// text leaves the output as it was; ignored with a `region`.
     func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil, resize: OutputSize? = nil,
-                region: Region? = nil) -> Result? {
+                region: Region? = nil, watermark: Watermark? = nil) -> Result? {
         let t0 = DispatchTime.now().uptimeNanoseconds
         var image = source
         let extent = source.extent
@@ -383,6 +390,9 @@ final class Renderer: @unchecked Sendable {
                 image = scaled
                 rect = CGRect(origin: .zero, size: target)
             }
+        }
+        if region == nil, let watermark, !watermark.isBlank {
+            image = watermark.composite(over: image, in: rect)
         }
         let space = source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let cg = context.createCGImage(image, from: rect, format: .RGBA8, colorSpace: space) else {

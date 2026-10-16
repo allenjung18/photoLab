@@ -265,7 +265,11 @@ selection back to the anchor:
   folder, and neither is any other photo of the open library: an Overwrite
   that would land on one fails for that photo and the bar says why), whether the camera info travels (EXIF, GPS and IPTC are copied
   from the original with the orientation reset, since the render is
-  already upright), and where it goes: a **Folder**, or the **Photos
+  already upright), an optional text **Watermark** (white with a soft
+  shadow, at a corner or the centre, its size the text height as a share
+  of the exported photo's short side, so it reads the same at every export
+  size, and its opacity; blank text adds none; never on the loupe or a
+  Save to Photos), and where it goes: a **Folder**, or the **Photos
   library**. For Photos each photo is rendered with the same options and
   added as a new photo, into an album (default **PhotoLab**, created the
   first time; clear the field for the library only); there is no collision
@@ -318,7 +322,7 @@ Everything the app writes, and nothing else:
   whether the filmstrip and the Info and History sections are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,
-  metadata), so the next export sheet opens with them.
+  metadata, watermark), so the next export sheet opens with them.
 - **Exports** — the files you ask for, in the folder you choose, written
   through a hidden partial file and moved into place when complete. An
   export to Photos renders each file into `$TMPDIR/PhotoLab-export/<run>/`,

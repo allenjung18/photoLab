@@ -80,7 +80,7 @@ same at their different sizes.
 
 ### Output
 
-`Renderer.render(_:recipe:maxPixelSize:resize:)` is the one place a chain is
+`Renderer.render(_:recipe:maxPixelSize:resize:region:watermark:)` is the one place a chain is
 run to pixels. It scales the source down to `maxPixelSize` first (never up;
 nil renders at source size), applies the recipe, then, if `resize` is given,
 sizes the output: `OutputSize` is an exact long side (`longSide`) or a
@@ -100,6 +100,20 @@ scale, the last step of the chain, done once. The result is an 8-bit
 wall time of the whole step in `milliseconds` (the loupe's footer and the
 tests read it). `render` is synchronous; every caller runs it off the main
 thread.
+
+After the resize, and only for a whole frame (never with a `region`),
+`watermark` (an export's `ExportOptions.watermark`) is the very last stage:
+`Watermark.composite(over:in:)` typesets the trimmed one-line text
+(`cleanText`) with Core Text in the system font, its height (ascent plus
+descent) `clampedSize` of the OUTPUT rect's short side (shrunk to fit
+between the margins when the line is too long), draws it white with a
+soft dark shadow at `clampedOpacity` into its own bitmap, and composites
+it source-over at `Watermark.origin(for:textSize:in:margin:)`: a corner,
+`Watermark.marginFraction` (2%) of the short side in from both edges, or
+the centre. Because it follows the resize, the mark is the same share of
+every exported size. Nil or blank text changes nothing, pixel for pixel.
+Only `Exporter.write` passes one, so the loupe, the preset strip,
+thumbnails and Save to Photos (`PhotosSource.saveOptions`) never draw it.
 
 ### The loupe
 
@@ -319,7 +333,7 @@ there.
 ## 2. Data model
 
 All of it is in `Adjustments.swift`, `Masks.swift`, `Sidecar.swift`, `Presets.swift`,
-`Export.swift`, `PhotoSource.swift` and `Photos.swift`.
+`Export.swift`, `Watermark.swift`, `PhotoSource.swift` and `Photos.swift`.
 
 ### `PhotoID`, `Photo` and `PhotoSource`
 
@@ -433,7 +447,7 @@ state is `photosSave`) closes an open drag and calls
 `PhotosSource.saveEdit(_:for:name:)`, which takes the cached original
 (`originalFile(for:)`) and hands `PhotoKitClient.saveEdit` the data and a
 render closure: `Exporter.write` with `PhotosSource.saveOptions` (JPEG,
-full size, metadata kept), the same render and write path as an export.
+full size, metadata kept, no watermark), the same render and write path as an export.
 `PhotoKitLive.saveEdit` asks a content-editing input with
 `canHandleAdjustmentData` = `PhotosAdjustment.canHandle` (PhotoLab's
 identifier at a version this build reads), builds a
@@ -669,6 +683,11 @@ One value per export run, carried unchanged through the queue to every item:
 - `collision`, an `ExportOptions.Collision`: `number`, `skip` or
   `overwrite` (section 4).
 - `keepMetadata`, whether the source's camera metadata travels.
+- `watermark`, an optional `Watermark` (`Watermark.swift`: `text`,
+  `position`, `size`, `opacity`), drawn by the render's last stage
+  (section 1, Output); nil = none. Options stored by a build without the
+  field decode with nil, and a stored `Watermark` missing a field takes
+  that field's default (`Watermark.init(from:)`).
 
 `ExportQueue` keeps the last run's folder, target kind, Photos album and
 options between runs, and in UserDefaults across launches through its
@@ -889,8 +908,8 @@ one photo:
    same `fileResourceIdentifier`, so a case variant or a hard link counts).
    Those are the writes the app refuses; nothing is rendered or written.
 3. `Renderer.fullResolution` decodes the original, and `Renderer.render`
-   applies the recipe with `resize` from the options, the resize as the
-   chain's last step (section 1).
+   applies the recipe with `resize` and `watermark` from the options, the
+   resize and then the watermark as the chain's last steps (section 1).
 4. The output properties: when `keepMetadata` is on,
    `ExportMetadata.properties(of:outputWidth:outputHeight:)`, every property
    ImageIO reads from the source (TIFF make and model, the EXIF block, GPS,

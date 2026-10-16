@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// What an export writes: the container, its quality, the output size, the
 /// file name, what happens when the name is taken, and whether the source's
-/// camera metadata travels. One value per run; `Exporter.export` is the one
+/// camera metadata travels, and an optional text watermark. One value per run; `Exporter.export` is the one
 /// path that reads it. Persisted as JSON between runs by `ExportQueue`.
 struct ExportOptions: Codable, Hashable, Sendable {
     enum Format: String, Codable, CaseIterable, Sendable {
@@ -71,6 +71,10 @@ struct ExportOptions: Codable, Hashable, Sendable {
     /// Appended to the original's stem: `DSC06727` + `-edit` → `DSC06727-edit.jpg`.
     var suffix = ""
     var collision: Collision = .number
+    /// A text mark drawn over the output, the render's last stage
+    /// (`Watermark`). nil = none; options stored by a build without the
+    /// field decode with nil.
+    var watermark: Watermark? = nil
 
     static let `default` = ExportOptions()
 

@@ -718,7 +718,13 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   nil for as edited; never upscaled); **File**: a name suffix with a live
   preview from `ExportOptions.fileName(for:)`, what to do when the file
   exists (`ExportOptions.Collision`: add a number, skip, overwrite) and
-  **Keep camera info** (`keepMetadata`); **Export to**: **Folder** or
+  **Keep camera info** (`keepMetadata`); **Watermark**: a toggle, then the
+  text, a position (`Watermark.Position`: the four corners or the centre),
+  size (`Watermark.size`, the text height as a share of the output's short
+  side, `Watermark.sizeRange`) and opacity (`Watermark.opacityRange`)
+  sliders; off or blank text gives `ExportOptions.watermark` nil (the
+  sheet's `resolved`), so the fields typed while it is off are not kept
+  after the sheet closes; **Export to**: **Folder** or
   **Photos library** (`ExportTarget`; Photos disabled under a bare binary,
   which has no bundle for TCC). For a folder, **Choose…** is
   `ExportPanel.chooseFolder(count:format:from:)`, an `NSOpenPanel` that can
@@ -734,7 +740,8 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   `ExportQueue.start(_:to:options:)`.
 - **The run.** `ExportQueue.start` hands each item to `Exporter.export`
   (`Batch.swift`) one at a time off the main thread: the full-resolution
-  decode, the one render chain with the resize last, the format's writer
+  decode, the one render chain with the resize and then the watermark
+  last (`Renderer.render(_:recipe:maxPixelSize:resize:region:watermark:)`), the format's writer
   with the source's metadata when asked, a hidden `.partial` file moved into
   place when complete. The collision policy and the refused writes (the
   photo's own file, `Exporter.Failure.isTheOriginal`; any other original of
