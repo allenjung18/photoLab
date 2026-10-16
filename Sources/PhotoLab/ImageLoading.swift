@@ -197,6 +197,37 @@ final class Thumbnails: @unchecked Sendable {
         return image
     }
 
+    /// What a cell should show for `key` after asking for it; the cells'
+    /// one rule, kept out of the views so a decode that fails resolves.
+    enum CellImage {
+        /// A thumbnail to show.
+        case image(NSImage)
+        /// The photo cannot be decoded (or rendered): show the failed state.
+        case failed
+        /// Nothing new (the request was cancelled, or the plain image stays).
+        case unchanged
+    }
+
+    /// The cell's load: the cached entry; else the plain decode (when the
+    /// cell shows nothing yet), then the rendered one for an edited recipe.
+    /// A nil decode that was not a cancellation is `.failed`, so a file that
+    /// will not decode never leaves its cell spinning.
+    func resolve(_ key: Key, showing current: NSImage?) async -> CellImage {
+        if let hit = cached(key) { return .image(hit) }
+        var shown = current
+        if shown == nil {
+            guard let plain = await thumbnail(for: key.id) else {
+                return Task.isCancelled ? .unchanged : .failed
+            }
+            shown = plain
+        }
+        if !key.isPlain {
+            if let rendered = await thumbnail(for: key.id, recipe: key.recipe) { return .image(rendered) }
+        }
+        if let shown, shown !== current { return .image(shown) }
+        return .unchanged
+    }
+
     /// The photo's plain entry: the cached decode, else one decode, cached.
     private func plain(_ id: PhotoID) async -> NSImage? {
         let key = Key(id)

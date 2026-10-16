@@ -26,14 +26,17 @@ struct FlagStarControl: View {
             Button { AppCommand.command(.pick).perform(ctx) } label: {
                 Image(systemName: flags == [.pick] ? "flag.fill" : "flag")
             }
+            .accessibilityLabel(AccessibleName.pick)
             .help("Pick (P)")
             Button { AppCommand.command(.reject).perform(ctx) } label: {
                 Image(systemName: flags == [.reject] ? "xmark.circle.fill" : "xmark.circle")
             }
+            .accessibilityLabel(AccessibleName.reject)
             .help("Reject (X)")
             Button { AppCommand.command(.unflag).perform(ctx) } label: {
                 Image(systemName: "flag.slash")
             }
+            .accessibilityLabel(AccessibleName.unflag)
             .help("Unflag (U)")
             HStack(spacing: 0) {
                 ForEach(1...Marks.maxRating, id: \.self) { n in
@@ -43,6 +46,7 @@ struct FlagStarControl: View {
                     } label: {
                         Image(systemName: ratings.count == 1 && n <= ratings.first! ? "star.fill" : "star")
                     }
+                    .accessibilityLabel(AccessibleName.stars(n))
                     .help("\(n) star\(n == 1 ? "" : "s") (\(n))")
                 }
             }

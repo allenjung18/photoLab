@@ -95,6 +95,8 @@ struct PresetStrip: View {
     let photo: Photo
     /// The photo's original file; nil until the source has it.
     let file: URL?
+    /// The original could not be fetched: the cells say so, not spin.
+    var unavailable = false
     @State private var thumbnails = PresetThumbnails()
     @State private var newName = ""
     @State private var renaming: Preset?
@@ -132,6 +134,7 @@ struct PresetStrip: View {
                 } label: { Image(systemName: "ellipsis.circle") }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
+                    .accessibilityLabel(AccessibleName.moreActions)
                     .help("More")
             }
             .controlSize(.small)
@@ -169,6 +172,12 @@ struct PresetStrip: View {
         }
     }
 
+    /// Whether a cell without a thumbnail reads "Could not open" instead of
+    /// spinning: the original is unavailable, or its decode failed.
+    static func cellFailed(unavailable: Bool, file: URL?, failedFile: URL?) -> Bool {
+        unavailable || (file != nil && failedFile == file)
+    }
+
     private func cell(_ preset: Preset) -> some View {
         let active = preset.matches(current)
         return VStack(spacing: 3) {
@@ -176,7 +185,7 @@ struct PresetStrip: View {
                 Color(nsColor: .underPageBackgroundColor)
                 if let file, thumbnails.url == file, let t = thumbnails.thumbnails[preset.name] {
                     Image(decorative: t.image, scale: 2).resizable().scaledToFit()
-                } else if let file, thumbnails.failed == file {
+                } else if PresetStrip.cellFailed(unavailable: unavailable, file: file, failedFile: thumbnails.failed) {
                     Text("Could not open")
                         .font(.caption2)
                         .multilineTextAlignment(.center)
@@ -200,6 +209,8 @@ struct PresetStrip: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { library.apply(preset, to: photo.id) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
         .help(helpText(preset))
         .contextMenu {
             Button("Apply") { library.apply(preset, to: photo.id) }

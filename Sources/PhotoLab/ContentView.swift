@@ -483,6 +483,7 @@ struct ThumbnailCell: View {
     /// plain thumbnail), so a change to it re-keys the cell's task.
     var recipe = Recipe.neutral
     @State private var image: NSImage?
+    @State private var failed = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -490,6 +491,10 @@ struct ThumbnailCell: View {
                 Color(nsColor: .controlBackgroundColor)
                 if let image {
                     Image(nsImage: image).resizable().scaledToFit()
+                } else if failed {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                        .help("Can't open \(photo.name)")
                 } else {
                     ProgressView().controlSize(.small)
                 }
@@ -549,12 +554,14 @@ struct ThumbnailCell: View {
             // previous recipe's image, stays up) and the rendered one when it
             // lands. A neutral recipe needs no second step.
             let key = Thumbnails.Key(photo.id, recipe: recipe)
-            if let hit = Thumbnails.shared.cached(key) { image = hit; return }
-            if image == nil, let plain = await Thumbnails.shared.thumbnail(for: photo.id) { image = plain }
-            if !key.isPlain, let rendered = await Thumbnails.shared.thumbnail(for: photo.id, recipe: recipe) {
-                image = rendered
+            switch await Thumbnails.shared.resolve(key, showing: image) {
+            case .image(let found): image = found; failed = false
+            case .failed: failed = true
+            case .unchanged: break
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -563,6 +570,49 @@ struct ThumbnailCell: View {
 /// here), or failed with the source's reason (offline, asset gone).
 enum OriginalFetch: Equatable {
     case none, fetching, failed(String)
+
+    /// Fetches a source-held original and says where that left the loupe:
+    /// the file and `.none`, or no file and `.failed` with the reason. A
+    /// cancelled fetch is `nil`: the caller drops it.
+    @MainActor static func load(_ id: Photo.ID,
+                     using fetch: (Photo.ID) async throws -> URL) async -> (file: URL?, state: OriginalFetch)? {
+        do {
+            let url = try await fetch(id)
+            if Task.isCancelled { return nil }
+            return (url, .none)
+        } catch {
+            if Task.isCancelled { return nil }
+            return (nil, .failed(error.localizedDescription))
+        }
+    }
+
+    /// What the panel's footer and the preset strip say while there is no
+    /// original to show, instead of "Loading…" and spinners that would never
+    /// end; nil while the fetch is not failed.
+    var unavailableNote: String? {
+        if case .failed = self { return "Original not available" }
+        return nil
+    }
+}
+
+/// The accessible names of the loupe's icon-only controls, one place so each
+/// reads distinctly (five stars are five names, not five "star"s).
+enum AccessibleName {
+    static let undo = "Undo"
+    static let redo = "Redo"
+    static let pick = "Pick"
+    static let reject = "Reject"
+    static let unflag = "Unflag"
+    static let moreActions = "More preset actions"
+    static func stars(_ n: Int) -> String { "\(n) star\(n == 1 ? "" : "s")" }
+    /// The adjustment's own name; the tone curve's and the HSL's say which
+    /// group they belong to, as their plain labels repeat the tone rows'.
+    static func adjustment(_ kind: AdjustmentKind) -> String {
+        if let (channel, band) = kind.hsl { return "\(channel.title) \(band.label)" }
+        if kind.section == .curve { return "\(kind.label) (tone curve)" }
+        return kind.label
+    }
+    static func applyAdjustment(_ kind: AdjustmentKind) -> String { "Apply \(adjustment(kind).lowercased())" }
 }
 
 /// The loupe: the canvas and the panel, both fed the photo's original file
@@ -587,7 +637,7 @@ struct LoupeView: View {
                 }
             }
             Divider()
-            AdjustmentsPanel(photo: photo, file: resolvedFile, preview: preview)
+            AdjustmentsPanel(photo: photo, file: resolvedFile, fetch: fetch, preview: preview)
                 .frame(width: 280)
                 .clipped()
         }
@@ -595,15 +645,10 @@ struct LoupeView: View {
             guard photo.fileURL == nil else { fetch = .none; return }
             file = nil
             fetch = .fetching
-            do {
-                let url = try await library.originalFile(for: photo.id)
-                guard !Task.isCancelled else { return }
-                file = url
-                fetch = .none
-            } catch {
-                guard !Task.isCancelled else { return }
-                fetch = .failed(error.localizedDescription)
-            }
+            guard let result = await OriginalFetch.load(photo.id, using: { try await library.originalFile(for: $0) })
+            else { return }
+            file = result.file
+            fetch = result.state
         }
         // A Photos asset with no sidecar may carry PhotoLab's edit in its
         // adjustment data (saved from another Mac, or the sidecar deleted).
@@ -893,6 +938,8 @@ struct AdjustmentsPanel: View {
     let photo: Photo
     /// The photo's original file; nil until the source has it.
     let file: URL?
+    /// How the file is coming along while it is nil.
+    var fetch = OriginalFetch.none
     let preview: PreviewModel
     @State private var expanded: Set<AdjustmentKind.Section> = [.basic]
     @State private var presetsExpanded = true
@@ -914,7 +961,7 @@ struct AdjustmentsPanel: View {
                                   showClipping: $library.showClipping)
                         .padding(.bottom, 6)
                     DisclosureGroup(isExpanded: $presetsExpanded) {
-                        PresetStrip(photo: photo, file: file)
+                        PresetStrip(photo: photo, file: file, unavailable: fetch.unavailableNote != nil)
                             .padding(.top, 8)
                             .padding(.bottom, 4)
                     } label: {
@@ -963,9 +1010,11 @@ struct AdjustmentsPanel: View {
                         .fixedSize()
                     Spacer(minLength: 4)
                     Button { library.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                        .accessibilityLabel(AccessibleName.undo)
                         .disabled(!library.canUndo)
                         .help("Undo (⌘Z)")
                     Button { library.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                        .accessibilityLabel(AccessibleName.redo)
                         .disabled(!library.canRedo)
                         .help("Redo (⇧⌘Z)")
                     Button("Reset") { library.resetRecipe(for: photo.id) }
@@ -1033,6 +1082,7 @@ struct AdjustmentsPanel: View {
     }
 
     private var footer: String {
+        if let note = fetch.unavailableNote { return note }
         guard let file, preview.imageURL == file, let cg = preview.image else {
             return file != nil && preview.failed == file ? "Could not open" : "Loading…"
         }
@@ -1057,6 +1107,7 @@ private struct AdjustmentRow: View {
                     set: { recipe.setEnabled(kind, $0) }))
                     .toggleStyle(.checkbox)
                     .labelsHidden()
+                    .accessibilityLabel(AccessibleName.applyAdjustment(kind))
                     .help("Apply \(kind.label.lowercased())")
                 Text(kind.label)
                     .onTapGesture(count: 2) { recipe.reset(kind) }
@@ -1072,6 +1123,7 @@ private struct AdjustmentRow: View {
                 set: { recipe.set(kind, to: $0) }), in: kind.range,
                    onEditingChanged: onEditingChanged)
                 .controlSize(.small)
+                .accessibilityLabel(AccessibleName.adjustment(kind))
                 .disabled(!enabled)
         }
         .opacity(enabled ? 1 : 0.6)
@@ -1091,6 +1143,8 @@ private struct BeforeButton: View {
             .contentShape(Rectangle())
             .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 1000,
                                 perform: {}, onPressingChanged: { isPressed = $0 })
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { isPressed.toggle() }
             .help("Hold to compare with the original (\\ toggles)")
     }
 }

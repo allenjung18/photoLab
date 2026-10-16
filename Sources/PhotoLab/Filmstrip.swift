@@ -78,12 +78,17 @@ private struct FilmstripCell: View {
     let item: FilmstripItem
     let side: CGFloat
     @State private var image: NSImage?
+    @State private var failed = false
 
     var body: some View {
         ZStack {
             Color(nsColor: .controlBackgroundColor)
             if let image {
                 Image(nsImage: image).resizable().scaledToFit()
+            } else if failed {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             } else {
                 ProgressView().controlSize(.mini)
             }
@@ -129,14 +134,16 @@ private struct FilmstripCell: View {
         }
         .opacity(item.marks.flag == .reject ? 0.55 : 1)
         .contentShape(Rectangle())
-        .help(item.photo.name)
+        .help(failed ? "Can't open \(item.photo.name)" : item.photo.name)
         .task(id: item.key) {
-            if let hit = Thumbnails.shared.cached(item.key) { image = hit; return }
-            if image == nil, let plain = await Thumbnails.shared.thumbnail(for: item.photo.id) { image = plain }
-            if !item.key.isPlain, let rendered = await Thumbnails.shared.thumbnail(for: item.photo.id,
-                                                                                recipe: item.key.recipe) {
-                image = rendered
+            switch await Thumbnails.shared.resolve(item.key, showing: image) {
+            case .image(let found): image = found; failed = false
+            case .failed: failed = true
+            case .unchanged: break
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(item.photo.name)
+        .accessibilityAddTraits(.isButton)
     }
 }
