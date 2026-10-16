@@ -107,47 +107,6 @@ struct ContentView: View {
     }
 }
 
-/// Keyboard shortcuts that work whatever has focus: Lightroom's G / E, arrows
-/// to move the selection, Escape back to the grid, Return into the loupe,
-/// backslash to toggle before/after, Y for Before and After side by side
-/// (from the grid it opens the loupe), P / X / U to flag and 0–5 to rate the
-/// selection (every selected photo in the grid, the one photo in the loupe).
-private struct HiddenShortcuts: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        Group {
-            Button("") { library.loupe = false }.keyboardShortcut("g", modifiers: [])
-            Button("") { enterLoupe() }.keyboardShortcut("e", modifiers: [])
-            Button("") { enterLoupe() }.keyboardShortcut(.return, modifiers: [])
-            Button("") {
-                if library.loupe { library.loupe = false } else { library.collapseSelection() }
-            }.keyboardShortcut(.escape, modifiers: [])
-            Button("") { library.select(offset: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
-            Button("") { library.select(offset: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
-            Button("") { library.showBefore.toggle() }.keyboardShortcut("\\", modifiers: [])
-            Button("") {
-                if library.loupe { library.compare.toggle() } else { library.compare = true; enterLoupe() }
-            }.keyboardShortcut("y", modifiers: [])
-            Button("") { library.showClipping.toggle() }.keyboardShortcut("j", modifiers: [])
-            Button("") { library.setFlag(.pick, for: library.batchTargets) }.keyboardShortcut("p", modifiers: [])
-            Button("") { library.setFlag(.reject, for: library.batchTargets) }.keyboardShortcut("x", modifiers: [])
-            Button("") { library.setFlag(nil, for: library.batchTargets) }.keyboardShortcut("u", modifiers: [])
-            ForEach(0...Marks.maxRating, id: \.self) { n in
-                Button("") { library.setRating(n, for: library.batchTargets) }
-                    .keyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: [])
-            }
-        }
-        .frame(width: 0, height: 0)
-        .opacity(0)
-    }
-
-    private func enterLoupe() {
-        if library.selection == nil { library.selection = library.visiblePhotos.first?.id }
-        library.loupe = library.selection != nil
-    }
-}
-
 struct WelcomeView: View {
     @Environment(Library.self) private var library
 

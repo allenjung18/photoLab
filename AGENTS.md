@@ -107,8 +107,10 @@ to run it, the timing tests, adding an adjustment).
 - **Timing tests are load-sensitive.** Read `uptime` before trusting a red
   one; `PHOTOLAB_BENCH_IMAGE` times a real photo. (Testing, The timed
   renders.)
-- **Keyboard shortcuts** that work whatever has focus (G / E / arrows /
-  Esc / Return / backslash / Y / J / P X U / 0–5) are hidden buttons in
-  `HiddenShortcuts` (`ContentView.swift`); menu keys are the `.commands` of
-  `PhotoLabApp`. Add new ones there. (Features, Menus and shortcuts.)
+- **Every key is one `AppCommand` entry** (`AppCommand.all`,
+  `Commands.swift`); the menus and `HiddenShortcuts` are built from it, and
+  no `.keyboardShortcut` with a key is typed anywhere else (`CommandsTests`
+  checks). A bare key (no modifiers) is bound on `HiddenShortcuts` only and
+  named in its menu item's title, never a menu key equivalent, so it cannot
+  take a letter from a sheet's text field. (Features, Menus and shortcuts.)
 - No AI attribution lines in commit messages.

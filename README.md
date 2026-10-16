@@ -67,6 +67,14 @@ in Xcode works too.
 | `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
 | `⇧⌘E` | Export… (the grid's selection, or the loupe's photo) |
 
+Every key above except `Return` and `Esc` is also a menu item: File (open,
+Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
+Photos), **View** (Grid, Loupe, Before and After, Show Original, Clipping
+Warning, Previous and Next Photo) and **Photo** (Pick, Reject, Unflag, the
+ratings, Reset Photo). A single-letter key is written after its menu item's
+name, as in "Pick (P)", rather than bound to the menu, so typing that letter
+into a text field (a preset's name, the export suffix) types the letter.
+
 `Return` and `Esc` also confirm and cancel the welcome screen's Open Folder…,
 the Sync sheet and the Export sheet. Sync Settings… and the preset names in
 the Presets menu have no key.

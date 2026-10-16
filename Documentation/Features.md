@@ -180,8 +180,8 @@ each photo, set from the keyboard on whatever is targeted (every selected
 photo in the grid, the one photo in the loupe) and read by the filter bar.
 
 - **The keys.** **P** flags a pick, **X** a reject, **U** clears the flag;
-  **0** to **5** rate (0 clears). They are `HiddenShortcuts` entries that
-  call `Library.setFlag(_:for:)` and `Library.setRating(_:for:)` with
+  **0** to **5** rate (0 clears), from the keyboard or the Photo menu. They
+  are `AppCommand` entries (`HiddenShortcuts` binds the keys) that call `Library.setFlag(_:for:)` and `Library.setRating(_:for:)` with
   `Library.batchTargets`.
 - **The model.** `Marks` (`Sidecar.swift`) is a `Marks.Flag` (`pick` or
   `reject`, or none) and a rating clamped to 0…`Marks.maxRating`;
@@ -479,10 +479,24 @@ A queue made without `remember:` (every test) keeps them in memory only.
 
 ## Menus and shortcuts
 
-Two places define keys; the README's Keys table is the user's list.
+One table defines every key: `AppCommand.all` (`Commands.swift`), each
+entry a title, a key and its modifiers, a placement (the menu group it sits
+in, or `keysOnly`), `isEnabled` and `perform` over a `CommandContext` (the
+`Library`, plus the `PresetLibrary` and `ExportQueue` for Save Preset and
+Export). The menus and the hidden shortcuts are both built from it, so no
+key is typed anywhere else; the README's Keys table is the user's list.
 
+- **Bare keys stay off the menus.** A key with modifiers is bound on its
+  menu item. A key without (`AppCommand.isBareKey`) is bound only on
+  `HiddenShortcuts` and written after the menu item's title ("Pick (P)",
+  `AppCommand.menuTitle(_:)`): a menu key equivalent is global to the app
+  and would take the letter from a text field in a sheet or an alert (the
+  Save Preset name, the export suffix), while the hidden buttons sit in the
+  main window and never see those keystrokes.
 - **Menus** are the `.commands` of `PhotoLabApp` (`PhotoLabApp.swift`),
-  each a `CommandGroup` or `CommandMenu`:
+  each a `CommandGroup` or `CommandMenu` holding `CommandItems` for one
+  placement (table order, a divider between sections; an entry with an
+  `isOn` state is a checkable item):
   - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) and **Open
     Photos Library…** **⇧⌘O** (`Library.choosePhotosAlbum`) replace
     `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
@@ -496,20 +510,26 @@ Two places define keys; the README's Keys table is the user's list.
     grid only).
   - Edit, replacing `.undoRedo`: **Undo** **⌘Z** and **Redo** **⇧⌘Z**
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
-    unused, there are no text fields); after it, **Reset Photo** **⇧⌘R**
-    (`Library.resetRecipe(for:)`, enabled when the photo is edited).
+    unused, there are no text fields).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
-- **Keys without a menu** are `HiddenShortcuts` (`ContentView.swift`): a
-  group of invisible zero-size buttons in the window's background, so they
-  work whatever has focus. **G** leaves the loupe; **E** and **Return** enter it
+  - **View**: **Grid** **G**, **Loupe** **E**, **Before and After** **Y**,
+    **Show Original** **\\**, **Clipping Warning** **J**, **Previous Photo**
+    **←** and **Next Photo** **→** (the keys below).
+  - **Photo**: **Pick** **P**, **Reject** **X**, **Unflag** **U**, **No
+    Rating** **0** to **5 Stars** **5**, then **Reset Photo** **⇧⌘R**
+    (`Library.resetRecipe(for:)`, enabled when the photo is edited).
+- **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
+  over the table's bare keys: invisible zero-size buttons in the window's
+  background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it
   (selecting the first photo when none is); **Esc** leaves the loupe or, in
   the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
   `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and
   from the grid enters the loupe with it on); **J** toggles `Library.showClipping`
   (the clipping overlay, see Adjustments panel); **P** / **X** / **U** flag
   and **0**–**5** rate the batch targets (`Library.setFlag(_:for:)`,
-  `Library.setRating(_:for:)`). Add a new focus-free key there, and a
-  menu key in `PhotoLabApp`.
+  `Library.setRating(_:for:)`). **Return** and **Esc** have no menu item
+  (`keysOnly`). A new key is a new `AppCommand.Name` and a table entry;
+  `CommandsTests` fails on a key two entries share.
 - **Toolbar**: **Open Folder**, the **Grid / Loupe** segmented picker
   (which selects the first photo when entering the loupe with none
   selected), the **Before / After** toggle (`Library.compare`, the same

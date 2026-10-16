@@ -186,6 +186,18 @@ not only the pass.
   both again; Before lands during a sustained drag rather than after it;
   leaving compare mode drops the second frame, and a Before from an
   earlier compare session never shows; opening a folder turns it off.
+- `CommandsTests.swift` — the command table (`AppCommand.all`): no two
+  entries share a key and modifiers, and none takes a system menu key
+  (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button
+  is one of the table's bare keys, and they are every key the window had; no
+  `.keyboardShortcut` with a key is typed in any other source file (the
+  test reads them); the View and Photo menus list every bare key but Return
+  and Esc, whose names a menu title spells out ("Pick (P)"); and each
+  command's `perform` on a library over a temporary folder does what its
+  title says (P, X, U and 0–5 mark every batch target, Y from the grid opens
+  the loupe in compare, J and backslash toggle their overlays, the arrows,
+  G, E, Esc and Return move the view, Reset Photo, Undo, Redo, Copy
+  Settings and Select All act on the selection).
 - `TestImages.swift` — no tests; the shared helpers. `syntheticImage(width:height:space:)`
   draws the photo every pixel test reads (a luminance ramp with coloured
   bands, so both neutral and saturated pixels are present; sRGB unless a

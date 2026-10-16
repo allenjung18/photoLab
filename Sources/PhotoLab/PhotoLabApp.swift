@@ -39,66 +39,21 @@ struct PhotoLabApp: App {
                 }
         }
         .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("Open Folder…") { library.chooseFolder() }
-                    .keyboardShortcut("o")
-                Button("Open Photos Library…") { library.choosePhotosAlbum() }
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
-            }
-            // Export the selection (one photo in the loupe, the multi-selection
-            // in the grid): the options sheet, then the queue.
-            CommandGroup(replacing: .importExport) {
-                Button(exportTitle) { export() }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
-                    .disabled(library.batchTargets.isEmpty || exports.isRunning)
-                // The selected photo's edit written into Photos itself (a
-                // Photos album's edited photo only): Photos shows it and can
-                // revert it; the export above makes a new asset instead.
-                Button("Save to Photos") { Task { await library.saveToPhotos() } }
-                    .disabled(!library.canSaveToPhotos)
-            }
-            // Copy / paste a photo's settings; select every photo in the grid.
+            // Every item and key comes from `AppCommand.all` (Commands.swift);
+            // the bare keys are bound on `HiddenShortcuts` and only named here.
+            CommandGroup(replacing: .newItem) { CommandItems(placement: .newItem, context: context) }
+            CommandGroup(replacing: .importExport) { CommandItems(placement: .importExport, context: context) }
+            CommandGroup(replacing: .undoRedo) { CommandItems(placement: .undoRedo, context: context) }
             CommandGroup(after: .pasteboard) {
                 Divider()
-                Button("Copy Settings") {
-                    if let id = library.selection { library.copySettings(from: id) }
-                }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
-                .disabled(library.selection == nil)
-                Button("Paste Settings…") { library.requestPaste() }
-                    .keyboardShortcut("v", modifiers: [.command, .shift])
-                    .disabled(library.copiedSettings == nil || library.batchTargets.isEmpty)
-                Button("Sync Settings…") { library.requestSync() }
-                    .disabled(library.selectedIDs.count < 2)
-                Divider()
-                Button("Select All Photos") { library.selectAll() }
-                    .keyboardShortcut("a")
-                    .disabled(library.loupe || library.photos.isEmpty)
+                CommandItems(placement: .pasteboard, context: context)
             }
-            // Undo and redo act on the selected photo's edit history; there
-            // are no text fields, so the window's own undo manager is unused.
-            CommandGroup(replacing: .undoRedo) {
-                Button("Undo") { library.undo() }
-                    .keyboardShortcut("z")
-                    .disabled(!library.canUndo)
-                Button("Redo") { library.redo() }
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    .disabled(!library.canRedo)
-            }
-            CommandGroup(after: .undoRedo) {
-                Divider()
-                Button("Reset Photo") {
-                    if let id = library.selection { library.resetRecipe(for: id) }
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(library.selection.map { !library.isEdited($0) } ?? true)
-            }
+            CommandMenu("View") { CommandItems(placement: .view, context: context) }
+            CommandMenu("Photo") { CommandItems(placement: .photo, context: context) }
             // Presets: save the selected photo's look, or apply one by name to
             // the selection (every selected photo in the grid, one undo step).
             CommandMenu("Presets") {
-                Button("Save Preset…") { presets.saveRequested = true }
-                    .keyboardShortcut("p", modifiers: [.command, .shift])
-                    .disabled(!library.loupe || library.selection == nil)
+                CommandItems(placement: .presets, context: context)
                 Divider()
                 ForEach(presets.presets) { preset in
                     Button(preset.name) { library.apply(preset, to: library.batchTargets) }
@@ -108,12 +63,7 @@ struct PhotoLabApp: App {
         }
     }
 
-    private var exportTitle: String {
-        let n = library.batchTargets.count
-        return n > 1 ? "Export \(n) Photos…" : "Export…"
-    }
-
-    private func export() {
-        exports.requestExport(from: library)
+    private var context: CommandContext {
+        CommandContext(library: library, presets: presets, exports: exports)
     }
 }
