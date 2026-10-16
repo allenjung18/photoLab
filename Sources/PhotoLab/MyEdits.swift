@@ -94,7 +94,11 @@ extension Library {
     }
 
     /// A row was clicked: select the photo, open the loupe, close the sheet.
+    /// A photo the filter or search hides is shown by clearing both first, so
+    /// the anchor is always a visible photo.
     func openFromMyEdits(_ id: Photo.ID) {
+        if !isVisible(id) { filter = .all; searchText = "" }
+        guard isVisible(id) else { return }
         selection = id
         loupe = selection != nil
         myEditsSheet = false

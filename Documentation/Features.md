@@ -1291,7 +1291,7 @@ is its own row (`Photo.caption`). Each row has the thumbnail
 Above the rows, `EditSummary(recipes:)` lists per kind the number of photos using it
 and the median value (`EditSummary.Habit`), most used first, ties in panel order; the
 sheet shows the first eight. Clicking a row runs `Library.openFromMyEdits(_:)`: select
-the photo, open the loupe, close the sheet. Nothing is written (`MyEditsTests`).
+the photo (clearing the filter and search first when they hide it), open the loupe, close the sheet. Nothing is written (`MyEditsTests`).
 
 ## Match Look
 

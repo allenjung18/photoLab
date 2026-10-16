@@ -112,6 +112,17 @@ final class MyEditsTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: SidecarStore(folder: folder).url(for: id)), before)
     }
 
+    func testOpeningAHiddenRowClearsTheFilterSoTheAnchorIsVisible() throws {
+        let lib = try makeLibrary()
+        let id = try XCTUnwrap(lib.myEdits.rows.first).id
+        lib.searchText = "zzz-no-match"
+        XCTAssertFalse(lib.isVisible(id))
+        lib.openFromMyEdits(id)
+        XCTAssertTrue(lib.isVisible(id))
+        XCTAssertEqual(lib.selection, id)
+        XCTAssertEqual(lib.batchTargets, [id])
+    }
+
     func testTheCommandOpensTheSheetOnlyWithASource() {
         let empty = Library(rememberFolder: false)
         let ctx = CommandContext(library: empty)
