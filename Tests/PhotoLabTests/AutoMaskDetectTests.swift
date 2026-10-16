@@ -138,7 +138,7 @@ final class AutoMaskDetectTests: XCTestCase {
         let command = AppCommand.command(.selectSubject)
         XCTAssertTrue(command.isEnabled(ctx))
         let run = Task { await lib.selectAuto(.subject, for: ids[0]) }
-        while !lib.autoMaskDetecting { await Task.yield() }
+        await pollUntil("the detection to start", interval: 1_000_000) { lib.autoMaskDetecting }
         XCTAssertFalse(command.isEnabled(ctx), "off while a detection runs")
         let second = await lib.selectAuto(.subject, for: ids[0])
         XCTAssertNil(second, "one run at a time")
@@ -156,7 +156,7 @@ final class AutoMaskDetectTests: XCTestCase {
         lib.selection = ids[0]
         lib.autoMaskDetector = FakeDetector(result: topHalf, gate: gate2)
         let run2 = Task { await lib.selectAuto(.subject, for: ids[0]) }
-        while !lib.autoMaskDetecting { await Task.yield() }
+        await pollUntil("the detection to start", interval: 1_000_000) { lib.autoMaskDetecting }
         lib.selection = ids[1]
         lib.selection = ids[0]
         await gate2.release()

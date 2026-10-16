@@ -98,7 +98,7 @@ final class MapTests: XCTestCase {
             lock.lock(); names.append(name); lock.unlock()
             if let hold, hold.name == name {
                 hold.entered.signal()
-                hold.release.wait()
+                boundedWait(hold.release, "the test to release \(name)")
             }
             var info = PhotoInfo()
             info.latitude = positions[name]?.latitude
@@ -165,7 +165,7 @@ final class MapTests: XCTestCase {
         locations.start(photos, store: store(reader))
         // Park the test off the main actor until the second read is in flight.
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            Thread.detachNewThread { entered.wait(); c.resume() }
+            Thread.detachNewThread { boundedWait(entered, "the second read"); c.resume() }
         }
         XCTAssertEqual(locations.reading?.done, 1)
         locations.cancel()

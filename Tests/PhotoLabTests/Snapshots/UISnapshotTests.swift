@@ -496,7 +496,7 @@ final class UISnapshotTests: XCTestCase {
         let gate = Gate()
         let out = FileManager.default.temporaryDirectory
         let (scene, exports, items) = try await exportScene(items: 5) { source, _, _, _, _, _, _, _, _ in
-            if gate.next() > 2 { gate.semaphore.wait() }
+            if gate.next() > 2 { boundedWait(gate.semaphore, "the running export's cleanup", timeout: 300) }
             return .written(out.appendingPathComponent(source.lastPathComponent))
         }
         exports.start(items, into: out)

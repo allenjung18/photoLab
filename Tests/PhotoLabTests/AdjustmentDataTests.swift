@@ -71,7 +71,7 @@ final class AdjustmentDataTests: XCTestCase {
             locked { adjustmentCalls += 1 }
             if let hold = readHold {
                 await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                    Thread.detachNewThread { hold.entered.signal(); hold.release.wait(); c.resume() }
+                    Thread.detachNewThread { hold.entered.signal(); boundedWait(hold.release, "the test to release the read"); c.resume() }
                 }
             }
             return edits[assetID]
@@ -347,7 +347,7 @@ final class AdjustmentDataTests: XCTestCase {
 
         let read = Task { await lib.recoverRecipe(for: a) }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            Thread.detachNewThread { hold.entered.wait(); c.resume() }
+            Thread.detachNewThread { boundedWait(hold.entered, "the read to start"); c.resume() }
         }
         lib.setRecipe(exposure(-1), for: a)
         hold.release.signal()

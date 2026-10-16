@@ -13,6 +13,9 @@ import UniformTypeIdentifiers
 final class AutoBatchTests: XCTestCase {
     private var folder: URL!
     private var reference: URL!
+    /// Pollers a test starts beside a run; tearDown cancels and awaits them,
+    /// so none outlives its test.
+    private var jobs: [Task<Void, Never>] = []
 
     override func setUp() async throws {
         let base = FileManager.default.temporaryDirectory
@@ -22,6 +25,9 @@ final class AutoBatchTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        for job in jobs { job.cancel() }
+        for job in jobs { await job.value }
+        jobs = []
         try? FileManager.default.removeItem(at: folder)
         try? FileManager.default.removeItem(at: reference)
     }
@@ -130,12 +136,19 @@ final class AutoBatchTests: XCTestCase {
         let lib = openLibrary(folder)
         let ids = lib.photos.map(\.id)
         let gauge = Gauge()
-        slowed(lib, gauge) { _ in 0.05 }
+        // The first photo answers at once and the rest late, so the cancel
+        // lands between results whatever the concurrency.
+        slowed(lib, gauge) { $0 == "p00.png" ? 0 : 0.4 }
+        let ended = RunEnded()
         let canceller = Task { @MainActor in
-            while lib.autoProgress.done < 1 { try? await Task.sleep(nanoseconds: 2_000_000) }
-            lib.cancelAuto()
+            // Bounded, and ends too if the run finished first: never spins forever.
+            if await pollUntil("the first Auto result", orStop: { ended.value }, { lib.autoProgress.done >= 1 }) {
+                lib.cancelAuto()
+            }
         }
+        jobs.append(canceller)
         let changed = await lib.autoTone(ids)
+        ended.mark()
         await canceller.value
         XCTAssertEqual(changed, 0)
         for id in ids { XCTAssertFalse(lib.isEdited(id), "cancel applied nothing: \(id)") }
@@ -183,12 +196,17 @@ final class AutoBatchTests: XCTestCase {
         let ids = lib.photos.map(\.id)
         let context = CommandContext(library: lib, targetIDs: ids, subjectID: ids.first)
         XCTAssertTrue(command.isEnabled(context))
+        let ended = RunEnded()
         let esc = Task { @MainActor in
-            while !lib.autoToning { try? await Task.sleep(nanoseconds: 1_000_000) }
+            // Bounded, and ends too if the run finished first: never spins forever.
+            guard await pollUntil("Auto to start", interval: 1_000_000, orStop: { ended.value }, { lib.autoToning })
+            else { return }
             XCTAssertFalse(command.isEnabled(context), "disabled while running")
             AppCommand.command(.back).perform(CommandContext(library: lib))
         }
+        jobs.append(esc)
         let changed = await lib.autoTone(ids)
+        ended.mark()
         await esc.value
         XCTAssertEqual(changed, 0)
         XCTAssertEqual(sidecars(), [])

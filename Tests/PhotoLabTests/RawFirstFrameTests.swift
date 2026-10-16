@@ -52,7 +52,7 @@ final class RawFirstFrameTests: XCTestCase {
         /// Called inside the decode: blocks until `open()`.
         func pass() {
             lock.lock(); _started = true; lock.unlock()
-            semaphore.wait()
+            boundedWait(semaphore, "open()")
             lock.lock(); _cancelled = Task.isCancelled; lock.unlock()
         }
     }

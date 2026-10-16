@@ -78,7 +78,7 @@ final class PhotosTests: XCTestCase {
             guard assetsByAlbum.values.contains(where: { $0.contains { $0.id == assetID } }) else { return nil }
             if let gate = thumbnailGate {
                 gate.entered.signal()
-                gate.release.wait()
+                boundedWait(gate.release, "the test to release the thumbnail")
                 if Task.isCancelled { count { sawCancel += 1 } }
             }
             return NSImage(size: NSSize(width: 4, height: 4))
@@ -88,7 +88,7 @@ final class PhotosTests: XCTestCase {
             // A held write parks on a plain thread, never a cooperative one.
             if let hold = writeHold {
                 await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-                    Thread.detachNewThread { hold.wait(); c.resume() }
+                    Thread.detachNewThread { boundedWait(hold, "the test to release the write"); c.resume() }
                 }
             }
             if failWrites { throw PhotosError.noOriginal(assetID) }

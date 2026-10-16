@@ -222,7 +222,7 @@ final class ThumbnailTests: XCTestCase {
         let sawCancel = Counter()
         let blocking = Thumbnails { u, size in
             entered.signal()
-            release.wait()
+            boundedWait(release, "the test to release the decode")
             if Task.isCancelled { sawCancel.increment() }
             return ImageLoading.downsampled(u, maxPixelSize: size)
         }

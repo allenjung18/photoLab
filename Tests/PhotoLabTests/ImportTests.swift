@@ -230,7 +230,7 @@ final class ImportTests: XCTestCase {
         let go = DispatchSemaphore(value: 0)
         let imp = importer(copier: { source, destination in
             started.signal()
-            go.wait()
+            boundedWait(go, "the test to let the copy go")
             try Importer.copy(source, to: destination)
         })
         imp.setRoot(root)
@@ -485,7 +485,7 @@ final class ImportTests: XCTestCase {
         imp.setRoot(root)
         imp.request()
         XCTAssertTrue(imp.sheetShown)
-        while !imp.listingDone { await Task.yield() }
+        await pollUntil("the card listing", interval: 1_000_000) { imp.listingDone }
         await imp.waitForPlan()
         XCTAssertEqual(imp.source?.card?.name, "CARD")
         XCTAssertEqual(imp.plan?.copies.count, 6)
@@ -551,5 +551,5 @@ final class EjectLog {
 /// Waits on `semaphore` from a synchronous frame (a detached task's body
 /// calls it, off the main actor).
 private func blockUntilSignalled(_ semaphore: DispatchSemaphore) {
-    semaphore.wait()
+    boundedWait(semaphore, "the signal")
 }

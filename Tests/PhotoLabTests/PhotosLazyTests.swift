@@ -71,7 +71,7 @@ final class PhotosLazyTests: XCTestCase {
             lock.unlock()
             if let gate = nameGate {
                 gate.entered.signal()
-                gate.release.wait()
+                boundedWait(gate.release, "the test to release the name")
                 if Task.isCancelled { lock.lock(); sawCancel += 1; lock.unlock() }
             }
             if nameCost > 0 { Thread.sleep(forTimeInterval: nameCost) }
