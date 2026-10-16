@@ -297,6 +297,118 @@ final class ImportTests: XCTestCase {
         XCTAssertFalse(imp.sheetShown)
     }
 
+    // MARK: After import (Auto / preset on Open)
+
+    /// Photo A is imported first (so it is "already imported" in the second
+    /// run); the card then holds A plus B, C, D (3 new + 1 already). Returns
+    /// the second run's importer with `develop` set, its library after
+    /// `open(in:presets:)`, and the day folder.
+    private func secondRun(_ develop: ImportDevelop, presets: [Preset] = []) async throws
+        -> (imp: Importer, library: Library, folder: URL) {
+        let d = day(2026, 10, 14)
+        try jpeg("DCIM/A.JPG", seed: 0, date: d)
+        let first = importer()
+        first.setRoot(root)
+        first.choose(.folder(card))
+        await first.waitForPlan()
+        first.start()
+        await first.wait()
+        for (i, n) in ["B", "C", "D"].enumerated() { try jpeg("DCIM/\(n).JPG", seed: i + 1, date: d) }
+        let imp = importer()
+        imp.setRoot(root)
+        imp.develop = develop
+        imp.choose(.folder(card))
+        await imp.waitForPlan()
+        XCTAssertEqual(imp.plan?.copies.count, 3)
+        XCTAssertEqual(imp.plan?.already.count, 1)
+        imp.start()
+        await imp.wait()
+        let library = Library(rememberFolder: false)
+        imp.sheetShown = true
+        imp.open(in: library, presets: presets)
+        await imp.waitDevelop()
+        let folder = root.appendingPathComponent("2026/2026-10-14", isDirectory: true)
+        return (imp, library, folder)
+    }
+
+    private func photoID(_ library: Library, _ name: String) throws -> Photo.ID {
+        try XCTUnwrap(library.photos.first { $0.fileURL?.lastPathComponent == name }).id
+    }
+
+    func testAutoOnImportEditsTheThreeCopiesAndLeavesTheAlreadyImportedOne() async throws {
+        let (_, library, _) = try await secondRun(.auto)
+        XCTAssertEqual(library.photos.count, 4)
+        for n in ["B.JPG", "C.JPG", "D.JPG"] {
+            XCTAssertFalse(library.recipe(for: try photoID(library, n)).isNeutral, "\(n) got Auto values")
+        }
+        XCTAssertTrue(library.recipe(for: try photoID(library, "A.JPG")).isNeutral,
+                      "the already imported photo is untouched")
+        // One Cmd-Z takes the lot back.
+        library.selection = try photoID(library, "B.JPG")
+        library.undo()
+        for n in ["B.JPG", "C.JPG", "D.JPG"] {
+            XCTAssertTrue(library.recipe(for: try photoID(library, n)).isNeutral, "\(n) back after one undo")
+        }
+        XCTAssertFalse(library.canUndo)
+    }
+
+    func testAPresetOnImportGivesTheThreeCopiesItsLook() async throws {
+        let punchy = try XCTUnwrap(Preset.starters.first { $0.name == "Punchy" })
+        let (_, library, _) = try await secondRun(.preset("Punchy"), presets: Preset.starters)
+        for n in ["B.JPG", "C.JPG", "D.JPG"] {
+            XCTAssertTrue(punchy.matches(library.recipe(for: try photoID(library, n))), "\(n) shows Punchy")
+        }
+        XCTAssertTrue(library.recipe(for: try photoID(library, "A.JPG")).isNeutral)
+    }
+
+    func testNoneOnImportWritesNoSidecar() async throws {
+        let (_, library, folder) = try await secondRun(.none)
+        for photo in library.photos { XCTAssertTrue(library.recipe(for: photo.id).isNeutral) }
+        let sidecars = folder.appendingPathComponent(".photolab")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sidecars.path), "no .photolab folder was written")
+    }
+
+    func testDismissingWithoutOpenAppliesNothing() async throws {
+        try jpeg("DCIM/A.JPG", seed: 0, date: day(2026, 10, 14))
+        let imp = importer()
+        imp.setRoot(root)
+        imp.develop = .auto
+        imp.choose(.folder(card))
+        await imp.waitForPlan()
+        imp.start()
+        await imp.wait()
+        imp.dismiss()
+        let library = Library(rememberFolder: false)
+        library.open(root.appendingPathComponent("2026/2026-10-14", isDirectory: true))
+        XCTAssertTrue(library.recipe(for: library.photos[0].id).isNeutral)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("2026/2026-10-14/.photolab").path))
+    }
+
+    func testTheChoiceRoundTripsThroughAppSettingsAndAMissingPresetFallsBackToNone() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.importDevelop, .none)
+        for choice: ImportDevelop in [.auto, .preset("Punchy"), .none] {
+            settings.importDevelop = choice
+            XCTAssertEqual(AppSettings(defaults: defaults).importDevelop, choice)
+        }
+        settings.importDevelop = .preset("Gone")
+        let resolved = AppSettings(defaults: defaults).importDevelop.resolved(in: Preset.starters)
+        XCTAssertEqual(resolved.choice, .none)
+        XCTAssertNotNil(resolved.note)
+        XCTAssertEqual(ImportDevelop.preset("Punchy").resolved(in: Preset.starters).choice, .preset("Punchy"))
+        XCTAssertEqual(ImportSheet.openTitle(.auto), "Open and Auto")
+        XCTAssertEqual(ImportSheet.openTitle(.preset("Punchy")), "Open and Apply Punchy")
+        XCTAssertEqual(ImportSheet.openTitle(.none), "Open")
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testAMissingPresetAtOpenAppliesNothing() async throws {
+        let (_, library, _) = try await secondRun(.preset("Gone"), presets: Preset.starters)
+        for photo in library.photos { XCTAssertTrue(library.recipe(for: photo.id).isNeutral) }
+    }
+
     // MARK: Cards
 
     func testOnlyRemovableOrEjectableVolumesWithADCIMFolderAreCards() throws {

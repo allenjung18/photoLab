@@ -10,6 +10,7 @@ import AppKit
 struct ImportSheet: View {
     @Environment(Importer.self) private var imports
     @Environment(Library.self) private var library
+    @Environment(PresetLibrary.self) private var presets
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -18,6 +19,7 @@ struct ImportSheet: View {
             case .idle:
                 sourceSection
                 destinationSection
+                developSection
                 summary
             case .running:
                 progress
@@ -105,6 +107,35 @@ struct ImportSheet: View {
         }
     }
 
+    private var developSection: some View {
+        GroupBox("After import") {
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("After import", selection: Binding(get: { imports.develop.resolved(in: presets.presets).choice },
+                                                          set: { imports.develop = $0 })) {
+                    Text("None").tag(ImportDevelop.none)
+                    Text("Auto").tag(ImportDevelop.auto)
+                    ForEach(presets.presets) { Text($0.name).tag(ImportDevelop.preset($0.name)) }
+                }
+                .labelsHidden()
+                .help("Applied to the photos this run copies when you press Open")
+                if let note = imports.develop.resolved(in: presets.presets).note {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        }
+    }
+
+    /// The Open button's title for the remembered choice.
+    static func openTitle(_ develop: ImportDevelop) -> String {
+        switch develop {
+        case .none: return "Open"
+        case .auto: return "Open and Auto"
+        case .preset(let name): return "Open and Apply \(name)"
+        }
+    }
+
     @ViewBuilder private var summary: some View {
         if imports.planning {
             HStack { ProgressView().controlSize(.small); Text("Reading the photos…").foregroundStyle(.secondary) }
@@ -151,6 +182,10 @@ struct ImportSheet: View {
                 Text("\(failure.source.lastPathComponent) — \(failure.message)")
                     .font(.caption).foregroundStyle(.red).lineLimit(1)
             }
+            if imports.develop.resolved(in: presets.presets).choice != .none {
+                Text("Done applies nothing: only Open applies the After import choice.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if imports.ejected, let name = imports.source?.displayName {
                 Text("“\(name)” was ejected; it can be removed.").font(.caption).foregroundStyle(.secondary)
             }
@@ -189,7 +224,9 @@ struct ImportSheet: View {
                     .disabled(imports.ejected)
                     .help("Unmount and eject the card")
             }
-            Button("Open") { imports.open(in: library) }
+            Button(Self.openTitle(imports.develop.resolved(in: presets.presets).choice)) {
+                imports.open(in: library, presets: presets.presets)
+            }
                 .disabled(imports.openFolder == nil)
                 .help("Open the imported photos' folder")
             Button("Done") { imports.dismiss() }

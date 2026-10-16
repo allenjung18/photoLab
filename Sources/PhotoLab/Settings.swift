@@ -80,6 +80,8 @@ final class AppSettings {
         static let exportPreset = "exportPreset"
         /// The import sheet's destination root (`Importer.root`).
         static let importRoot = "importRoot"
+        /// The import sheet's "After import" choice (`ImportDevelop`, JSON).
+        static let importDevelop = "importDevelop"
         /// Developer only (`DeveloperInfo.showTimings`), never in the window.
         static let showTimings = "showTimings"
     }
@@ -242,6 +244,18 @@ final class AppSettings {
     var importRoot: String? {
         get { persistent ? defaults.string(forKey: Key.importRoot) : nil }
         set { if persistent { defaults.set(newValue, forKey: Key.importRoot) } }
+    }
+    /// The import sheet's "After import" choice; `.none` until picked.
+    var importDevelop: ImportDevelop {
+        get {
+            guard persistent, let data = defaults.data(forKey: Key.importDevelop),
+                  let value = try? JSONDecoder().decode(ImportDevelop.self, from: data) else { return .none }
+            return value
+        }
+        set {
+            guard persistent, let data = try? JSONEncoder().encode(newValue) else { return }
+            defaults.set(data, forKey: Key.importDevelop)
+        }
     }
     var exportOptions: ExportOptions? {
         get {

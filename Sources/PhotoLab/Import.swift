@@ -253,6 +253,24 @@ enum ImportSource: Equatable, Sendable {
 /// and moved into place (`copy(_:to:)`), so a cancelled or failed copy never
 /// leaves a half file under its real name and a move never overwrites.
 /// Eject is a button (`eject()`), never automatic.
+/// What the Import sheet does to this run's copies when Open is pressed:
+/// nothing, `Library.autoTone`, or `Library.apply(_:to:)` with a preset
+/// (by name). Remembered as `AppSettings.importDevelop`.
+enum ImportDevelop: Codable, Hashable, Sendable {
+    case none
+    case auto
+    case preset(String)
+
+    /// The choice with a preset that no longer exists in `presets` turned
+    /// into `.none`; `note` then says so.
+    func resolved(in presets: [Preset]) -> (choice: ImportDevelop, note: String?) {
+        if case .preset(let name) = self, !presets.contains(where: { $0.name == name }) {
+            return (.none, "The preset “\(name)” no longer exists: nothing will be applied.")
+        }
+        return (self, nil)
+    }
+}
+
 @MainActor
 @Observable
 final class Importer {
@@ -291,6 +309,8 @@ final class Importer {
     /// The card was ejected after the run.
     private(set) var ejected = false
     private(set) var ejectError: String?
+    /// The task `open(in:presets:)` started for the develop step (tests wait on it).
+    private var developTask: Task<Void, Never>?
 
     let settings: AppSettings
     private let lister: any VolumeLister
@@ -317,7 +337,13 @@ final class Importer {
         self.captureDate = captureDate
         self.ejector = ejector
         self.copier = copier
+        develop = settings.importDevelop
         root = settings.importRoot.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultRoot
+    }
+
+    /// "After import", remembered (`AppSettings.importDevelop`).
+    var develop: ImportDevelop = .none {
+        didSet { settings.importDevelop = develop }
     }
 
     var isRunning: Bool { state == .running }
@@ -456,12 +482,38 @@ final class Importer {
         }
     }
 
-    /// Opens the import's common folder in `library` (`Library.open`) and
-    /// closes the sheet.
-    func open(in library: Library) {
+    /// Opens the import's common folder in `library` (`Library.open`), then,
+    /// when `develop` is not None, runs `Library.autoTone` or
+    /// `Library.apply(_:to:)` over exactly the photos THIS run copied
+    /// (`copied`, matched by destination URL to the listed photos); photos
+    /// skipped as already imported are never touched. The Importer writes no
+    /// sidecar itself: the edit is `Library`'s one batch, one undo step. A
+    /// preset missing from `presets` applies nothing. Closes the sheet.
+    func open(in library: Library, presets: [Preset] = []) {
         guard let folder = openFolder else { return }
+        let destinations = Set(copied.map { $0.destination.standardizedFileURL })
+        let choice = develop.resolved(in: presets).choice
         library.open(folder)
+        if choice != .none, library.openError == nil {
+            let ids = library.photos.compactMap { photo -> Photo.ID? in
+                guard let url = photo.fileURL?.standardizedFileURL, destinations.contains(url) else { return nil }
+                return photo.id
+            }
+            switch choice {
+            case .auto:
+                developTask = Task { await library.autoTone(ids) }
+            case .preset(let name):
+                if let preset = presets.first(where: { $0.name == name }) { library.apply(preset, to: ids) }
+            case .none:
+                break
+            }
+        }
         dismiss()
+    }
+
+    /// Returns when the develop step `open(in:presets:)` started has ended (tests).
+    func waitDevelop() async {
+        await developTask?.value
     }
 
     /// Closes the sheet; a finished run's result is cleared. Ignored while

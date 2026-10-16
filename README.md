@@ -414,7 +414,11 @@ copied as `<name> 2.<ext>`. Nothing is ever overwritten, and the card is
 only read: nothing on it is moved, renamed or deleted. Cancel stops after
 the file being copied. When it ends, **Eject** ejects the card (never
 automatically) and **Open** opens the imported photos' folder (their day,
-else their year, else the root).
+else their year, else the root). The sheet's **After import** picker (None,
+Auto, or a preset; remembered) makes the button **Open and Auto** or **Open
+and Apply <preset>**: after opening, Auto or the preset is applied to the
+photos this import copied (never to ones skipped as already imported) as one
+undo step; **Done** applies nothing. A preset you have deleted counts as None.
 
 The first time PhotoLab reads a card macOS asks once whether it may access
 files on a removable volume (and may ask again after a rebuild of an ad-hoc

@@ -1339,6 +1339,11 @@ optional, so a view built without one has no import sheet.
 - **Into**: `Importer.root`, `Importer.defaultRoot` (`~/Pictures/PhotoLab`)
   until **Change…** (`ImportPanel.chooseRoot`, `Importer.setRoot(_:)`),
   which remembers it as `AppSettings.importRoot`.
+- **After import**: a Picker (`ImportSheet.developSection`) None / Auto /
+  each preset of `PresetLibrary`, remembered as `AppSettings.importDevelop`
+  (an `ImportDevelop`: `.none`, `.auto`, `.preset(name)`; `Importer.develop`).
+  A preset that no longer exists reads as None with a note
+  (`ImportDevelop.resolved(in:)`).
 - **The count**: each pick re-plans off the main thread
   (`ImportPlan.make(source:root:captureDate:)`, a newer pick wins) and
   `ImportSheet.summaryLine(_:)` shows "n new · m already imported · k other
@@ -1348,9 +1353,14 @@ optional, so a view built without one has no import sheet.
   (`Importer.cancel()`, after the file in flight). When it ends: the
   result line and the first failures; **Eject** for a card
   (`Importer.eject()`, the injected ejector, `NSWorkspace.unmountAndEjectDevice`
-  in the app; never called by the run); **Open** (`Importer.open(in:)`:
+  in the app; never called by the run); **Open** (`Importer.open(in:presets:)`:
   `Library.open` on `Importer.openFolder`, the `ImportPlan.commonFolder(of:root:)`
-  of what was copied and what was already there); **Done**.
+  of what was copied and what was already there; titled "Open and Auto" or
+  "Open and Apply <preset>" by `ImportSheet.openTitle(_:)`, it then runs
+  `Library.autoTone(_:)` or `Library.apply(_:to:)` over exactly the photos
+  of `Importer.copied`, matched by destination URL, as one undo step;
+  photos skipped as already imported are not touched); **Done** applies
+  nothing, and the result says so.
 
 Writes: the copied files under the root, each through
 `Importer.partialURL(for:)` (`.<name>.partial`) moved into place by

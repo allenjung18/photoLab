@@ -1348,6 +1348,12 @@ that throws) through `Importer.copy(_:to:)`: `copyItem` to a hidden
 rather than replace a file; the partial is removed on every failure. The
 source is only read. The capture-date reader, the `VolumeLister`, the
 ejector and the copier are injected; every test passes temporary folders.
+`Importer` never writes a sidecar: `Importer.open(in:presets:)` opens the
+common folder, then, for `Importer.develop` (`ImportDevelop`, kept as
+`AppSettings.importDevelop`) other than `.none`, hands the `Photo.ID`s whose
+`fileURL` is a destination in `Importer.copied` to `Library.autoTone(_:)`
+(a task, `Importer.waitDevelop()` in tests) or `Library.apply(_:to:)`, so
+`Library.setRecipe` stays the only edit path and the batch is one undo step.
 
 ## 5. The picture
 
