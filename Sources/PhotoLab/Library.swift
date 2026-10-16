@@ -72,19 +72,27 @@ final class Library {
     /// The grid's filter. Changing it drops hidden photos from the selection
     /// and moves a hidden anchor to the nearest visible photo.
     var filter: PhotoFilter = .all {
-        didSet { if filter != oldValue { reconcileSelection() } }
+        didSet {
+            if filter != oldValue { reconcileSelection() }
+            saveViewState()
+        }
     }
     /// The anchor of the selection: the photo the loupe shows, the one a
     /// shift-click extends from, the source of Sync Settings. Setting it
     /// collapses a multi-selection to that one photo; `click` is the path
     /// that grows the selection.
     var selection: Photo.ID? {
-        didSet { if selection != oldValue { selectedIDs = selection.map { [$0] } ?? [] } }
+        didSet {
+            if selection != oldValue { selectedIDs = selection.map { [$0] } ?? [] }
+            saveViewState()
+        }
     }
     /// Every selected photo (the grid's multi-selection), anchor included.
     private(set) var selectedIDs: Set<Photo.ID> = []
     /// Loupe (single photo) when true, grid otherwise.
-    var loupe = false
+    var loupe = false {
+        didSet { saveViewState() }
+    }
     /// Copy Settings: the recipe and the name of the photo it came from.
     private(set) var copiedSettings: (recipe: Recipe, name: String)?
     /// A Sync / Paste Settings sheet the window should show.
@@ -108,7 +116,7 @@ final class Library {
     private(set) var sidecarError: String?
     /// Why the last `open` was refused (a missing path, an album before
     /// Photos access); nil after one succeeds.
-    private(set) var openError: String?
+    var openError: String?
     /// The Open Photos Library sheet the window should show.
     var photosSheet = false
     /// Photos whose sidecar exists but could not be decoded, or whose Photos
@@ -123,8 +131,13 @@ final class Library {
     private var history: [Photo.ID: EditHistory] = [:]
     /// A slider drag in progress: one undo step from mouse-down to mouse-up.
     private var openEdit: (id: Photo.ID, before: Recipe)?
-    private let rememberFolder: Bool
-    private let defaults: UserDefaults
+    let rememberFolder: Bool
+    let defaults: UserDefaults
+    /// Bumped whenever the recent list changes, so a menu reading it redraws.
+    var recentsRevision = 0
+    /// True while `open` resets and restores the view state: those writes are
+    /// not the user's and must not overwrite the source's remembered state.
+    var restoringViewState = false
 
     /// The last source, by kind: `lastSourceKind` is `folder` (the path in
     /// `lastFolder`, the key every earlier build wrote) or `photos` (the
@@ -169,6 +182,7 @@ final class Library {
         if rememberFolder {
             defaults.set(dir.path, forKey: Self.lastFolderKey)
             defaults.set("folder", forKey: Self.lastSourceKindKey)
+            noteRecent(RecentSource(kind: .folder, id: dir.path, title: dir.lastPathComponent))
         }
         if !isDir.boolValue, let hit = photos.first(where: { $0.fileURL?.standardizedFileURL == url.standardizedFileURL }) {
             selection = hit.id
@@ -191,6 +205,7 @@ final class Library {
         if rememberFolder {
             defaults.set(album.id, forKey: Self.lastAlbumKey)
             defaults.set("photos", forKey: Self.lastSourceKindKey)
+            noteRecent(RecentSource(kind: .photos, id: album.id, title: album.title))
         }
     }
 
@@ -211,6 +226,8 @@ final class Library {
             return
         }
         openError = nil
+        restoringViewState = true
+        defer { restoringViewState = false }
         self.source = source
         Thumbnails.shared.source = source
         selection = nil
@@ -233,6 +250,7 @@ final class Library {
         if let first = loaded.unreadable.first {
             sidecarError = "Could not read the edit saved for \(name(for: first))"
         }
+        restoreViewState()
     }
 
     /// The photo's display name as its source gave it (the file name for a

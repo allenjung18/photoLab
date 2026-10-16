@@ -137,6 +137,7 @@ struct WelcomeView: View {
                 Button("Open Photos Library…") { library.choosePhotosAlbum() }
                     .disabled(!PhotosAccess.hasBundle)
             }
+            RecentList()
             if !PhotosAccess.hasBundle {
                 // Photos access is granted to an app bundle, never to a bare
                 // `swift run` binary.

@@ -66,6 +66,23 @@ bundle, never to a bare binary.
   (`openError`). The grid then shows the album oldest capture first, named
   by the originals' file names; the thumbnails come from Photos
   (`Thumbnails.source`, Architecture 1).
+- **Open Recent and reopening where you left off** (`Recents.swift`). The
+  last 10 sources, folders and Photos albums alike, are kept most recent
+  first and deduped under `recentSources` in the library's `UserDefaults`
+  (`RecentSource`, JSON, beside `lastSourceKind`; never a test's real
+  defaults). **File › Open Recent** (`OpenRecentMenu`) and a Recent list on
+  the Welcome view (`RecentList`) show them, with **Clear Menu**;
+  `Library.recentSources` drops (and forgets) a folder that no longer
+  exists and hides an album Photos no longer lists, or every album while
+  Photos access is not already allowed (it never prompts). Each entry also
+  carries the source's `SourceViewState`: the anchor photo, grid or loupe,
+  and the filter, saved as they change (`Library.saveViewState`) and
+  restored at the end of `Library.open` (`restoreViewState`) whichever way
+  the source opens (Open Recent, launch, Open Folder). The filter always
+  comes back; the anchor and the loupe only when that photo is still in the
+  source and the restored filter admits it, otherwise the grid with nothing
+  selected. `restoreLastSource` still never prompts. Window size is
+  SwiftUI's own restoration, untouched here.
 - **The remembered last source.** `Library.open` stores the kind under
   `lastSourceKind` (`Library.lastSourceKindKey`, `folder` or `photos`) with
   the folder's path under `lastFolder` (`Library.lastFolderKey`) or the

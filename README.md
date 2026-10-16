@@ -13,6 +13,10 @@ Native Swift, SwiftUI and Core Image. Originals are never written to.
     swift test                    # the test suite
     scripts/bundle.sh --open      # release build as build/PhotoLab.app
 
+**Open Recent:** File › Open Recent (and a list on the Welcome screen) holds
+the last 10 folders and Photos albums, most recent first, with Clear Menu.
+Each source reopens at the photo, grid or loupe, and filter you left it in.
+
 **Photos library:** File › Open Photos Library… (`⇧⌘O`, or the Welcome
 button) lists Recents and your albums; the first time, click **Allow** in
 the system dialog. It works only from the bundled app

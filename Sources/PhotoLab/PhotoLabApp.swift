@@ -41,7 +41,10 @@ struct PhotoLabApp: App {
         .commands {
             // Every item and key comes from `AppCommand.all` (Commands.swift);
             // the bare keys are bound on `HiddenShortcuts` and only named here.
-            CommandGroup(replacing: .newItem) { CommandItems(placement: .newItem, context: context) }
+            CommandGroup(replacing: .newItem) {
+                CommandItems(placement: .newItem, context: context)
+                OpenRecentMenu().environment(library)
+            }
             CommandGroup(replacing: .importExport) { CommandItems(placement: .importExport, context: context) }
             CommandGroup(replacing: .undoRedo) { CommandItems(placement: .undoRedo, context: context) }
             CommandGroup(after: .pasteboard) {
