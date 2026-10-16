@@ -240,6 +240,152 @@ final class AutoStyleTests: XCTestCase {
         XCTAssertEqual(lib.learnStyleRequest?.currentSamples, 0)
     }
 
+    // MARK: Auto in my style (the applying half)
+
+    /// A library with `profile` saved in its style store and loaded.
+    private func library(profile: StyleProfile) throws -> Library {
+        try StyleStore(directory: support).save(profile)
+        let lib = library()
+        lib.loadStyle()
+        XCTAssertNotNil(lib.styleProfile)
+        return lib
+    }
+
+    private func profile(exposure: Double, temperature: Double,
+                         buckets: [StyleBucket: Double] = [:]) -> StyleProfile {
+        StyleProfile(version: StyleProfile.currentVersion, samples: [],
+                     overall: [AdjustmentKind.exposure.rawValue: exposure, AdjustmentKind.temperature.rawValue: temperature],
+                     buckets: Dictionary(uniqueKeysWithValues: buckets.map {
+                         ($0.key.rawValue, [AdjustmentKind.exposure.rawValue: $0.value])
+                     }))
+    }
+
+    func testValuesAreAutosPlusTheCorrectionClampedAtTheRangeEndsAndRoundedAsAutoRounds() {
+        let p = profile(exposure: 0.5, temperature: 10)
+        let auto: [AdjustmentKind: Double] = [.exposure: 0.25, .contrast: 4, .temperature: -3.25, .tint: 1.5, .shadows: 20]
+        let v = AutoStyle.values(auto: auto, bucket: .mid, profile: p)
+        XCTAssertEqual(v[.exposure]!, 0.75, accuracy: 1e-12, "exposure 0.25 + 0.5, no clamp needed")
+        XCTAssertEqual(v[.temperature]!, 6.75, accuracy: 1e-12, "temperature -3.25 + 10")
+        XCTAssertEqual(v[.contrast]!, 4, "a kind with no correction keeps Auto's value")
+        XCTAssertEqual(v[.tint]!, 1.5)
+        XCTAssertNil(v[.whites], "a kind Auto did not give is not invented")
+
+        let high: [AdjustmentKind: Double] = [.exposure: 4.8, .temperature: 95, .contrast: -3]
+        let clamped = AutoStyle.values(auto: high, bucket: .mid, profile: p)
+        XCTAssertEqual(clamped[.exposure]!, 5, "exposure stops at the range end, not 5.3")
+        XCTAssertEqual(clamped[.temperature]!, 100, "temperature stops at +100, not 105")
+        let low = AutoStyle.values(auto: [.exposure: -4.9, .temperature: -95], bucket: .mid,
+                                   profile: profile(exposure: -0.5, temperature: -10))
+        XCTAssertEqual(low[.exposure]!, -5)
+        XCTAssertEqual(low[.temperature]!, -100)
+
+        XCTAssertEqual(AutoStyle.rounded(0.1234, .exposure), 0.10, accuracy: 1e-12, "exposure to 0.05")
+        XCTAssertEqual(AutoStyle.rounded(12.6, .shadows), 13, "the rest whole")
+        XCTAssertEqual(AutoStyle.rounded(1.2349, .tint), 1.23, accuracy: 1e-12, "tint to 0.01")
+        XCTAssertEqual(AutoStyle.rounded(-0.2, .contrast).sign, .plus, "no -0 in a sidecar")
+    }
+
+    func testEachBucketGetsItsOwnCorrectionAndTheThinOnesTheOverallOne() {
+        let p = profile(exposure: 0.1, temperature: 0, buckets: [.dark: 0.8, .bright: -0.6])
+        let auto: [AdjustmentKind: Double] = [.exposure: 0.25]
+        XCTAssertEqual(AutoStyle.values(auto: auto, bucket: .dark, profile: p)[.exposure]!, 1.05, accuracy: 1e-12)
+        XCTAssertEqual(AutoStyle.values(auto: auto, bucket: .bright, profile: p)[.exposure]!, -0.35, accuracy: 1e-12)
+        XCTAssertEqual(AutoStyle.values(auto: auto, bucket: .mid, profile: p)[.exposure]!, 0.35, accuracy: 1e-12,
+                       "mid has no bucket of its own: the all-photo correction")
+    }
+
+    func testADarkAndABrightPhotoGetTheirOwnBucketsCorrection() async throws {
+        try makePhotos(8)
+        var lib = library()
+        let ids = lib.photos.map(\.id)
+        // Auto alone, for the expected values.
+        await lib.autoTone(ids)
+        let autoRecipes = Dictionary(uniqueKeysWithValues: ids.map { ($0, lib.recipe(for: $0)) })
+        for id in ids { lib.resetRecipe(for: id) }
+
+        let corrections: [StyleBucket: Double] = [.dark: 0.8, .mid: 0.3, .bright: -0.6]
+        lib = try library(profile: profile(exposure: 0, temperature: 10, buckets: corrections))
+        let measure = lib.styleMeasure
+        var seen = Set<StyleBucket>()
+        let changed = await lib.autoMyStyle(ids)
+        XCTAssertEqual(changed, 8)
+        for id in ids {
+            let url = try XCTUnwrap(lib.photos.first { $0.id == id }?.fileURL)
+            let bucket = try XCTUnwrap(measure(url, .neutral)).bucket
+            seen.insert(bucket)
+            let auto = try XCTUnwrap(autoRecipes[id])
+            let mine = lib.recipe(for: id)
+            XCTAssertEqual(mine.value(of: .exposure),
+                           AutoStyle.rounded(auto.value(of: .exposure) + corrections[bucket]!, .exposure),
+                           accuracy: 1e-9, "\(url.lastPathComponent) (\(bucket)) exposure")
+            XCTAssertEqual(mine.value(of: .contrast), auto.value(of: .contrast), "no contrast correction")
+            let autoWB = auto.value(of: .temperature)
+            XCTAssertEqual(mine.value(of: .temperature), autoWB == 0 ? 0 : AutoStyle.rounded(autoWB + 10, .temperature),
+                           accuracy: 1e-9, "temperature: +10 only where Auto read a white balance")
+        }
+        XCTAssertGreaterThan(seen.count, 1, "the photos span more than one bucket")
+    }
+
+    func testASecondRunSetsTheSameValuesAndChangesNothing() async throws {
+        try makePhotos(4)
+        let lib = try library(profile: profile(exposure: 0.5, temperature: 10))
+        let ids = lib.photos.map(\.id)
+        let first = await lib.autoMyStyle(ids)
+        XCTAssertEqual(first, 4)
+        let after = ids.map { lib.recipe(for: $0) }
+        let second = await lib.autoMyStyle(ids)
+        XCTAssertEqual(second, 0, "measured on the same base, so the same values")
+        XCTAssertEqual(ids.map { lib.recipe(for: $0) }, after)
+    }
+
+    func testAGridSelectionOfFourIsOneUndoStep() async throws {
+        try makePhotos(4)
+        let lib = try library(profile: profile(exposure: 0.5, temperature: 10))
+        let ids = lib.photos.map(\.id)
+        XCTAssertEqual(ids.count, 4)
+        let changed = await lib.autoMyStyle(ids)
+        XCTAssertEqual(changed, 4)
+        XCTAssertEqual(lib.autoLabel, "Auto in my style")
+        for id in ids { XCTAssertFalse(lib.recipe(for: id).isNeutral) }
+        lib.selection = ids[0]
+        lib.undo()
+        for id in ids { XCTAssertTrue(lib.recipe(for: id).isNeutral, "one Cmd-Z takes all four back") }
+        XCTAssertFalse(lib.canUndo)
+    }
+
+    func testCancelAppliesNothingAndWithoutAProfileNothingRuns() async throws {
+        try makePhotos(3)
+        let none = library()
+        let ids = none.photos.map(\.id)
+        let zero = await none.autoMyStyle(ids)
+        XCTAssertEqual(zero, 0, "no learned style: nothing applied")
+        for id in ids { XCTAssertTrue(none.recipe(for: id).isNeutral) }
+
+        let lib = try library(profile: profile(exposure: 0.5, temperature: 10))
+        lib.autoStyleMeasure = { _, _, _ in nil }
+        let skipped = await lib.autoMyStyle(ids)
+        XCTAssertEqual(skipped, 0)
+        XCTAssertEqual(lib.autoNote, "Auto in my style: 3 photos skipped")
+    }
+
+    func testAutoInMyStyleIsDisabledUntilAStyleIsLearnedAndHasOptCmdU() throws {
+        let command = AppCommand.command(.autoMyStyle)
+        XCTAssertEqual(command.title, "Auto in My Style")
+        XCTAssertEqual(command.key, "u")
+        XCTAssertEqual(command.modifiers, [.command, .option])
+        XCTAssertEqual(command.placement, .photo)
+        let id = PhotoID.file(URL(fileURLWithPath: "/tmp/x.png"))
+        let without = library()
+        let ctx = CommandContext(library: without, targetIDs: [id], subjectID: id)
+        XCTAssertFalse(command.isEnabled(ctx), "no profile")
+        XCTAssertEqual(command.disabledHint?(ctx), "Learn a style first (Photo > Learn Style from Selected Photos...)")
+        let with = try library(profile: profile(exposure: 0.5, temperature: 10))
+        let ctx2 = CommandContext(library: with, targetIDs: [id], subjectID: id)
+        XCTAssertTrue(command.isEnabled(ctx2))
+        XCTAssertNil(command.disabledHint?(ctx2))
+        XCTAssertFalse(command.isEnabled(CommandContext(library: with)), "no targets")
+    }
+
     // MARK: StyleStore
 
     func testTheStoreRoundTripsInItsOwnFile() throws {

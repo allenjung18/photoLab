@@ -254,16 +254,21 @@ enum ImportSource: Equatable, Sendable {
 /// leaves a half file under its real name and a move never overwrites.
 /// Eject is a button (`eject()`), never automatic.
 /// What the Import sheet does to this run's copies when Open is pressed:
-/// nothing, `Library.autoTone`, or `Library.apply(_:to:)` with a preset
+/// nothing, `Library.autoTone`, `Library.autoMyStyle`, or `Library.apply(_:to:)` with a preset
 /// (by name). Remembered as `AppSettings.importDevelop`.
 enum ImportDevelop: Codable, Hashable, Sendable {
     case none
     case auto
+    /// Auto in my style (`Library.autoMyStyle`); applies nothing while no style is learned.
+    case autoMyStyle
     case preset(String)
 
     /// The choice with a preset that no longer exists in `presets` turned
     /// into `.none`; `note` then says so.
-    func resolved(in presets: [Preset]) -> (choice: ImportDevelop, note: String?) {
+    func resolved(in presets: [Preset], hasStyle: Bool = true) -> (choice: ImportDevelop, note: String?) {
+        if self == .autoMyStyle, !hasStyle {
+            return (.autoMyStyle, "No style is learned yet: nothing will be applied (Photo > Learn Style from Selected Photos...).")
+        }
         if case .preset(let name) = self, !presets.contains(where: { $0.name == name }) {
             return (.none, "The preset “\(name)” no longer exists: nothing will be applied.")
         }
@@ -502,6 +507,8 @@ final class Importer {
             switch choice {
             case .auto:
                 developTask = Task { await library.autoTone(ids) }
+            case .autoMyStyle:
+                developTask = Task { await library.autoMyStyle(ids) }
             case .preset(let name):
                 if let preset = presets.first(where: { $0.name == name }) { library.apply(preset, to: ids) }
             case .none:

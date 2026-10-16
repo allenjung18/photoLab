@@ -524,7 +524,11 @@ values on a recipe. A whole solve takes about two seconds at 512 px
 `Library.autoConcurrency`, each through `Library.autoMeasure` (off the main
 thread; a test replaces it), results keyed by `Photo.ID` and applied by one
 `sync` after the last; `Library.cancelAuto()` drops them all. That job is
-`Library.runAutoJob`, generic over what each read returns, and Learn Style
+`Library.runAutoJob`, generic over what each read returns, and Auto in My
+Style (`Library.autoMyStyle`, reads through `Library.autoStyleMeasure` =
+`AutoStyle.values(for:recipe:profile:)`: Auto plus the bucket's correction,
+clamped and rounded) shares `Library.autoTone`'s apply step
+(`applyAutoJob`, one `sync`). Learn Style
 (`Library.learnStyle(from:replace:)`, `AutoStyle.swift`) is its second
 user: each read through `Library.styleMeasure` gives a `StyleSample`'s
 `StyleBucket` and the values Auto gives the photo, the photo's own

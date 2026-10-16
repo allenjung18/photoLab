@@ -44,7 +44,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, myEdits, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, autoWhiteBalance, matchLook, learnStyle, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
+        case crop, whiteBalance, autoTone, autoWhiteBalance, autoMyStyle, matchLook, learnStyle, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
         case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject, selectPerson, selectFaces, selectSky
         case trashRejects
@@ -99,10 +99,16 @@ struct AppCommand: Identifiable {
     var dynamicTitle: (@MainActor (CommandContext) -> String)? = nil
     /// A checkmark in the menu (Grid, Loupe, the view toggles).
     var isOn: (@MainActor (CommandContext) -> Bool)? = nil
+    /// Why the item is disabled, shown as its tooltip while it is; nil when
+    /// there is nothing to say.
+    var disabledHint: (@MainActor (CommandContext) -> String?)? = nil
     var isEnabled: @MainActor (CommandContext) -> Bool = { _ in true }
     let perform: @MainActor (CommandContext) -> Void
 
     nonisolated var id: Name { name }
+
+    /// Auto in My Style's tooltip while there is no learned style.
+    static let learnStyleHint = "Learn a style first (Photo > Learn Style from Selected Photos...)"
 
     /// No modifiers, or Shift alone (Shift-M types an "M"): bound on
     /// `HiddenShortcuts`, never on a menu item, and off while typing.
@@ -344,6 +350,17 @@ struct AppCommand: Identifiable {
                    perform: { c in
                        let lib = c.library, ids = c.targets
                        Task { await lib.autoTone(ids, mask: AutoTone.whiteBalanceMask) }
+                   }),
+        // Auto in My Style: Auto plus the learned correction
+        // (`Library.autoMyStyle`), on the batch targets as one undo step.
+        // Disabled, with a hint, while no style is learned.
+        AppCommand(name: .autoMyStyle, title: "Auto in My Style", key: "u", modifiers: [.command, .option],
+                   placement: .photo, section: 2,
+                   disabledHint: { c in c.library.styleProfile == nil ? AppCommand.learnStyleHint : nil },
+                   isEnabled: { c in !c.targets.isEmpty && !c.library.autoToning && c.library.styleProfile != nil },
+                   perform: { c in
+                       let lib = c.library, ids = c.targets
+                       Task { await lib.autoMyStyle(ids) }
                    }),
         // Match Look…: a reference photo's tone and colour brought to the
         // batch targets (`Library.matchLook`), one undo step; no key.
@@ -617,6 +634,7 @@ struct CommandMenuItem: View {
         }
         .modifier(MenuKey(command: command))
         .disabled(!command.isEnabled(context))
+        .help(command.isEnabled(context) ? "" : (command.disabledHint?(context) ?? ""))
     }
 }
 

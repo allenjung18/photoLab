@@ -225,3 +225,54 @@ struct LearnStyleRequest: Identifiable, Equatable {
             : "The current style holds \(currentSamples) photo\(currentSamples == 1 ? "" : "s"). Replace it, or add these to it."
     }
 }
+
+/// The applying half of Auto in my style: Auto's values (`AutoTone`, tone and
+/// white balance) plus the learned profile's correction for the photo's
+/// brightness bucket, each kind clamped to its `AdjustmentKind.range` and
+/// rounded as Auto rounds (exposure to 0.05, temperature and tint to 0.01,
+/// the rest whole numbers).
+///
+/// Idempotent like Auto: the bucket is measured on `StyleSample.neutralBase`
+/// and Auto on `AutoTone.base`, neither of which reads the values being
+/// set, so a second run sets the same values. A white balance Auto cannot
+/// read gets no correction and is left out of the answer, so the photo's own
+/// stays as it is (adding the correction again each run would not be idempotent).
+enum AutoStyle {
+    /// The values for the photo: nil when the profile is empty-handed of a
+    /// frame (no decode could be measured).
+    static func values(for master: CIImage, recipe: Recipe, profile: StyleProfile) -> [AdjustmentKind: Double]? {
+        guard let stats = ImageStats.of(master: master, recipe: StyleSample.neutralBase(recipe)),
+              let median = stats.luma(at: 0.5),
+              let auto = AutoTone.values(for: master, recipe: recipe) else { return nil }
+        return values(auto: auto, bucket: StyleBucket.of(lumaMedian: median), profile: profile)
+    }
+
+    /// Auto's `auto` plus the correction of `bucket`, clamped and rounded.
+    /// Pure. A kind `auto` lacks (a white balance Auto could not read) is
+    /// left out.
+    static func values(auto: [AdjustmentKind: Double], bucket: StyleBucket,
+                       profile: StyleProfile) -> [AdjustmentKind: Double] {
+        let correction = profile.correction(for: bucket)
+        var out: [AdjustmentKind: Double] = [:]
+        for kind in AutoTone.kinds {
+            guard let base = auto[kind] else { continue }
+            out[kind] = rounded(base + (correction[kind] ?? 0), kind)
+        }
+        return out
+    }
+
+    /// `value` inside the kind's `range`, on Auto's grid, still inside it.
+    static func rounded(_ value: Double, _ kind: AdjustmentKind) -> Double {
+        let range = kind.range
+        let clamped = min(range.upperBound, max(range.lowerBound, value))
+        let perUnit: Double
+        switch kind {
+        case .exposure: perUnit = 20
+        case .temperature, .tint: perUnit = 100
+        default: perUnit = 1
+        }
+        let snapped = (clamped * perUnit).rounded() / perUnit
+        // `+ 0` turns a -0 into 0 for the sidecar.
+        return min(range.upperBound, max(range.lowerBound, snapped)) + 0
+    }
+}

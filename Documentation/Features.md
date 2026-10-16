@@ -1196,6 +1196,22 @@ redo, Reset, the render time and any sidecar error.
   applies nothing, one batch, all or nothing, and `Library.autoNote` says so;
   a photo whose original cannot be read is skipped and counted there ("Auto:
   2 photos skipped"). The one `sync` at the end is still the only apply.
+- **Auto in My Style** (`AutoStyle.values(for:recipe:profile:)`,
+  `Library.autoMyStyle(_:)`), the applying half. **Photo › Auto in My Style**
+  **⌥⌘U** (`AppCommand.Name.autoMyStyle`, on `CommandContext.targets`) and
+  the menu on Basic's Auto button (`ContentView.autoButton`: Auto / Auto in
+  My Style / Auto White Balance; the button itself is Auto). The values are
+  `AutoTone.values(for:recipe:)` plus `StyleProfile.correction(for:)` of the
+  photo's `StyleBucket` (measured on `StyleSample.neutralBase`), each kind
+  clamped to `AdjustmentKind.range` and rounded by `AutoStyle.rounded` as Auto
+  rounds (exposure 0.05, temperature and tint 0.01, the rest whole); a white
+  balance Auto cannot read gets no correction. It is the same job as Auto
+  (`Library.applyAutoJob`: concurrency, "Auto in my style n of N", Cancel
+  applies nothing, one `sync`, one undo step), through
+  `Library.autoStyleMeasure`. Disabled while `Library.styleProfile` is nil,
+  with `AppCommand.disabledHint` as the menu item's tooltip
+  ("Learn a style first (Photo > Learn Style from Selected Photos...)").
+  Measured on the same base as Auto, so a second run sets the same values.
 - **Learn Style** (`AutoStyle.swift`, `Library.learnStyle(from:replace:)`),
   the learning half of Auto in my style, on the Mac only. **Photo › Learn
   Style from Selected Photos…** (`AppCommand.Name.learnStyle`, no key, on
@@ -1479,8 +1495,10 @@ optional, so a view built without one has no import sheet.
   until **Change…** (`ImportPanel.chooseRoot`, `Importer.setRoot(_:)`),
   which remembers it as `AppSettings.importRoot`.
 - **After import**: a Picker (`ImportSheet.developSection`) None / Auto /
-  each preset of `PresetLibrary`, remembered as `AppSettings.importDevelop`
-  (an `ImportDevelop`: `.none`, `.auto`, `.preset(name)`; `Importer.develop`).
+  Auto in my style (`Library.autoMyStyle`; a note, and nothing applied, while
+  `Library.styleProfile` is nil) / each preset of `PresetLibrary`, remembered
+  as `AppSettings.importDevelop` (an `ImportDevelop`: `.none`, `.auto`,
+  `.autoMyStyle`, `.preset(name)`; `Importer.develop`).
   A preset that no longer exists reads as None with a note
   (`ImportDevelop.resolved(in:)`).
 - **The count**: each pick re-plans off the main thread
@@ -1628,7 +1646,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
     Auto), **Auto White Balance** **⇧⌘U** (the same call with
     `AutoTone.whiteBalanceMask`: temperature and tint only; also the **Auto**
-    button beside White Balance in Color), **Match Look…**
+    button beside White Balance in Color), **Auto in My Style** **⌥⌘U**
+    (`Library.autoMyStyle(_:)`, see Adjustments panel, Auto in My Style;
+    disabled until a style is learned), **Match Look…**
     (`AppCommand.Name.matchLook`, no key: `Library.requestMatchLook(for:)` opens
     `MatchLookSheet`; a file dropped on the loupe's panel opens it with that
     reference chosen), **Learn Style from Selected

@@ -471,7 +471,12 @@ not only the pass.
   leaves every sidecar absent; two missing originals are skipped and counted;
   an injected `autoMeasure` never sees more than `Library.autoConcurrency` in
   flight; Esc (the Back command) cancels and the command is disabled meanwhile.
-- `AutoStyleTests.swift` — Learn Style (`StyleProfile`, `StyleSample`,
+- `AutoStyleTests.swift` — Auto in my style (`AutoStyle.values`: Auto plus the
+  correction, clamped at the range ends and rounded as Auto rounds; each
+  bucket its own correction, a thin bucket the overall one; eight photos each
+  get their own bucket's exposure; a second run changes nothing; four photos
+  are one undo step; the command is disabled, with its hint, without a
+  profile) and Learn Style (`StyleProfile`, `StyleSample`,
   `StyleStore`, `Library.learnStyle`): `learn(from:)` on hand-built samples
   gives the median per bucket (an outlier ignored) and the all-photo median
   for a bucket under three samples; eight synthetic photos in a temp folder,

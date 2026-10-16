@@ -1777,19 +1777,31 @@ struct AdjustmentsPanel: View {
         }
     }
 
-    /// Auto, at the head of Basic: the same command as Photo › Auto Tone
-    /// and its key, on this photo.
+    /// Auto, at the head of Basic: a menu button whose default action is the
+    /// same command as Photo › Auto Tone and its key, on this photo; the menu
+    /// adds Auto in My Style (disabled, with its hint, until a style is
+    /// learned) and Auto White Balance.
     private var autoButton: some View {
-        let command = AppCommand.command(.autoTone)
         let context = CommandContext(library: library, targetIDs: [photo.id], subjectID: photo.id)
+        func item(_ name: AppCommand.Name, _ title: String) -> some View {
+            let command = AppCommand.command(name)
+            return Button(title) { command.perform(context) }
+                .disabled(!command.isEnabled(context) || file == nil)
+                .help(command.isEnabled(context) ? "" : (command.disabledHint?(context) ?? ""))
+        }
+        let auto = AppCommand.command(.autoTone)
         return HStack(spacing: 6) {
-            Button {
-                command.perform(context)
+            Menu {
+                item(.autoTone, "Auto")
+                item(.autoMyStyle, "Auto in My Style")
+                item(.autoWhiteBalance, "Auto White Balance")
             } label: {
                 Label("Auto", systemImage: "wand.and.stars")
+            } primaryAction: {
+                auto.perform(context)
             }
-            .disabled(!command.isEnabled(context) || file == nil)
-            .help("Set exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (⌘U)")
+            .disabled(!auto.isEnabled(context) || file == nil)
+            .help("Set exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (⌘U); the menu has Auto in My Style (⌥⌘U) and Auto White Balance (⇧⌘U)")
             if library.autoToning { ProgressView().controlSize(.mini) }
         }
         .controlSize(.small)

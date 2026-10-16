@@ -1646,14 +1646,46 @@ final class Library {
     func autoTone(_ ids: [Photo.ID], mask: SyncMask = AutoTone.mask) async -> Int {
         let whiteBalanceOnly = mask == AutoTone.whiteBalanceMask
         let measure = autoMeasure
-        guard let run = await runAutoJob(ids, label: "Auto", measure: { url, recipe in
+        return await applyAutoJob(ids, label: "Auto", mask: mask) { url, recipe in
             measure(url, recipe, whiteBalanceOnly)
-        }) else { return 0 }
+        }
+    }
+
+    /// Auto in my style (`AutoStyle`): Auto's values plus the learned
+    /// profile's correction for each photo's brightness bucket, clamped to
+    /// the sliders' ranges. The same job as `autoTone` (bounded concurrency,
+    /// progress "Auto in my style n of N", `cancelAuto()` applies nothing,
+    /// one `sync` batch and one undo step), so it serves one photo, the
+    /// grid's selection or just-imported photos. The profile is read when
+    /// the job starts. Returns 0 and changes nothing while there is no
+    /// learned style (`styleProfile`).
+    @discardableResult
+    func autoMyStyle(_ ids: [Photo.ID]) async -> Int {
+        guard let profile = styleProfile else { return 0 }
+        let measure = autoStyleMeasure
+        return await applyAutoJob(ids, label: "Auto in my style", mask: AutoTone.mask) { url, recipe in
+            measure(url, recipe, profile)
+        }
+    }
+
+    /// Reads one photo for Auto in my style: (original, recipe, profile) to
+    /// the values to apply (`AutoStyle.values(for:recipe:profile:)`), nil
+    /// when it cannot be read. Off the main thread; a test may replace it.
+    @ObservationIgnored var autoStyleMeasure: @Sendable (URL, Recipe, StyleProfile) -> [AdjustmentKind: Double]? = { url, recipe, profile in
+        guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
+        else { return nil }
+        return AutoStyle.values(for: master, recipe: recipe, profile: profile)
+    }
+
+    /// `autoTone` and `autoMyStyle`: the job, then the one `sync`.
+    private func applyAutoJob(_ ids: [Photo.ID], label: String, mask: SyncMask,
+                              measure: @escaping @Sendable (URL, Recipe) -> [AdjustmentKind: Double]?) async -> Int {
+        guard let run = await runAutoJob(ids, label: label, measure: measure) else { return 0 }
         if run.cancelled {
-            autoNote = "Auto cancelled: nothing changed (one batch, all or nothing)"
+            autoNote = "\(label) cancelled: nothing changed (one batch, all or nothing)"
             return 0
         }
-        if run.unreadable > 0 { autoNote = "Auto: \(run.unreadable) photo\(run.unreadable == 1 ? "" : "s") skipped" }
+        if run.unreadable > 0 { autoNote = "\(label): \(run.unreadable) photo\(run.unreadable == 1 ? "" : "s") skipped" }
         // The photo's own recipe underneath: a white balance Auto could
         // not read stays as it is. In the order given, whatever finished first.
         let sources = ids.compactMap { id in

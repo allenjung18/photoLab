@@ -114,11 +114,12 @@ struct ImportSheet: View {
                                                           set: { imports.develop = $0 })) {
                     Text("None").tag(ImportDevelop.none)
                     Text("Auto").tag(ImportDevelop.auto)
+                    Text("Auto in my style").tag(ImportDevelop.autoMyStyle)
                     ForEach(presets.presets) { Text($0.name).tag(ImportDevelop.preset($0.name)) }
                 }
                 .labelsHidden()
                 .help("Applied to the photos this run copies when you press Open")
-                if let note = imports.develop.resolved(in: presets.presets).note {
+                if let note = imports.develop.resolved(in: presets.presets, hasStyle: library.styleProfile != nil).note {
                     Text(note).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -132,6 +133,7 @@ struct ImportSheet: View {
         switch develop {
         case .none: return "Open"
         case .auto: return "Open and Auto"
+        case .autoMyStyle: return "Open and Auto in My Style"
         case .preset(let name): return "Open and Apply \(name)"
         }
     }

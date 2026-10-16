@@ -89,6 +89,7 @@ in Xcode works too.
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
 | `⌘U` | Auto Tone: temperature and tint from the photo's average colour, then exposure, contrast, highlights, shadows, whites and blacks from its histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot; a large selection shows "Auto n of N" with Cancel, and `Esc` or Cancel stops it with nothing applied |
 | `⇧⌘U` | Auto White Balance: temperature and tint only (or **Auto** beside White Balance in Color) |
+| `⌥⌘U` | Auto in My Style (also in the menu on Basic's **Auto** button): Auto's values plus the learned correction for the photo's brightness bucket (dark, mid, bright), each kept inside its slider's range; on one photo, the grid's selection (one undo step, "Auto in my style n of N" with Cancel) or, with the Import sheet's **After import** set to Auto in my style, the photos just imported. Disabled until a style is learned ("Learn a style first (Photo > Learn Style from Selected Photos...)"); a second run sets the same values |
 | — | My Edits… (View menu, no key): a read-only sheet over the open folder or album — your habits first (per slider, how many photos use it and the median value, most used first), then every edited photo (each virtual copy its own row) with its thumbnail and its enabled, non-neutral sliders by panel section and "n masks"; click a row to open that photo in the loupe. A switched-off slider is not shown or counted; nothing is written |
 | — | Match Look… (Photo menu, no key; or drop an image file on the loupe's panel): pick one reference photo and the batch targets get its tone and colour (exposure, contrast, whites, blacks, temperature, tint, saturation, vibrance and the shadow and highlight grade) as ordinary slider values, each photo solved for its own, one undo step for the lot; the sheet shows the reference's thumbnail and lists the sliders moved. The reference is only read: never copied, imported or changed. An unreadable file changes nothing |
 | — | Learn Style from Selected Photos… (Photo menu, no key): compares each selected photo's Basic and white-balance values with what Auto gives it, and keeps the median difference per brightness (dark, mid, bright) in `~/Library/Application Support/PhotoLab/style.json`, on this Mac only. **Replace** the learned style or **Add to Current Samples**; photos left at Auto or never edited there are skipped, and the bar says "Learned from n photos (m skipped)". Settings shows how many photos it holds and **Forget Style** |
@@ -106,7 +107,7 @@ Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Red
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, My Edits…, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Match Look…, Learn Style from Selected Photos…, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
+ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Auto in My Style, Match Look…, Learn Style from Selected Photos…, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
 to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Select Sky (guess), Move Rejected Photos to Trash…). Select Subject, Select Person, Select Faces, Select Sky (guess), Match Look… and My Edits… have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
@@ -449,8 +450,8 @@ only read: nothing on it is moved, renamed or deleted. Cancel stops after
 the file being copied. When it ends, **Eject** ejects the card (never
 automatically) and **Open** opens the imported photos' folder (their day,
 else their year, else the root). The sheet's **After import** picker (None,
-Auto, or a preset; remembered) makes the button **Open and Auto** or **Open
-and Apply <preset>**: after opening, Auto or the preset is applied to the
+Auto, Auto in my style, or a preset; remembered) makes the button **Open and Auto**, **Open and Auto in My Style** or **Open
+and Apply <preset>**: after opening, Auto, Auto in my style (nothing while no style is learned) or the preset is applied to the
 photos this import copied (never to ones skipped as already imported) as one
 undo step; **Done** applies nothing. A preset you have deleted counts as None.
 

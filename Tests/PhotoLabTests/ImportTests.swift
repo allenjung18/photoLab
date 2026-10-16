@@ -303,7 +303,7 @@ final class ImportTests: XCTestCase {
     /// run); the card then holds A plus B, C, D (3 new + 1 already). Returns
     /// the second run's importer with `develop` set, its library after
     /// `open(in:presets:)`, and the day folder.
-    private func secondRun(_ develop: ImportDevelop, presets: [Preset] = []) async throws
+    private func secondRun(_ develop: ImportDevelop, presets: [Preset] = [], style: StyleProfile? = nil) async throws
         -> (imp: Importer, library: Library, folder: URL) {
         let d = day(2026, 10, 14)
         try jpeg("DCIM/A.JPG", seed: 0, date: d)
@@ -323,7 +323,11 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(imp.plan?.already.count, 1)
         imp.start()
         await imp.wait()
-        let library = Library(rememberFolder: false)
+        let styleDir = root.appendingPathComponent("style-support", isDirectory: true)
+        let store = StyleStore(directory: styleDir)
+        if let style { try store.save(style) }
+        let library = Library(rememberFolder: false, style: store)
+        library.loadStyle()
         imp.sheetShown = true
         imp.open(in: library, presets: presets)
         await imp.waitDevelop()
@@ -350,6 +354,34 @@ final class ImportTests: XCTestCase {
             XCTAssertTrue(library.recipe(for: try photoID(library, n)).isNeutral, "\(n) back after one undo")
         }
         XCTAssertFalse(library.canUndo)
+    }
+
+    func testAutoInMyStyleOnImportEditsTheThreeCopiesOnly() async throws {
+        let style = StyleProfile(version: StyleProfile.currentVersion, samples: [],
+                                 overall: [AdjustmentKind.exposure.rawValue: 0.5], buckets: [:])
+        let (imp, library, _) = try await secondRun(.autoMyStyle, style: style)
+        XCTAssertEqual(library.photos.count, 4)
+        XCTAssertEqual(ImportSheet.openTitle(imp.develop), "Open and Auto in My Style")
+        for n in ["B.JPG", "C.JPG", "D.JPG"] {
+            XCTAssertFalse(library.recipe(for: try photoID(library, n)).isNeutral, "\(n) got Auto in my style")
+        }
+        XCTAssertTrue(library.recipe(for: try photoID(library, "A.JPG")).isNeutral,
+                      "the already imported photo is untouched")
+        library.selection = try photoID(library, "B.JPG")
+        library.undo()
+        for n in ["B.JPG", "C.JPG", "D.JPG"] {
+            XCTAssertTrue(library.recipe(for: try photoID(library, n)).isNeutral, "\(n) back after one undo")
+        }
+        XCTAssertFalse(library.canUndo, "one undo step")
+    }
+
+    func testAutoInMyStyleOnImportWithNoStyleAppliesNothing() async throws {
+        let (_, bare, _) = try await secondRun(.autoMyStyle)
+        for n in ["B.JPG", "C.JPG", "D.JPG"] {
+            XCTAssertTrue(bare.recipe(for: try photoID(bare, n)).isNeutral, "\(n): no style, nothing applied")
+        }
+        XCTAssertNotNil(ImportDevelop.autoMyStyle.resolved(in: [], hasStyle: false).note)
+        XCTAssertNil(ImportDevelop.autoMyStyle.resolved(in: [], hasStyle: true).note)
     }
 
     func testAPresetOnImportGivesTheThreeCopiesItsLook() async throws {

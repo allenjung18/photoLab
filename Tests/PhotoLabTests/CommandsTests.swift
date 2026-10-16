@@ -91,7 +91,7 @@ final class CommandsTests: XCTestCase {
         let view = AppCommand.items(in: .view).map(\.name)
         XCTAssertEqual(view, [.grid, .loupe, .map, .zoom, .compare, .showOriginal, .clipping, .maskOverlay, .filmstrip, .info, .myEdits, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .autoWhiteBalance, .matchLook, .learnStyle, .resetPhoto,
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .autoWhiteBalance, .autoMyStyle, .matchLook, .learnStyle, .resetPhoto,
                                .createVirtualCopy, .removeVirtualCopy, .keywords, .renameInPlace, .removeFromCollection,
                                .newLinearMask, .newRadialMask, .brushMask, .brushSmaller, .brushLarger, .selectSubject, .selectPerson, .selectFaces, .selectSky, .trashRejects])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
