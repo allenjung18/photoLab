@@ -329,7 +329,9 @@ photos only): **Photo › Move Rejected Photos to Trash…** **⌘⌫**
 - **What it takes.** `Library.rejectedPhotos`: every photo of the open
   `FolderSource` or `CollectionSource` whose flag is reject and whose id is
   a file, in sort order, whether the filter or the search shows it or not
-  (not `batchTargets`). A Photos album's photos are never offered, and a
+  (not `batchTargets`). A rejected virtual copy is never one (its file is
+  its master's); a master that moves takes its copies out of the grid with
+  it, their sidecars stay, and Undo lists them again (Virtual copies). A Photos album's photos are never offered, and a
   library made without a `FileTrasher` (`Library(trasher:)`, nil in every
   test that does not pass a fake) has the command off.
 - **The confirm.** `Library.requestTrashRejects()` sets
@@ -429,6 +431,9 @@ the commands and the cell badge come next.
   deleted) and drops the copy from the photos, recipes, marks, keywords and
   undo history; a selected copy hands the selection to its master. Refused
   on a master.
+- **Trash.** Move Rejected Photos to Trash… never takes a copy, even a
+  rejected one (the file is the master's); a trashed master's copies leave
+  with it and come back with Undo, their sidecars untouched.
 
 Writes: the copy's own sidecar, never the master's or the original.
 

@@ -951,10 +951,11 @@ final class Library {
     /// Every rejected photo of the open source, visible or not, in sort
     /// order: what Move Rejected Photos to Trash… acts on. Folder photos only
     /// (a `FolderSource`, or a collection's members): a Photos album's are
-    /// never offered (D-465).
+    /// never offered (D-465). A rejected virtual copy is never one: its file
+    /// is its master's.
     var rejectedPhotos: [Photo.ID] {
         guard source is FolderSource || source is CollectionSource else { return [] }
-        return photos.filter { $0.fileURL != nil && marks(for: $0.id).flag == .reject }.map(\.id)
+        return photos.filter { $0.fileURL != nil && !$0.id.isCopy && marks(for: $0.id).flag == .reject }.map(\.id)
     }
 
     /// The command is on when there is a trasher and a rejected folder photo.
@@ -973,7 +974,8 @@ final class Library {
     /// stays in its `.photolab/`, so Put Back restores the edit and the marks.
     /// A moved photo leaves `photos`, every map, the selection (a moved
     /// anchor goes to the nearest kept visible photo after it, else before)
-    /// and the thumbnail cache. A file that fails stays, is named in
+    /// and the thumbnail cache, and so do its virtual copies (their
+    /// sidecars stay too). A file that fails stays, is named in
     /// `trashError`, and the rest go ahead. Returns how many moved.
     @discardableResult
     func moveToTrash(_ ids: [Photo.ID]) -> Int {
@@ -992,7 +994,8 @@ final class Library {
         }
         trashError = failures.isEmpty ? nil : failures.joined(separator: "\n")
         guard !moved.isEmpty else { trashBannerShown = !failures.isEmpty; return 0 }
-        let gone = Set(moved.map(\.photo.id))
+        let masters = Set(moved.map(\.photo.id))
+        let gone = Set(photos.map(\.id).filter { masters.contains($0.master) })
         // The anchor's successor is found while the anchor is still listed.
         var anchor = selection
         if let a = anchor, gone.contains(a) {
@@ -1025,8 +1028,9 @@ final class Library {
     /// last move goes back from where the Trash put it to its own path,
     /// unless a file is there now (refused, named in `trashError`, left in
     /// the Trash), and is listed again with its edit, marks and keywords read
-    /// from its sidecar, which never moved (the LOAD path, as `open`). The
-    /// selection stays. Returns how many came back.
+    /// from its sidecar, which never moved (the LOAD path, as `open`), with
+    /// its virtual copies found again beside it. The selection stays.
+    /// Returns how many came back.
     @discardableResult
     func undoMoveToTrash() -> Int {
         guard let undo = trashUndo, let trasher, let source else { return 0 }
@@ -1049,7 +1053,8 @@ final class Library {
         trashBannerShown = !failures.isEmpty
         guard !back.isEmpty else { return 0 }
         let listed = Set(photos.map(\.id))
-        let added = back.filter { !listed.contains($0.id) }
+        let added = Self.withVirtualCopies(back.filter { !listed.contains($0.id) }, source: source)
+            .filter { !listed.contains($0.id) }
         let loaded = source.loadSidecars(for: added.map(\.id))
         for (id, r) in loaded.recipes { recipes[id] = r }
         for (id, m) in loaded.marks { marks[id] = m }

@@ -266,6 +266,42 @@ final class VirtualCopyTests: XCTestCase {
         XCTAssertEqual(lib.recipe(for: c2), recipe(exposure: 1))
     }
 
+    // MARK: Move to Trash
+
+    /// A rejected copy is never trashed (its file is the master's); a
+    /// trashed master takes its copies out of the grid with it, their
+    /// sidecars stay, and Undo lists them again with their recipes.
+    func testTrashCarriesTheCopiesAndNeverTrashesARejectedCopy() throws {
+        let trash = folder.appendingPathComponent("FakeTrash", isDirectory: true)
+        let photosDir = folder.appendingPathComponent("photos", isDirectory: true)
+        for d in [trash, photosDir] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+        let a = try makePhoto("a.png", in: photosDir)
+        let b = try makePhoto("b.png", in: photosDir)
+        let trasher = TrashTests.FakeTrasher(trash: trash)
+        let lib = Library(rememberFolder: false, trasher: trasher)
+        lib.open(photosDir)
+        let ca = try XCTUnwrap(lib.createVirtualCopy(of: .file(a)))
+        let cb = try XCTUnwrap(lib.createVirtualCopy(of: .file(b)))
+        lib.setRecipe(recipe(exposure: 1.5), for: ca)
+        lib.setFlag(.reject, for: [cb])
+        XCTAssertEqual(lib.rejectedPhotos, [], "a rejected copy is not a file to trash")
+        XCTAssertFalse(lib.canTrashRejects)
+        XCTAssertEqual(lib.moveToTrash([cb]), 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
+
+        lib.setFlag(.reject, for: [.file(a)])
+        XCTAssertEqual(lib.rejectedPhotos, [.file(a)])
+        XCTAssertEqual(lib.moveToTrash([.file(a)]), 1)
+        XCTAssertEqual(lib.photos.map(\.id), [.file(b), cb], "the copy leaves with its master")
+        let copyFile = SidecarStore(folder: photosDir).url(for: ca)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copyFile.path), "its sidecar stays")
+        XCTAssertFalse(lib.isEdited(ca))
+
+        XCTAssertEqual(lib.undoMoveToTrash(), 1)
+        XCTAssertEqual(lib.photos.map(\.id), [.file(a), ca, .file(b), cb])
+        XCTAssertEqual(lib.recipe(for: ca), recipe(exposure: 1.5))
+    }
+
     // MARK: Orphans and the flat naming
 
     func testAnOrphanCopyFileIsIgnoredAndKept() throws {
