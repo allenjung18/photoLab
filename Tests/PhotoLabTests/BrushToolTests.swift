@@ -151,6 +151,45 @@ final class BrushToolTests: XCTestCase {
         XCTAssertEqual(strokes(lib, id, mask).count, before)
     }
 
+    /// Review findings: an undo mid-stroke, or a drag cut off with no
+    /// mouse-up, must not leave the next points growing an older stroke one
+    /// undo step and one write per point.
+    func testAnUndoMidStrokeOrADragWithNoMouseUpStartsTheNextStrokeAfresh() throws {
+        let (lib, id) = try openOne()
+        let mask = lib.addMask(.brush, for: id)
+        let a = MaskPoint(x: 0.1, y: 0.1), b = MaskPoint(x: 0.6, y: 0.6)
+        lib.paintBrush(from: a, to: a, erase: false, size: wide, for: id)
+        lib.endBrushStroke(id)
+        // Painting, then ⌘Z with the mouse still down.
+        lib.paintBrush(from: b, to: b, erase: false, size: wide, for: id)
+        lib.paintBrush(from: b, to: MaskPoint(x: 0.65, y: 0.6), erase: false, size: wide, for: id)
+        // Undo with an edit open drops it and goes back one step (the first
+        // stroke), as a slider's does.
+        lib.undo()
+        XCTAssertEqual(strokes(lib, id, mask).count, 0)
+        let writes = lib.sidecarWrites
+        for i in 1...20 {
+            lib.paintBrush(from: b, to: MaskPoint(x: 0.65 + 0.02 * Double(i), y: 0.6), erase: false, size: wide, for: id)
+        }
+        lib.endBrushStroke(id)
+        XCTAssertEqual(strokes(lib, id, mask).count, 1, "one new stroke")
+        XCTAssertEqual(strokes(lib, id, mask)[0].points.first, b)
+        XCTAssertEqual(lib.sidecarWrites, writes + 1, "one write for the new stroke, not one per point")
+        // A drag cut off (no endBrushStroke), then a new drag elsewhere.
+        let c = MaskPoint(x: 0.2, y: 0.8), d = MaskPoint(x: 0.8, y: 0.2)
+        lib.paintBrush(from: c, to: c, erase: false, size: wide, for: id)
+        lib.paintBrush(from: c, to: MaskPoint(x: 0.3, y: 0.8), erase: false, size: wide, for: id)
+        lib.paintBrush(from: d, to: d, erase: true, size: wide, for: id)
+        lib.endBrushStroke(id)
+        let all = strokes(lib, id, mask)
+        XCTAssertEqual(all.count, 3, "the cut-off drag and the new one are two strokes")
+        XCTAssertEqual(all[2].points, [d])
+        XCTAssertTrue(all[2].erase)
+        XCTAssertFalse(all[1].erase)
+        lib.undo()
+        XCTAssertEqual(strokes(lib, id, mask).count, 2, "two drags, two undo steps")
+    }
+
     func testBracketsStepTheSizeInsideItsRange() throws {
         let (lib, id) = try openOne()
         let ctx = CommandContext(library: lib)

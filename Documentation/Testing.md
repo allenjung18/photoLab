@@ -695,7 +695,9 @@ not only the pass.
   nothing to paint and while typing; a drag with no mask, a linear selected
   or a brush in the list but not selected changes nothing, picking the
   brush arms it, Esc puts it down, and K arms the selected brush rather
-  than adding one. `LiveRasterTests`: three strokes (a paint, an erase, a
+  than adding one; an undo with the mouse still down, or a drag that ends
+  with no mouse-up followed by another, starts the next stroke afresh (one
+  write, its own undo step) instead of growing an older one. `LiveRasterTests`: three strokes (a paint, an erase, a
   hard paint) grown a point at a time give a fresh `BrushRaster.render`'s
   bytes at every step (two follow-ons, one rebuild), as do an undo and an
   edited stroke (rebuilds). `BrushStrokeBudgetTests`: over the

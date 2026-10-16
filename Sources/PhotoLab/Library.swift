@@ -1642,6 +1642,9 @@ final class Library {
         closeOpenEdit()
     }
 
+    /// True while a continuous edit (`beginEdit`) is open on `id`.
+    func isEditOpen(on id: Photo.ID) -> Bool { openEdit?.id == id }
+
     private func closeOpenEdit() {
         guard let edit = openEdit else { return }
         openEdit = nil

@@ -72,6 +72,18 @@ extension Library {
     /// `point` if it is far enough from the last one kept (`BrushThinning`).
     /// Nothing happens with no brush to paint into (`paintingBrush`).
     func paintBrush(from start: MaskPoint, to point: MaskPoint, erase: Bool, size: CGSize, for id: Photo.ID) {
+        // A stroke is live only while its edit is open and this drag is the
+        // one that began it: an undo mid-stroke (which drops the edit) or a
+        // drag SwiftUI cut off with no mouse-up (Z before the 1:1 window
+        // lands) leaves `brushStrokeMask` behind, and the next point must
+        // then start a new stroke, never grow an older one.
+        if let maskID = brushStrokeMask {
+            let first: MaskPoint? = {
+                guard case .brush(let strokes) = mask(maskID, for: id)?.shape else { return nil }
+                return strokes.last?.points.first
+            }()
+            if !isEditOpen(on: id) || first != start { finishMaskDrag() }
+        }
         if brushStrokeMask == nil {
             guard id == selection, let maskID = paintingBrush else { return }
             beginEdit(id)
