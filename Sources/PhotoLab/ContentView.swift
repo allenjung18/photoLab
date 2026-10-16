@@ -507,6 +507,11 @@ struct SyncSheet: View {
                     ForEach(AdjustmentKind.Section.allCases, id: \.self) { section in
                         sectionRows(section)
                     }
+                    // The local adjustments, the whole list (`SyncMask.masks`).
+                    Toggle("Masks", isOn: $mask.masks)
+                        .toggleStyle(.checkbox)
+                        .font(.callout.weight(.semibold))
+                        .help("Replace each photo's masks with the source's")
                 }
                 .padding(.trailing, 8)
             }
@@ -522,7 +527,7 @@ struct SyncSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(mask.kinds.isEmpty)
+                .disabled(mask.kinds.isEmpty && !mask.masks)
             }
         }
         .padding(20)
@@ -579,7 +584,7 @@ struct SyncSheet: View {
         if mask == .look { return "Look: everything but rotate and crop" }
         if mask == .grade { return "Grade: the look without exposure" }
         if mask == .everything { return "Everything, framing included" }
-        return "\(n) of \(AdjustmentKind.allCases.count) adjustments"
+        return "\(n) of \(AdjustmentKind.allCases.count) adjustments" + (mask.masks ? " and the masks" : "")
     }
 }
 
@@ -908,6 +913,9 @@ private struct PreviewCanvas: View {
 
     private var zoomed: Bool { library.loupeZoom != .fit }
 
+    /// The mask Show Mask Overlay tints: the selected one, while O is on.
+    private var maskOverlay: UUID? { library.showMaskOverlay ? library.selectedMask : nil }
+
     /// The 1:1 window for this photo, once it has landed.
     private var zoomWindow: CGImage? {
         guard zoomed, let file, preview.zoomURL == file else { return nil }
@@ -965,6 +973,7 @@ private struct PreviewCanvas: View {
             preview.setCompare(on)
         }
         .onChange(of: library.showClipping, initial: true) { _, on in preview.setClipping(on) }
+        .onChange(of: maskOverlay, initial: true) { _, id in preview.setMaskOverlay(id) }
         // The eyedropper's crosshair goes with the tool.
         .onChange(of: library.whiteBalancePicking) { _, on in if !on { NSCursor.arrow.set() } }
     }
@@ -1379,6 +1388,7 @@ struct AdjustmentsPanel: View {
                     } label: {
                         Text("Presets").font(.callout.weight(.semibold))
                     }
+                    MasksSection(photo: photo)
                     ForEach(AdjustmentKind.Section.allCases, id: \.self) { section in
                         DisclosureGroup(isExpanded: isExpanded(section)) {
                             VStack(alignment: .leading, spacing: 14) {

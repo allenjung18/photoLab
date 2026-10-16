@@ -24,8 +24,9 @@ struct CommandContext {
 /// in the app comes from: the menus (`CommandItems`) and the hidden shortcuts
 /// (`HiddenShortcuts`) are both built from it, so a key is typed once, here.
 ///
-/// A key with modifiers is bound on its menu item. A bare key (no modifiers)
-/// is bound on `HiddenShortcuts` only and shown in its menu item's title: a
+/// A key with modifiers is bound on its menu item. A bare key (no modifiers,
+/// or Shift alone: either types a character) is bound on `HiddenShortcuts`
+/// only and shown in its menu item's title: a
 /// menu key equivalent is global to the app, so a bare one would fire while
 /// the user types into a text field (the Save Preset name, the export
 /// suffix); the hidden buttons live in the main window's view hierarchy and
@@ -39,11 +40,12 @@ struct AppCommand: Identifiable {
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
-        case grid, loupe, map, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
+        case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, resetPhoto, keywords, removeFromCollection
         case newCollection
+        case newLinearMask, newRadialMask, brushMask
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
@@ -100,15 +102,17 @@ struct AppCommand: Identifiable {
 
     nonisolated var id: Name { name }
 
-    /// No modifiers: bound on `HiddenShortcuts`, never on a menu item.
-    var isBareKey: Bool { key != nil && modifiers.isEmpty }
+    /// No modifiers, or Shift alone (Shift-M types an "M"): bound on
+    /// `HiddenShortcuts`, never on a menu item, and off while typing.
+    var isBareKey: Bool { key != nil && modifiers.subtracting(.shift).isEmpty }
 
-    /// The menu item's title: a bare key is spelled out after the title,
-    /// since it is not the item's key equivalent.
+    /// The menu item's title: a bare key is spelled out after the title
+    /// (Shift as ⇧), since it is not the item's key equivalent.
     func menuTitle(_ context: CommandContext) -> String {
         let base = dynamicTitle?(context) ?? title
         guard isBareKey, let key else { return base }
-        return "\(base) (\(Self.label(for: key)))"
+        let shift = modifiers.contains(.shift) ? "⇧" : ""
+        return "\(base) (\(shift)\(Self.label(for: key)))"
     }
 
     static func label(for key: KeyEquivalent) -> String {
@@ -252,6 +256,10 @@ struct AppCommand: Identifiable {
         AppCommand(name: .clipping, title: "Clipping Warning", key: "j", modifiers: [], placement: .view,
                    section: 1, isOn: { $0.library.showClipping },
                    perform: { $0.library.showClipping.toggle() }),
+        // The selected mask tinted red over the loupe photo (Lightroom's O).
+        AppCommand(name: .maskOverlay, title: "Show Mask Overlay", key: "o", modifiers: [], placement: .view,
+                   section: 1, isOn: { $0.library.showMaskOverlay },
+                   perform: { $0.library.showMaskOverlay.toggle() }),
         AppCommand(name: .filmstrip, title: "Filmstrip", key: "f", modifiers: [], placement: .view,
                    section: 1, isOn: { $0.library.showFilmstrip },
                    perform: { $0.library.showFilmstrip.toggle() }),
@@ -329,6 +337,30 @@ struct AppCommand: Identifiable {
         AppCommand(name: .newCollection, title: "New Collection…", key: nil, placement: .collection,
                    isEnabled: { c in c.library.canAddToCollection && !c.targets.isEmpty },
                    perform: { $0.library.requestNewCollection(for: $0.targets) }),
+        // Local adjustments on the loupe photo (Lightroom's M, Shift-M, K):
+        // a new mask at its default placement, selected in the Masks
+        // section; Brush adds an empty brush mask armed for painting, and
+        // puts the brush down when it is armed.
+        AppCommand(name: .newLinearMask, title: "New Linear Gradient", key: "m", modifiers: [],
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil },
+                   perform: { c in if let id = c.library.selection { c.library.addMask(.linear, for: id) } }),
+        AppCommand(name: .newRadialMask, title: "New Radial Gradient", key: "m", modifiers: [.shift],
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil },
+                   perform: { c in if let id = c.library.selection { c.library.addMask(.radial, for: id) } }),
+        AppCommand(name: .brushMask, title: "Brush", key: "k", modifiers: [],
+                   placement: .photo, section: 5,
+                   isOn: { c in c.library.loupe && c.library.maskBrushArmed },
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil },
+                   perform: { c in
+                       let lib = c.library
+                       if lib.maskBrushArmed {
+                           lib.maskBrushArmed = false
+                       } else if let id = lib.selection {
+                           lib.addMask(.brush, for: id)
+                       }
+                   }),
 
         // Sort By: the key (one checked), then the direction. No keys.
         sort(.captureDate, name: .sortCaptureDate),
@@ -345,7 +377,7 @@ struct AppCommand: Identifiable {
                    perform: { $0.library.sort.ascending = false }),
 
         // Keys with no menu item: Escape puts the white-balance eyedropper
-        // down, else disarms the straighten tool, else leaves crop mode, else the loupe (from the grid it collapses the
+        // down, else disarms the brush, else the straighten tool, else leaves crop mode, else the loupe (from the grid it collapses the
         // selection), Return opens it. Return is enabled only
         // when there is a photo to open, as Loupe (E) is: the Welcome view
         // has none, and its Open Folder… button holds Return there.
@@ -353,6 +385,8 @@ struct AppCommand: Identifiable {
                    perform: { c in
                        if c.library.whiteBalancePicking {
                            c.library.whiteBalancePicking = false
+                       } else if c.library.maskBrushArmed {
+                           c.library.maskBrushArmed = false
                        } else if c.library.straightening {
                            c.library.straightening = false
                        } else if c.library.cropMode {

@@ -438,15 +438,17 @@ to its own folder's `.photolab/` as any folder edit does.
 `SyncSheet(request:)` (`ContentView.swift`) is the Sync Settings and Paste
 Settings sheet: "From <source> onto n photos", the shortcuts **All**,
 **None**, **Look** and **Grade** (`SyncMask.everything`, `SyncMask.nothing`,
-`SyncMask.look`, `SyncMask.grade` in `Batch.swift`; only All copies the
-source's local adjustments, `SyncMask.masks`, the others keep each target's),
-then one
+`SyncMask.look`, `SyncMask.grade` in `Batch.swift`; only All checks
+**Masks**), then one
 `DisclosureGroup` per `AdjustmentKind.Section` with a checkbox for the
 section and, opened, one per adjustment; the HSL section shows its three
-channels (`AdjustmentKind.HSLChannel`) rather than twenty-four bands. A
+channels (`AdjustmentKind.HSLChannel`) rather than twenty-four bands; then
+**Masks** (`SyncMask.masks`): checked, each target's local adjustments are
+replaced by the source's whole list, unchecked each keeps its own. A
 checkbox over a list of kinds reads `SyncMask.state(of:)`: on when all are in
 the mask, off when none, "(some)" when mixed. The summary line names the
-mask. **Sync n Photos** (also **Return**) stores the mask in
+mask ("… and the masks" when Masks is checked by hand). **Sync n Photos**
+(also **Return**, enabled while any adjustment or Masks is checked) stores the mask in
 `Library.lastSyncMask` and calls `Library.sync(_:mask:to:)`, which runs
 `Recipe.syncing(_:from:)` per target through `Library.setRecipe` with one
 batch tag, so the whole sync is one undo step. The same menu item exists in
@@ -683,7 +685,7 @@ in the library (the rendered JPEG and PhotoLab's adjustment data).
 
 `AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the histogram, the
 Info section (closed by default), the History section (closed by default),
-the Presets strip, one `DisclosureGroup` per `AdjustmentKind.Section` in
+the Presets strip, the Masks section, one `DisclosureGroup` per `AdjustmentKind.Section` in
 declaration order (Basic open by default), each with a dot when any of its
 kinds is not a no-op (`Adjustment.isNoop`), then a footer with Before, undo,
 redo, Reset, the render time and any sidecar error.
@@ -730,7 +732,9 @@ redo, Reset, the render time and any sidecar error.
   kind is its name (`AccessibleName.adjustment`) and new value
   (`AdjustmentKind.format`), or "on" / "off" when only its switch moved; any
   geometry kind is "Crop"; two names are both, more are the first two in
-  chain order and "+N more"; a change outside the adjustments is "Edit";
+  chain order and "+N more"; a change to `Recipe.masks` (an add, a
+  delete, a mask's slider or switch) adds the one name "Mask" after the
+  kinds; a change outside the adjustments and the masks is "Edit";
   a batch-tagged step (`Library.sync`: Sync Settings, a preset on many
   photos, Auto) is prefixed "Sync: ". A slider drag shows live as the
   newest row. A click is `Library.jumpToHistory(_:for:)`, which closes an
@@ -741,6 +745,45 @@ redo, Reset, the render time and any sidecar error.
   memory only, reset by `Library.open`, at most `Library.maxUndoDepth`
   steps (past that the bottom row is the oldest step kept, not the opened
   recipe).
+- **Masks** (`MasksPanel.swift`). `MasksSection(photo:)` is a
+  `DisclosureGroup` after the Presets strip (open, with a dot while the
+  photo has a mask). **Linear**, **Radial** and **Brush** run the Photo
+  menu's commands (**M**, **⇧M**, **K**) through
+  `Library.addMask(_:for:)`: one mask at the end of `Recipe.masks` at its
+  `MaskKind.defaultShape` (no on-canvas handles yet: a linear from the top
+  edge to 40% down, `(0.5, 0)` to `(0.5, 0.4)`; a radial at `(1/3, 1/3)`
+  with radii 0.2 × 0.15 of the long side, feather 0.5; an empty brush),
+  selected, crop mode and the eyedropper put down; one undo step and one
+  sidecar write. A new mask has every adjustment at neutral, so it renders
+  as nothing until a slider moves. The list names each mask by kind and
+  order, "Linear 1", "Radial 1", "Linear 2" (`MaskKind.names(of:)`,
+  derived, so a delete renumbers); a click selects it, again deselects.
+  `Library.selectedMask` is tool state: never in a recipe, cleared when the
+  photo changes and whenever the photo's recipe stops holding it (an undo
+  of its add, a delete, a reset, a sync), by `Library.apply`. The selected
+  mask shows its switch (`LocalMask.enabled`), **Invert**, **Duplicate**
+  (`Library.duplicateMask(_:for:)`: a copy with a new id right after it,
+  selected), **Delete** (`Library.deleteMask(_:for:)`) and one slider per
+  `LocalMask.kinds` (`MaskSliderRow`: the name, double-click to reset, the
+  value, the slider over `AdjustmentKind.range`); each switch and button is
+  one `Library.updateMask` / `setRecipe` step, and each slider goes
+  through `MaskSliderEdit`, which calls `beginEdit` on mouse-down and
+  `endEdit` on mouse-up, so a drag is one undo step and one sidecar write.
+  **Brush** (`K`) adds an empty brush mask and arms it
+  (`Library.maskBrushArmed`: arming leaves crop mode, ends compare and puts
+  the eyedropper down; `K` again, `Esc`, another mask selected, crop mode,
+  compare, the eyedropper and leaving the loupe disarm it). Painting on the
+  photo is not built yet: an armed brush does nothing on a drag.
+  **Show Overlay** is **View › Show Mask Overlay** (**O**,
+  `Library.showMaskOverlay`, off by default and not remembered): the loupe
+  tints the selected mask red at half strength (`MaskTint.compose`, the
+  mask drawn and placed by `MaskRender.placedImage` over the same scaled
+  source extent the render used, so the tint sits on the pixels the mask
+  changes, under any rotate and crop and in the 1:1 window), composed by
+  `PreviewModel` after the clipping overlay in the same hop
+  (`PreviewModel.setMaskOverlay(_:)` renders the newest request again).
+  Compare's Before, thumbnails, the preset strip and exports never carry
+  it.
 - **Histogram and clipping.** `HistogramView` (`HistogramView.swift`) at the
   top of the panel draws `PreviewModel.histogram`, a `Histogram`
   (`Histogram.swift`) of the latest rendered frame: 256 bins of red, green,
@@ -1048,7 +1091,8 @@ Export). The menus and the hidden shortcuts are both built from it, so no
 key is typed anywhere else; the README's Keys table is the user's list.
 
 - **Bare keys stay off the menus.** A key with modifiers is bound on its
-  menu item. A key without (`AppCommand.isBareKey`) is bound only on
+  menu item. A key without, or with Shift alone (⇧M types an "M";
+  `AppCommand.isBareKey`), is bound only on
   `HiddenShortcuts` and written after the menu item's title ("Pick (P)",
   `AppCommand.menuTitle(_:)`): a menu key equivalent is global to the app
   and would take the letter from a text field in a sheet or an alert (the
@@ -1089,7 +1133,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
   - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Map** **⌥⌘M**
     (`Library.showMap`, toggled; see Map), **Zoom to 1:1** **Z**
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
-    **Show Original** **\\**, **Clipping Warning** **J**, **Filmstrip** **F**,
+    **Show Original** **\\**, **Clipping Warning** **J**, **Show Mask Overlay**
+    **O** (`Library.showMaskOverlay`, see Adjustments panel, Masks), **Filmstrip** **F**,
     **Info** **⌘I** (`Library.showInfo`), **Previous Photo**
     **←** and **Next Photo** **→** (the keys below); then **Show** (the
     filter) and **Sort By**, the `sort` placement's items with no keys:
@@ -1109,21 +1154,27 @@ key is typed anywhere else; the README's Keys table is the user's list.
     placement's **New Collection…**), and **Remove from Collection**
     (`Library.removeFromCollection(_:)`), see Collections. A submenu
     placement (`Placement.isSubmenu`: `sort`, `collection`) sits inside a
-    menu the app adds or SwiftUI supplies.
+    menu the app adds or SwiftUI supplies. Then **New Linear Gradient** **M**, **New
+    Radial Gradient** **⇧M** and **Brush** **K** (`Library.addMask(_:for:)`
+    on the loupe photo, loupe only; Brush is checked while
+    `Library.maskBrushArmed` and, checked, puts the brush down; see
+    Adjustments panel, Masks).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
   background, so they work whatever has focus in the window. **G** leaves the loupe and the map; **E** and **Return** enter it
   (selecting the first photo when none is), and both are disabled while
   `Library.visiblePhotos` is empty, so on the Welcome view **Return** is its
   **Open Folder…** default button; **Esc** clears
-  `Library.whiteBalancePicking`, else `Library.straightening`, else leaves crop mode, else the
+  `Library.whiteBalancePicking`, else `Library.maskBrushArmed`, else `Library.straightening`, else leaves crop mode, else the
   loupe or, in the grid, collapses the selection; **R** toggles
   `Library.cropMode` in the loupe; **W** toggles
   `Library.whiteBalancePicking` in the loupe; **←** / **→** are `Library.select(offset:)`;
   **Z** toggles `Library.loupeZoom` in the loupe;
   `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and
   from the grid enters the loupe with it on); **J** toggles `Library.showClipping`
-  (the clipping overlay, see Adjustments panel); **P** / **X** / **U** flag
+  (the clipping overlay, see Adjustments panel); **O** toggles
+  `Library.showMaskOverlay`; **M** / **⇧M** / **K** add a mask in the
+  loupe; **P** / **X** / **U** flag
   and **0**–**5** rate the batch targets (`Library.setFlag(_:for:)`,
   `Library.setRating(_:for:)`). **Return** and **Esc** have no menu item
   (`keysOnly`). A new key is a new `AppCommand.Name` and a table entry;

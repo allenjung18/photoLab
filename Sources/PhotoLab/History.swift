@@ -29,13 +29,16 @@ struct HistoryEntry: Identifiable, Equatable {
 /// - any crop edge or rotate counts as the one name "Crop";
 /// - two names: both ("Exposure, Contrast"); more: the first two in chain
 ///   order and a count ("Exposure, Contrast +2 more");
-/// - nothing in the adjustments changed (a field outside them): "Edit";
+/// - the masks changed (`Recipe.masks`: an add, a delete, a mask's slider
+///   or switch): the one name "Mask", after the kinds;
+/// - nothing in the adjustments or the masks changed: "Edit";
 /// - a step taken in a batch (`Library.sync`: Sync Settings, a preset on
 ///   many photos, Auto) is prefixed "Sync: ".
 enum HistoryLabel {
     static let reset = "Reset"
     static let crop = "Crop"
     static let edit = "Edit"
+    static let mask = "Mask"
     static let syncPrefix = "Sync: "
 
     static func describe(from old: Recipe, to new: Recipe, batch: UUID?) -> String {
@@ -50,11 +53,12 @@ enum HistoryLabel {
             let name = kind.section == .geometry ? crop : AccessibleName.adjustment(kind)
             if !names.contains(name) { names.append(name) }
         }
+        if old.normalized.masks != new.normalized.masks { names.append(mask) }
         switch names.count {
         case 0:
             return edit
         case 1:
-            guard names[0] != crop, let kind = changed.first else { return names[0] }
+            guard names[0] != crop, names[0] != mask, let kind = changed.first else { return names[0] }
             let before = old[kind], after = new[kind]
             if before.value == after.value, before.enabled != after.enabled {
                 return names[0] + (after.enabled ? " on" : " off")

@@ -64,7 +64,10 @@ in Xcode works too.
 | `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
 | `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
 | `W` | In the loupe, the white-balance eyedropper (or **White Balance** in Color): click something that should be neutral grey or white, at fit or 1:1, and temperature and tint are set so it renders grey, one undo step; a clipped or near-black spot is refused with a note and changes nothing; `W` or `Esc` puts it down |
-| `Esc` | Put the white-balance eyedropper down; else the straighten tool; else leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
+| `M` / `⇧M` | In the loupe, a new linear / radial gradient mask (see Masks) |
+| `K` | In the loupe, a new brush mask, armed for painting (painting on the photo is not built yet); `K` again or `Esc` puts the brush down |
+| `O` | Show the selected mask as a red tint over the loupe photo (View › Show Mask Overlay); never in Before or an export |
+| `Esc` | Put the white-balance eyedropper down; else the brush; else the straighten tool; else leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
@@ -88,11 +91,11 @@ Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
 PhotoLab › Settings…): File (open, Open Collection, Open Recent, Delete
 Collection…, Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
-Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
+Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…, Add
-to Collection, Remove from Collection). A single-letter key is written after its menu item's
-name, as in "Pick (P)", rather than bound to the menu, so typing that letter
+to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush). A single-letter key (alone or with `⇧`) is written after its menu item's
+name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
 **View › Show** also picks the grid's filter (All, Picks, Unflagged, Rejected, 1 to 5
@@ -192,12 +195,24 @@ the last frame.
 
 **History**, under Info, lists the photo's steps newest on top with the
 Original at the bottom, each named for what it changed ("Exposure +0.50",
-"Crop", "Exposure, Contrast +2 more", "Reset", and "Sync: …" for a step
+"Crop", "Mask", "Exposure, Contrast +2 more", "Reset", and "Sync: …" for a step
 taken on many photos at once). Click a row to go back (or forward) to it:
 the same as pressing `⌘Z` / `⇧⌘Z` that many times, so a sync step takes
 every photo of the sync with it. Undone steps stay greyed above the current
 row until the next edit drops them. The history is kept while the folder or
 album is open (the last 100 steps per photo) and is not saved.
+
+**Masks**, under the Presets strip, are local adjustments: **Linear** (or
+`M`) adds a gradient from the top edge of the photo to 40% down, **Radial**
+(`⇧M`) an ellipse centred a third of the way in from the top left,
+**Brush** (`K`) an empty brush mask (painting it on the photo comes in a
+later version). There are no handles on the photo yet, so a new mask sits
+at that default place. Each is listed by kind and order ("Linear 1",
+"Radial 1", "Linear 2"); click one to show its own exposure, temperature,
+tint, contrast, highlights, shadows and saturation sliders, a checkbox to
+switch it off, **Invert** (apply where the mask is not), **Duplicate**
+and **Delete**. Every add, delete, switch and slider drag is one undo step.
+**Show Overlay** (or `O`) tints the selected mask red on the photo.
 
 - **Basic** — exposure (EV), contrast, highlights, shadows, whites, blacks.
   **Auto** (or `⌘U`, Photo › Auto Tone) sets all six from the photo's
@@ -298,7 +313,8 @@ selection back to the anchor:
   **None**, **Look** (everything but rotate and crop, the default) and
   **Grade** (the look without exposure, so each photo keeps its own
   brightness and framing). An unchecked adjustment keeps each photo's own
-  value; a checked one takes the anchor's, zero included.
+  value; a checked one takes the anchor's, zero included. **Masks** (checked
+  by All only) replaces each photo's masks with the anchor's.
 - **Apply Preset** applies a preset to every selected photo (its look over
   each photo's own crop and rotation). The Presets menu does the same for
   the selection.

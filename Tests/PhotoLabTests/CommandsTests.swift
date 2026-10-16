@@ -59,10 +59,11 @@ final class CommandsTests: XCTestCase {
 
     func testHiddenShortcutsAreTheTablesBareKeysAndKeepEveryKeyTheyHad() {
         XCTAssertEqual(HiddenShortcuts.commands.map(\.name), AppCommand.all.filter(\.isBareKey).map(\.name))
-        XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.isEmpty && $0.key != nil })
+        // No modifier, or Shift alone (Shift-M): each types a character.
+        XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.subtracting(.shift).isEmpty && $0.key != nil })
         let keys = Set(HiddenShortcuts.commands.map { $0.key!.character })
         let expected: [KeyEquivalent] = ["g", "e", "z", "y", "\\", "j", "f", "p", "x", "u",
-                                         "0", "1", "2", "3", "4", "5", "r", "w",
+                                         "0", "1", "2", "3", "4", "5", "r", "w", "o", "m", "k",
                                          .return, .escape, .leftArrow, .rightArrow]
         XCTAssertEqual(keys, Set(expected.map(\.character)))
     }
@@ -88,9 +89,10 @@ final class CommandsTests: XCTestCase {
 
     func testTheViewAndPhotoMenusListEveryBareKeyButEscapeAndReturn() {
         let view = AppCommand.items(in: .view).map(\.name)
-        XCTAssertEqual(view, [.grid, .loupe, .map, .zoom, .compare, .showOriginal, .clipping, .filmstrip, .info, .previous, .next])
+        XCTAssertEqual(view, [.grid, .loupe, .map, .zoom, .compare, .showOriginal, .clipping, .maskOverlay, .filmstrip, .info, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords, .removeFromCollection])
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords, .removeFromCollection,
+                               .newLinearMask, .newRadialMask, .brushMask])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos, .deleteCollection])
@@ -110,6 +112,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(AppCommand.command(.showOriginal).menuTitle(ctx), "Show Original (\\)")
         XCTAssertEqual(AppCommand.command(.rate3).menuTitle(ctx), "3 Stars (3)")
         XCTAssertEqual(AppCommand.command(.zoom).menuTitle(ctx), "Zoom to 1:1 (Z)")
+        XCTAssertEqual(AppCommand.command(.newRadialMask).menuTitle(ctx), "New Radial Gradient (⇧M)")
         XCTAssertEqual(AppCommand.command(.resetPhoto).menuTitle(ctx), "Reset Photo")
         XCTAssertEqual(AppCommand.command(.export).menuTitle(ctx), "Export…")
     }

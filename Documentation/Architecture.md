@@ -219,7 +219,7 @@ and After come out at equal pixel size. A waiting Before goes before a
 waiting After (it is asked for once per photo or size, so a drag cannot
 starve it), it is not rendered again for a request equal to the one shown
 or rendering (a slider move re-renders After only), and it never carries
-the clipping overlay; the histogram stays the After frame's. Leaving compare
+the clipping overlay or the mask tint; the histogram stays the After frame's. Leaving compare
 mode drops `beforeImage` and clears the in-flight request, so a Before
 still rendering then finds itself unwanted and is discarded.
 
@@ -260,7 +260,7 @@ the full-resolution rendered frame, slid inside it at the edges) and
 `zoomFrameSize` (that frame's size) for the view to pan and map clicks.
 `image` and the histogram stay the fit frame's: a waiting window and a
 waiting fit frame take turns, so a drag updates both. The window carries
-the clipping overlay like the fit frame; `setClipping` re-renders it.
+the clipping overlay and the mask tint like the fit frame; `setClipping` re-renders it.
 
 The full-resolution master (`Renderer.fullResolution(_:decodeNow:)`) is
 decoded off the main thread on the first 1:1 of a photo and held for that
@@ -335,6 +335,26 @@ render, and a frame rendered while `showClipping` is on carries the overlay
 in the same hop. `HistogramView` (`HistogramView.swift`) draws it at the top
 of the adjustments panel; its triangles are buttons on
 `Library.showClipping`, the flag `J` toggles.
+
+The O overlay (Show Mask Overlay) is a third stage of the same kind:
+`PreviewModel.maskOverlay` is the id of the mask to tint (the canvas sets
+it through `setMaskOverlay(_:)` to `Library.selectedMask` while
+`Library.showMaskOverlay` is on, nil otherwise), and `pump` and
+`renderZoom` look that id up in the request's own recipe and, after the
+clipping overlay, call `MaskTint.compose(over:mask:recipe:sourceExtent:window:renderer:)`
+(`MasksPanel.swift`). It draws the mask with `MaskRender.placedImage`
+over the extent `Renderer.render` scaled the source to
+(`MaskTint.sourceExtent(of:maxPixelSize:)`, the same never-upscale rule;
+the full-resolution master's extent for a 1:1 window, cut to the window's
+region), inverts it for an inverted mask, and blends `MaskTint.color` (red)
+at `MaskTint.opacity` (0.5) times that weight over the 8-bit frame, untagged
+in and out like the clipping overlay. The tint therefore lands on the
+pixels the mask's adjustments change at any rotate, crop, preview size or
+window. It needs the mask's placement, which only a render has, so
+`setMaskOverlay` and a `setClipping` while a mask is tinted render the
+newest request again (`renderAgain`) rather than re-compose the kept
+frame. Compare's Before, thumbnails, the preset strip and `Exporter` never
+pass through it.
 
 Auto (`AutoTone.swift`) is the one other reader of a `Histogram`, and it
 measures its own frame, not the panel's: the photo's recipe with the six
@@ -619,6 +639,17 @@ key only when there is a mask, so an unmasked recipe encodes exactly as it
 did before masks existed. Every shape renders (§1, The chain): linear and
 radial masks as Core Image gradients, brush masks as a cached CPU raster
 (`BrushRaster`).
+
+The panel edits masks through `extension Library` in `MasksPanel.swift`:
+`addMask(_:for:)` (a `MaskKind.defaultShape` appended), `updateMask(_:for:_:)`,
+`duplicateMask(_:for:)` and `deleteMask(_:for:)`, each one
+`Library.setRecipe`, so the one writer, undo and the sidecar carry them;
+a mask slider is `MaskSliderEdit`, a `beginEdit` / `endEdit` pair around
+its `updateMask` calls. Which mask the panel shows (`Library.selectedMask`)
+and whether the brush is armed (`Library.maskBrushArmed`) are tool state
+on `Library`, never in a recipe; `Library.apply` clears `selectedMask`
+whenever the selected photo's new recipe no longer holds it, which covers
+undo, redo, delete, reset and sync with one rule.
 
 ### `Sidecar` and `SidecarStore`
 
@@ -952,7 +983,8 @@ The panel's History section reads the stacks through
 oldest undo recipe as the Original, then the state after each undo step,
 the current recipe, and the redo stack in redo order); `EditHistory` itself
 stays private. Each row's label is computed from the two recipes on either
-side of it (`HistoryLabel.describe(from:to:batch:)`), so a new
+side of it (`HistoryLabel.describe(from:to:batch:)`; a change to
+`Recipe.masks` is the one name "Mask"), so a new
 `AdjustmentKind` labels itself and nothing about a step is stored beyond
 what undo already keeps. `Library.jumpToHistory(_:for:)` is undo or redo
 in a loop (the private `undo(anchor:)` / `redo(anchor:)` that `undo()` and
@@ -968,7 +1000,7 @@ geometry (what applying a preset does), `.grade` is the look without
 exposure (each photo keeps its own brightness), `.everything` and `.nothing`
 are the sheet's All and None; only `.everything` has `masks` on, so Look,
 Grade and Auto (`AutoTone.mask`) keep each target's masks and All copies
-the source's. `Recipe.syncing(_:from:)` is the one batch
+the source's (the sheet's Masks checkbox sets `masks` by hand). `Recipe.syncing(_:from:)` is the one batch
 primitive: the receiver with every kind in the mask taken from the source,
 value and enabled flag alike, and the source's masks in place of its own
 when `masks` is on, the rest kept, in normalized form.

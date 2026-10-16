@@ -565,6 +565,31 @@ not only the pass.
   remembered. Shown to bite by six mutants (a blank value shown, the W
   reference ignored, no `remember`, no in-flight dedupe, no orientation
   turn, an asset's folder kept), one or more failures each.
+- `MasksPanelTests.swift` — the Masks section's model (`MasksPanel.swift`):
+  each of New Linear, New Radial and New Brush is one undo step and one
+  sidecar write (`Library.sidecarWrites`), lands at its default placement
+  at the end of the list, selects the new mask and arms only the brush;
+  names run by kind and order ("Linear 1", "Radial 1", "Brush 1", "Linear
+  2"); Duplicate, the switch and Invert are one step each and the copy is
+  selected right after its original; Delete is one step and one write,
+  deselects, and undo brings the mask back with its sliders; a mask slider
+  drag through `MaskSliderEdit` writes nothing mid-drag, once at mouse-up,
+  and undoes in one step, and each of the seven kinds writes into the mask
+  only; `selectedMask` clears when undo takes its mask away (redo brings it
+  back unselected), on a photo change and on a reset; M, ⇧M, K and O are
+  bare keys (off while typing; "New Radial Gradient (⇧M)"), M / ⇧M / K add
+  a mask in the loupe only and leave crop mode, K again puts the brush down
+  and adds nothing, Esc disarms the brush before the loupe, and crop mode,
+  compare, the eyedropper, another mask and leaving the loupe disarm it; a
+  mask step is labelled "Mask"; `MaskTint` is half red where the mask
+  applies and nothing where it does not (inverted the reverse), and under
+  rotate 7.5 and a 20% left crop the tint's centroid is the centroid of
+  what the mask's +0.5 EV brightens, within 1 px; `PreviewModel` tints the
+  After frame and never compare's Before, and turning the overlay off gives
+  the plain frame back; with O on and a mask selected an export has no red
+  in any row. Shown to bite by a mutant (the slider skipping `beginEdit`: 3
+  failures in the drag test, 15 writes mid-drag and an undo that stops one
+  step in).
 - `CommandsTests.swift` — the command table (`AppCommand.all`): no two
   entries share a key and modifiers, and none takes a system menu key
   (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button

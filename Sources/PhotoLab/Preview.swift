@@ -74,6 +74,11 @@ final class PreviewModel {
     /// When on, `image` is the frame with the clipping overlay composed over
     /// it (red over blown, blue over crushed); `J` in the loupe.
     private(set) var showClipping = false
+    /// Show Mask Overlay: the id of the mask (in each request's recipe) that
+    /// `image` and the 1:1 window carry tinted red (`MaskTint`), composed
+    /// after the clipping overlay in the same hop; nil for none. Never on
+    /// compare's Before.
+    private(set) var maskOverlay: UUID?
     /// Before and After side by side (`Y`). While on, every request also asks
     /// for the neutral render of the same master at the same pixel size,
     /// which lands in `beforeImage`; leaving compare mode drops it.
@@ -164,6 +169,7 @@ final class PreviewModel {
         let recipe: Recipe
         let region: Renderer.Region
         let overlay: Bool
+        let maskOverlay: UUID?
         /// Compare mode: the neutral window at the same region rides along.
         let before: Bool
     }
@@ -312,7 +318,7 @@ final class PreviewModel {
         guard case .actual(let center) = zoom, let last = lastRequest else { pendingZoom = nil; return }
         let z = ZoomRequest(url: last.url, recipe: last.recipe,
                             region: Renderer.Region(center: center, size: lastViewPixelSize), overlay: showClipping,
-                            before: compare)
+                            maskOverlay: maskOverlay, before: compare)
         guard z != zoomShown, z != zoomInFlight else { pendingZoom = nil; return }
         pendingZoom = z
         loadFullResolution(z.url)
@@ -433,13 +439,18 @@ final class PreviewModel {
             return
         }
         let overlay = showClipping
+        let tinted = maskOverlay.flatMap { id in req.recipe.masks.first { $0.id == id } }
         let fromFirstFrame = masterIsFirstFrame
         Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> (plain: CGImage, shown: CGImage, milliseconds: Double)? in
                 guard let r = Renderer.shared.render(master, recipe: req.recipe, maxPixelSize: req.maxPixelSize) else { return nil }
-                // The overlay is one stage over the finished 8-bit frame, in
-                // the same hop, so a slider drag with J on never flashes plain.
-                let shown = overlay ? (ClippingOverlay.compose(over: r.image, context: Renderer.shared.context) ?? r.image) : r.image
+                // The overlays are stages over the finished 8-bit frame, in
+                // the same hop, so a slider drag with J or O on never flashes plain.
+                var shown = overlay ? (ClippingOverlay.compose(over: r.image, context: Renderer.shared.context) ?? r.image) : r.image
+                if let tinted {
+                    let extent = MaskTint.sourceExtent(of: master.extent, maxPixelSize: req.maxPixelSize)
+                    shown = MaskTint.compose(over: shown, mask: tinted, recipe: req.recipe, sourceExtent: extent) ?? shown
+                }
                 return (r.image, shown, r.milliseconds)
             }.value
             guard let self else { return }
@@ -496,7 +507,11 @@ final class PreviewModel {
                 if ZoomMath.fits(frame: r.frameSize, in: req.region.size) {
                     return (r.image, r.frameSize, region, r.milliseconds, nil, nil)
                 }
-                let shown = req.overlay ? (ClippingOverlay.compose(over: r.image, context: Renderer.shared.context) ?? r.image) : r.image
+                var shown = req.overlay ? (ClippingOverlay.compose(over: r.image, context: Renderer.shared.context) ?? r.image) : r.image
+                if let id = req.maskOverlay, let mask = req.recipe.masks.first(where: { $0.id == id }) {
+                    shown = MaskTint.compose(over: shown, mask: mask, recipe: req.recipe, sourceExtent: full.extent,
+                                             window: region) ?? shown
+                }
                 let b = req.before ? Renderer.shared.render(full, recipe: .neutral, region: req.region) : nil
                 return (shown, r.frameSize, region, r.milliseconds, b?.image, b?.region)
             }.value
@@ -529,6 +544,8 @@ final class PreviewModel {
         guard on != showClipping else { return }
         showClipping = on
         if case .actual = zoom { requestZoom(); pump() }
+        // The plain frame lacks the mask tint: render again instead.
+        if maskOverlay != nil { renderAgain(); return }
         guard let frame else { return }
         guard on else { image = frame; return }
         let generation = frameGeneration
@@ -539,6 +556,22 @@ final class PreviewModel {
             guard let self, let composed, self.showClipping, self.frameGeneration == generation else { return }
             self.image = composed
         }
+    }
+
+    /// Tints mask `id` over the After frame and the 1:1 window, or none.
+    /// The newest request is rendered again with the choice (the tint needs
+    /// the mask's placement, which only a render has).
+    func setMaskOverlay(_ id: UUID?) {
+        guard id != maskOverlay else { return }
+        maskOverlay = id
+        if case .actual = zoom { requestZoom() }
+        renderAgain()
+    }
+
+    /// The newest request again, so a frame carries a changed overlay.
+    private func renderAgain() {
+        if let last = lastRequest { pending = last }
+        pump()
     }
 
     /// One histogram in flight at a time, always of the newest frame: a

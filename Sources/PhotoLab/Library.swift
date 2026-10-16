@@ -132,6 +132,7 @@ final class Library {
                 selectedIDs = selection.map { [$0] } ?? []
                 loupeZoom = .fit
                 cropDragStart = nil
+                selectedMask = nil
             }
             saveViewState()
         }
@@ -141,7 +142,7 @@ final class Library {
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false {
         didSet {
-            if !loupe { loupeZoom = .fit; cropMode = false; whiteBalancePicking = false }
+            if !loupe { loupeZoom = .fit; cropMode = false; whiteBalancePicking = false; maskBrushArmed = false }
             if loupe { showMap = false }
             saveViewState()
         }
@@ -182,6 +183,7 @@ final class Library {
                 loupeZoom = .fit
                 compare = false
                 whiteBalancePicking = false
+                maskBrushArmed = false
             } else {
                 cropDragStart = nil
                 straightening = false
@@ -215,9 +217,36 @@ final class Library {
                 cropMode = false
                 compare = false
                 whiteBalanceNote = nil
+                maskBrushArmed = false
             }
         }
     }
+    /// The mask the Masks section shows the sliders of (`LocalMask.id`, in
+    /// the selected photo's `Recipe.masks`). Tool state like the crop's
+    /// aspect: never in a recipe, never remembered. Cleared when the photo
+    /// changes and whenever the photo's recipe stops holding it (an undo of
+    /// its add, a delete, a reset, a sync), by `apply`.
+    var selectedMask: UUID? {
+        didSet { if selectedMask != oldValue { maskBrushArmed = false } }
+    }
+    /// The brush is armed on the selected brush mask (K, Photo › Brush, the
+    /// Masks section's New Brush): drags on the photo will paint into it.
+    /// Tool state like the eyedropper: arming leaves crop mode, ends compare
+    /// and puts the eyedropper down; any of those, another mask selected,
+    /// Esc and leaving the loupe disarm it.
+    var maskBrushArmed = false {
+        didSet {
+            guard maskBrushArmed != oldValue, maskBrushArmed else { return }
+            cropMode = false
+            compare = false
+            whiteBalancePicking = false
+        }
+    }
+    /// Show Mask Overlay (O, View menu, the Masks section's checkbox): the
+    /// selected mask tinted red at half strength over the loupe's After
+    /// frame (`MaskTint`, composed by `PreviewModel` like the clipping
+    /// warning). Never in compare's Before, a thumbnail or an export.
+    var showMaskOverlay = false
     /// Why the last eyedropper click changed nothing (a clipped or too dark
     /// patch, an unreadable photo), for the panel's status line; cleared by
     /// arming the tool again and by a balanced pick.
@@ -248,7 +277,7 @@ final class Library {
     /// Before / After side by side in the loupe (Y, or the toolbar toggle):
     /// the canvas splits into the neutral render and the recipe's.
     var compare = false {
-        didSet { if compare { cropMode = false; whiteBalancePicking = false } }
+        didSet { if compare { cropMode = false; whiteBalancePicking = false; maskBrushArmed = false } }
     }
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
@@ -302,6 +331,9 @@ final class Library {
     /// How many members of the open collection are missing on disk
     /// (`CollectionSource.missing`): counted in the subtitle, never dropped.
     private(set) var missingMembers = 0
+    /// Sidecar writes made since launch (`persist`), so a test can say an
+    /// edit was written once; never shown.
+    @ObservationIgnored private(set) var sidecarWrites = 0
 
     private var store: SidecarStore?
     private var history: [Photo.ID: EditHistory] = [:]
@@ -1313,9 +1345,13 @@ final class Library {
     /// Only the default recipe is dropped from memory; a recipe that renders
     /// as identity because an entry is disabled keeps its values.
     /// Under the `.edited` sort, a photo gaining or losing its edit moves.
+    /// A selected mask the photo's new recipe no longer holds is deselected.
     private func apply(_ recipe: Recipe, to id: Photo.ID) {
         let wasEdited = recipes[id] != nil
         if recipe.isDefault { recipes.removeValue(forKey: id) } else { recipes[id] = recipe }
+        if id == selection, let m = selectedMask, !recipe.masks.contains(where: { $0.id == m }) {
+            selectedMask = nil
+        }
         if sort.key == .edited, wasEdited != (recipes[id] != nil) { resort() }
     }
 
@@ -1328,6 +1364,7 @@ final class Library {
         do {
             try store.save(recipe(for: id), marks: marks(for: id), keywords: keywords(for: id),
                            for: id, name: name(for: id))
+            sidecarWrites += 1
             unreadableSidecars.remove(id)
             sidecarError = nil
         } catch {
