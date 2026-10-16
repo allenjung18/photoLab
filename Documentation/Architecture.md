@@ -64,6 +64,14 @@ same at their different sizes.
   says which happened); at the loupe's size that is a decode for most files,
   at the strip's and the grid's sizes a camera RAW's embedded preview usually
   serves.
+- `Renderer.firstFrame(_:minPixelSize:masterPixelSize:)` is the loupe's
+  stand-in while that master decodes: `ImageLoading.firstFrame` returns the
+  container's embedded preview as stored, never a decode (both `FromImage`
+  options passed as false; left unset, ImageIO decodes a file with no
+  preview), and only when its long side is at least
+  `PreviewModel.firstFrameMinPixelSize` and below `masterPixelSize` (at or
+  above it the master is that same preview). A Sony ARW's 1616×1080
+  preview passes; a JPEG's 160 px EXIF thumbnail does not.
 - `Renderer.fullResolution(_:decodeNow:)` is the export's input:
   `CIImage(contentsOf:)` with the orientation property applied, the whole
   file, decoded lazily by Core Image at render time. The loupe's 1:1 master
@@ -104,6 +112,24 @@ stale frames. `PreviewCanvas` (`ContentView.swift`) is the view: it calls
 `load` when the photo changes and `request` when the recipe or its own pixel
 size changes, and substitutes `Recipe.neutral` while `Library.showBefore` is
 on, which is all the Before button does.
+
+The first frame. `load` starts two decodes off the main thread
+(`PreviewModel.Decoders`, injectable; `.live` is `Renderer.firstFrame` and
+`Renderer.previewMaster`). An embedded preview that lands first stands in
+as the master: `pump` renders the waiting request over it through the same
+chain, so the recipe is applied to the frame that shows, and
+`imageIsFirstFrame` is set on that frame. When the master lands it cancels
+the preview's task, takes the preview's place, and
+`renderAgainOverMaster` asks for the newest request again (and compare's
+Before, dropping one still rendering over the preview); `image` is never
+cleared in between, so the swap is one frame replacing another. A master
+that lands first leaves the preview unused; a master that fails takes the
+preview's frame down so the canvas labels the photo. `masterSize` is the
+master's alone and zero until it lands. 1:1 is untouched: its window comes
+from the full-resolution master, decoded on its own. A new photo cancels
+both decodes; `offMain` forwards the cancellation into the detached work,
+so a decode that has not started is skipped and one already in ImageIO
+runs out and is dropped.
 
 Compare mode (`Library.compare`, `Y`) is the same model with a second
 request. `PreviewModel.setCompare(_:)` turns it on; from then on each

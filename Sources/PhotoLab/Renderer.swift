@@ -61,6 +61,17 @@ final class Renderer: @unchecked Sendable {
         return CIImage(cgImage: cg)
     }
 
+    /// The loupe's first frame while the preview master decodes: the file's
+    /// embedded preview when it is worth showing (`ImageLoading.firstFrame`),
+    /// else nil. Orientation applied, like the master, so the swap does not
+    /// turn the photo.
+    static func firstFrame(_ url: URL, minPixelSize: Int, masterPixelSize: Int) -> CIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = ImageLoading.firstFrame(from: source, minPixelSize: minPixelSize, masterPixelSize: masterPixelSize)
+        else { return nil }
+        return CIImage(cgImage: cg)
+    }
+
     /// Full-resolution decode for export, orientation applied. The export
     /// leaves the decode to Core Image (lazy, at render time); the loupe's
     /// 1:1 master passes `decodeNow` so the whole file is decoded once, here,

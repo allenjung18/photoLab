@@ -13,7 +13,7 @@ with `@testable import PhotoLab`.
 The filter is a regular expression over `Class/test`. Build with Xcode
 selected (README, Run): the Command Line Tools toolchain cannot build the
 SwiftUI target. A green run prints the executed count with its failures and
-skips; seven tests skip by design (the two snapshot tests, below, the real-RAW timing, and the four
+skips; eight tests skip by design (the two snapshot tests, below, the two real-RAW timings, and the four
 real-PhotoKit tests: two in `PhotosTests`, which run only in a process that
 is already authorized for Photos, and the import in `ExportTests` and the
 edit in `AdjustmentDataTests`, which also need `PHOTOLAB_PHOTOS_WRITE=1`),
@@ -183,6 +183,20 @@ not only the pass.
   the neutral recipe and a disabled-only one never call the renderer and
   share the plain entry, a cancelled edited request renders and caches
   nothing, and the timed render from the cached base.
+- `RawFirstFrameTests.swift` — the loupe's first frame, with the decodes
+  injected (`PreviewModel.Decoders`) so the master can be held back: the
+  embedded preview's frame arrives first with the recipe applied (exposure
+  brightens it) and the master's replaces it with exactly one more frame;
+  an edit made over the preview is what the master renders; a master that
+  lands first cancels the preview, whose late result neither shows nor
+  feeds the next render; a photo change cancels both of the old photo's
+  decodes (each sees the cancellation inside its body) and neither result
+  shows; a failed master takes the preview's frame down. The rule
+  (`ImageLoading.firstFrame`) on real JPEGs: the 160 px EXIF thumbnail is
+  returned as stored between the bounds and refused outside them, and a
+  file with no embedded preview gives nil, not a decode. The real-RAW
+  first-frame timing (`PHOTOLAB_BENCH_RAW`, printed as BENCH-FIRST-FRAME,
+  not gated) skips unless asked for.
 - `HistogramTests.swift` — a frame with a 25 % white block reports a quarter
   of its pixels blown and none crushed, the warning lights above a tenth of
   a percent and not at it, the bins sum to the pixel count and match a

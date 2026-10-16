@@ -326,6 +326,13 @@ Nothing else; the copied settings live in memory.
   calls `PreviewModel.request(url:recipe:maxPixelSize:)`. Until the first
   frame of a photo arrives it shows the grid's cached thumbnail (the edited
   one when the grid has rendered it, else the plain one) under a spinner.
+  A photo whose embedded preview is at least
+  `PreviewModel.firstFrameMinPixelSize` on its long side and smaller than
+  the master (a camera RAW's) gets that preview as its first frame, the
+  recipe rendered over it (`PreviewModel.imageIsFirstFrame`), and the
+  decoded master's frame replaces it in place (Architecture, The loupe).
+  The crop's aspect row waits for the master (`PreviewModel.masterSize`
+  is zero until then).
   A Photos asset's file has to be fetched first
   (`Library.originalFile(for:)`, Architecture 2): `LoupeView` keeps an
   `OriginalFetch`, and the canvas shows the thumbnail under
@@ -531,7 +538,8 @@ redo, Reset, the render time and any sidecar error.
   the photo carries a flag or rating, which stay), disabled while the recipe
   `isDefault`. The render line is
   `PreviewModel.renderMilliseconds` with the frame's pixel size and
-  `PreviewModel.masterSize`. `Library.sidecarError`, when set, is the last
+  `PreviewModel.masterSize` (or "of the embedded preview" while
+  `PreviewModel.imageIsFirstFrame`). `Library.sidecarError`, when set, is the last
   sidecar write or read that failed (a read-only folder, an unreadable
   file).
 

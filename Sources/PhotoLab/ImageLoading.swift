@@ -66,6 +66,30 @@ enum ImageLoading {
         return candidate
     }
 
+    /// The loupe's first frame (`PreviewModel.load`): the container's embedded
+    /// preview as stored, never a decode of the image. Both `FromImage`
+    /// options are false, said out loud: left unset, ImageIO decodes the
+    /// image when there is no preview. So a file with none gives nil at once.
+    /// Accepted only when its long side is at least
+    /// `minPixelSize` (ImageIO's 160 px JPEG thumbnail would be a blur on the
+    /// loupe) and under `masterPixelSize`: at or above it the preview master
+    /// is that same embedded preview (`thumbnail(from:maxPixelSize:)`), as
+    /// fast, so nothing needs to come first. A Sony ARW's 1616×1080 preview
+    /// passes; its master is a full RAW decode.
+    static func firstFrame(from source: CGImageSource, minPixelSize: Int, masterPixelSize: Int) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+            kCGImageSourceCreateThumbnailFromImageAlways: false,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: masterPixelSize,
+        ]
+        guard let preview = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let long = max(preview.width, preview.height)
+        guard long >= minPixelSize, long < masterPixelSize else { return nil }
+        return preview
+    }
+
     private static func options(_ maxPixelSize: Int, fromImageAlways: Bool) -> CFDictionary {
         let options: [CFString: Any] = [
             (fromImageAlways ? kCGImageSourceCreateThumbnailFromImageAlways

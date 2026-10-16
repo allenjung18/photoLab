@@ -12,19 +12,56 @@ import Observation
 /// out of the one chain at equal pixel size. At 1:1 (`setZoom`) a third
 /// request renders a window of the full-resolution image through the same
 /// chain (`zoomImage`).
+///
+/// A photo with a large embedded preview and a slow master (a camera RAW)
+/// shows that preview first (`load`): it stands in as the master, so the
+/// recipe renders over it through the same chain, and the decoded master
+/// replaces it when it lands, re-rendering the newest request once; the
+/// frame on screen is never cleared in between.
 @MainActor
 @Observable
 final class PreviewModel {
     nonisolated static let masterPixelSize = 3200
+    /// The smallest embedded preview worth showing first: a Sony ARW's
+    /// 1616 px passes, a JPEG's 160 px EXIF thumbnail does not.
+    nonisolated static let firstFrameMinPixelSize = 1024
+
+    /// The two decodes behind `load`, injectable so a test can hold the
+    /// master back or count its calls. Both run off the main thread.
+    struct Decoders: Sendable {
+        /// The embedded preview to show first, or nil (`Renderer.firstFrame`).
+        var firstFrame: @Sendable (URL) -> CIImage?
+        /// The preview master at a long side (`Renderer.previewMaster`).
+        var master: @Sendable (URL, Int) -> CIImage?
+
+        static let live = Decoders(
+            firstFrame: { Renderer.firstFrame($0, minPixelSize: PreviewModel.firstFrameMinPixelSize,
+                                              masterPixelSize: PreviewModel.masterPixelSize) },
+            master: { Renderer.previewMaster($0, maxPixelSize: $1) })
+    }
+
+    private let decoders: Decoders
+
+    init(decoders: Decoders = .live) {
+        self.decoders = decoders
+    }
 
     /// The latest rendered frame and the photo it belongs to.
     private(set) var image: CGImage?
     private(set) var imageURL: URL?
+    /// `image` was rendered over the embedded preview, the decoded master
+    /// not yet in (`load`).
+    private(set) var imageIsFirstFrame = false
+    /// Counts the frames shown in `image` (tests read it to see one swap).
+    private(set) var frameGeneration = 0
     /// The recipe `image` was rendered from (crop mode draws its rectangle
     /// only over a frame rendered uncropped, `CropMath.isCropFrame`).
     private(set) var imageRecipe: Recipe?
     /// Core Image time of the latest frame, ms (filter graph + readback).
     private(set) var renderMilliseconds: Double = 0
+    /// The decoded master's size; zero until it lands (never the embedded
+    /// preview's, whose aspect can differ by a pixel), so the crop's aspect
+    /// row waits for it.
     private(set) var masterSize: CGSize = .zero
     /// The photo whose master could not be decoded (not an image, unreadable);
     /// the canvas labels it instead of waiting for a frame. Cleared by the
@@ -77,14 +114,16 @@ final class PreviewModel {
 
     private var master: CIImage?
     private var masterURL: URL?
+    /// `master` is the embedded preview standing in until the decode lands.
+    private var masterIsFirstFrame = false
     private var loadTask: Task<Void, Never>?
+    private var firstFrameTask: Task<Void, Never>?
 
     private var pending: Request?
     private var rendering = false
     /// The plain frame `image` was made from, for a re-compose when the
     /// overlay toggles without a new render.
     private var frame: CGImage?
-    private var frameGeneration = 0
     private var histogramRunning = false
     private var histogramDirty = false
     /// The newest request, so turning compare on knows what Before to render.
@@ -132,23 +171,57 @@ final class PreviewModel {
     /// Decodes the master for `url` off the main thread, then renders the
     /// request that is waiting (if any). A decode that fails forgets the url
     /// (so the next `load` of it decodes again) and sets `failed`.
+    ///
+    /// Beside it, the embedded preview is read (`Decoders.firstFrame`, ~20 ms
+    /// for a RAW against ~800 ms for its master). If it lands first it
+    /// stands in as the master: the waiting request renders over it, the
+    /// recipe applied, and `imageIsFirstFrame` says so. When the master
+    /// lands it takes the preview's place and the newest request (and
+    /// compare's Before) render again, once; `image` keeps the preview's
+    /// frame until then. A master that lands first leaves the preview unused.
+    ///
+    /// A new photo cancels both decodes of the old one: the cancellation is
+    /// forwarded into the detached work, so a decode that has not started is
+    /// skipped and one that finishes anyway is dropped (an ImageIO decode
+    /// cannot be stopped once begun).
     func load(_ url: URL) {
         guard url != masterURL else { return }
         loadTask?.cancel()
+        firstFrameTask?.cancel()
         master = nil
+        masterIsFirstFrame = false
         masterURL = url
+        masterSize = .zero
         histogram = nil
         dropFullResolution()
         // Still 1:1 with a request for this photo already in: its own
         // full-resolution master starts decoding beside the preview master.
         requestZoom()
         let size = Self.masterPixelSize
+        let decoders = decoders
+        firstFrameTask = Task { [weak self] in
+            let preview = await Self.offMain { decoders.firstFrame(url) }
+            guard let self, !Task.isCancelled, self.masterURL == url, let preview else { return }
+            self.master = preview
+            self.masterIsFirstFrame = true
+            self.pump()
+        }
         loadTask = Task { [weak self] in
-            let decoded = await Task.detached(priority: .userInitiated) {
-                Renderer.previewMaster(url, maxPixelSize: size)
-            }.value
+            let decoded = await Self.offMain { decoders.master(url, size) }
             guard let self, !Task.isCancelled, self.masterURL == url else { return }
+            // The master is in: a preview still decoding is not wanted.
+            self.firstFrameTask?.cancel()
+            let swapping = self.masterIsFirstFrame
+            self.masterIsFirstFrame = false
             guard let decoded else {
+                // The preview's frame is not left standing over a photo
+                // that cannot be opened: the canvas labels it instead.
+                if self.imageURL == url {
+                    self.image = nil
+                    self.imageURL = nil
+                    self.imageIsFirstFrame = false
+                }
+                self.master = nil
                 self.masterURL = nil
                 self.masterSize = .zero
                 self.failed = url
@@ -157,7 +230,36 @@ final class PreviewModel {
             self.failed = nil
             self.master = decoded
             self.masterSize = decoded.extent.size
+            if swapping { self.renderAgainOverMaster() }
             self.pump()
+        }
+    }
+
+    /// The master has replaced the embedded preview: every frame shown so
+    /// far was rendered over the preview, so the newest request is asked
+    /// again, and compare's Before (one rendering over the preview is
+    /// dropped when it lands).
+    private func renderAgainOverMaster() {
+        guard let last = lastRequest, last.url == masterURL else { return }
+        if pending == nil { pending = last }
+        if compare {
+            beforeShown = nil
+            beforeInFlight = nil
+            requestBefore(for: last)
+        }
+    }
+
+    /// Runs `work` detached with the caller's cancellation forwarded into it:
+    /// work cancelled before it starts is skipped.
+    private nonisolated static func offMain(_ work: @escaping @Sendable () -> CIImage?) async -> CIImage? {
+        let handle = Task.detached(priority: .userInitiated) { () -> CIImage? in
+            if Task.isCancelled { return nil }
+            return work()
+        }
+        return await withTaskCancellationHandler {
+            await handle.value
+        } onCancel: {
+            handle.cancel()
         }
     }
 
@@ -331,6 +433,7 @@ final class PreviewModel {
             return
         }
         let overlay = showClipping
+        let fromFirstFrame = masterIsFirstFrame
         Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> (plain: CGImage, shown: CGImage, milliseconds: Double)? in
                 guard let r = Renderer.shared.render(master, recipe: req.recipe, maxPixelSize: req.maxPixelSize) else { return nil }
@@ -346,6 +449,7 @@ final class PreviewModel {
                 self.frameGeneration += 1
                 self.image = result.shown
                 self.imageURL = req.url
+                self.imageIsFirstFrame = fromFirstFrame
                 self.imageRecipe = req.recipe
                 self.renderMilliseconds = result.milliseconds
                 self.scheduleHistogram()

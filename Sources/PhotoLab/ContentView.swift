@@ -1322,6 +1322,10 @@ struct AdjustmentsPanel: View {
             return file != nil && preview.failed == file ? "Could not open" : "Loading…"
         }
         guard DeveloperInfo.showTimings else { return nil }
+        if preview.imageIsFirstFrame {
+            return String(format: "render %.1f ms · %d×%d px of the embedded preview",
+                          preview.renderMilliseconds, cg.width, cg.height)
+        }
         let master = preview.masterSize
         return String(format: "render %.1f ms · %d×%d px of %.0f×%.0f master",
                       preview.renderMilliseconds, cg.width, cg.height, master.width, master.height)

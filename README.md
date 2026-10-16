@@ -118,7 +118,9 @@ every photo between the anchor and it (the anchor kept), `⌘`-click adds or
 removes one (the anchor moves to a photo added), double-click opens it in
 the loupe. In the loupe: a filmstrip of the visible photos runs under the photo (click a cell to move there, `⇧`-click to extend the selection, `⌘`-click to toggle); click the photo to see it at 1:1 at that point, drag to pan, click again
 for fit (`G` or `Esc` go back to the grid); double-click an adjustment's name to reset it, hold **Before** to see the
-original, press `Y` to see the original and the edit side by side.
+original, press `Y` to see the original and the edit side by side. A
+camera RAW opens on the preview the camera embedded in it, with the edit
+applied, and sharpens in place once the full decode lands.
 
 **Info** (`⌘I`, View › Info, or the **Info** heading in the loupe panel)
 lists what the photo says about itself: camera, lens, focal length,
