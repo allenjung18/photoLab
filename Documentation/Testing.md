@@ -324,7 +324,9 @@ not only the pass.
   land on their own bands and every HSL row of `XMPPreset.mapping` names
   its own band, an out-of-range value is clamped and listed, Dehaze and a
   mask group are listed unsupported while a zero Dehaze is not and the
-  mask's own keys stay out of the recipe, Adobe Color's Look is not listed
+  mask's own keys stay out of the recipe, a key outside both tables is
+  listed by its plain label unless at its default, a Kelvin balance is
+  listed unless "As Shot", Adobe Color's Look is not listed
   and a creative one is, Split Toning maps alone and yields to Color
   Grading, the curves are approximated and listed, malformed XML and an
   XMP without Camera Raw settings throw by name, another prefix for the

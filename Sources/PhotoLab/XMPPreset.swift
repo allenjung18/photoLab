@@ -32,7 +32,8 @@ struct XMPImport: Equatable {
     var mapped: [Mapped]
     /// Tone-curve settings approximated onto the five curve points.
     var approximated: [String]
-    /// Non-neutral settings outside the table, in `XMPPreset.unsupportedRules` order.
+    /// Non-neutral settings outside the table: those `XMPPreset.unsupportedRules`
+    /// names, in its order, then any other key, sorted, by `XMPPreset.plainLabel`.
     var unsupported: [Unsupported]
     /// Settings whose value was clamped into the kind's range.
     var clamped: [String]
@@ -202,10 +203,18 @@ enum XMPPreset {
             !["", "as shot"].contains((v.text ?? "").lowercased())
         },
         // Absolute Kelvin / tint: a photo's own white balance. A sidecar
-        // written "As Shot" carries them too; only a set balance counts.
+        // written "As Shot" carries them too and is not listed; with no
+        // WhiteBalance key, a Temperature or Tint is a set balance.
         UnsupportedRule(settings: ["Temperature", "Tint"], label: "White balance (Kelvin)") { _, all in
-            !["", "as shot"].contains((all["WhiteBalance"]?.text ?? "").lowercased())
+            all["WhiteBalance"]?.text?.lowercased() != "as shot"
         },
+        // Process 2010 basic tone (pre-2012 presets), at its own defaults.
+        UnsupportedRule(settings: ["Exposure", "HighlightRecovery", "FillLight", "Clarity"],
+                        label: "Process 2010 tone", isActive: nonZero),
+        UnsupportedRule(settings: ["Brightness"], label: "Process 2010 tone") { v, _ in (v.number ?? 50) != 50 },
+        UnsupportedRule(settings: ["Contrast"], label: "Process 2010 tone") { v, _ in (v.number ?? 25) != 25 },
+        UnsupportedRule(settings: ["Shadows"], label: "Process 2010 tone") { v, _ in (v.number ?? 5) != 5 },
+        UnsupportedRule(settings: ["ToneCurve"], label: "Process 2010 tone curve") { v, _ in !isIdentityCurve(v) },
         UnsupportedRule(settings: ["ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue"],
                         label: "Per-channel tone curve") { v, _ in !isIdentityCurve(v) },
         UnsupportedRule(settings: ["ColorGradeGlobalSat", "ColorGradeGlobalLum"],
@@ -223,7 +232,8 @@ enum XMPPreset {
                         label: "Transform", isActive: nonZero),
         UnsupportedRule(settings: ["PerspectiveScale"], label: "Transform") { v, _ in (v.number ?? 100) != 100 },
         UnsupportedRule(settings: ["HasCrop"], label: "Crop", isActive: isTrue),
-        UnsupportedRule(settings: ["CropAngle"], label: "Crop", isActive: nonZero),
+        UnsupportedRule(settings: ["CropAngle", "CropTop", "CropLeft"], label: "Crop", isActive: nonZero),
+        UnsupportedRule(settings: ["CropBottom", "CropRight"], label: "Crop") { v, _ in (v.number ?? 1) != 1 },
         UnsupportedRule(settings: ["MaskGroupBasedCorrections"], label: "Masks", isActive: hasItems),
         UnsupportedRule(settings: ["PaintBasedCorrections"], label: "Brush corrections", isActive: hasItems),
         UnsupportedRule(settings: ["GradientBasedCorrections"], label: "Linear gradients", isActive: hasItems),
@@ -301,9 +311,65 @@ enum XMPPreset {
             }
         }
 
+        // Every other key: a number away from its default, a curve that is
+        // not the identity, a non-empty structure. Nothing that may change a
+        // photo goes unlisted; metadata and enum text are not settings.
+        let known = Set(mapping.map(\.setting) + [pointCurveKey] + parametricKeys
+                        + unsupportedRules.flatMap(\.settings) + metadataKeys)
+        for key in settings.keys.sorted() where !known.contains(key) {
+            let raw = settings[key]!
+            let active: Bool
+            switch raw {
+            case .text: active = raw.number.map { $0 != (secondaryDefaults[key] ?? 0) } ?? false
+            case .list: active = curvePoints(raw).map { !isIdentity($0) } ?? hasItems(raw, settings)
+            case .structure: active = true
+            }
+            if active { unsupported.append(.init(setting: key, label: plainLabel(key))) }
+        }
+
         return XMPImport(name: presetName(settings, fileName: fileName), recipe: recipe,
                          mapped: mapped, approximated: approximated,
                          unsupported: unsupported, clamped: clamped)
+    }
+
+    /// Keys that describe the file, never a photo: not listed.
+    static let metadataKeys: [String] = [
+        "Version", "ProcessVersion", "CompatibleVersion", "HasSettings", "AlreadyApplied", "PresetType",
+        "UUID", "Name", "PresetName", "ShortName", "SortName", "Group", "Description", "Cluster",
+        "Copyright", "ContactInfo", "SupportsAmount", "SupportsAmount2", "SupportsColor",
+        "SupportsMonochrome", "SupportsHighDynamicRange", "SupportsNormalDynamicRange",
+        "SupportsSceneReferred", "SupportsOutputReferred", "CameraModelRestriction",
+        "RequiresRGBTables", "CameraProfileDigest", "ToneCurveName", "ToneCurveName2010",
+        "ToneCurveName2012", "RawFileName", "ParametricShadowSplit", "ParametricMidtoneSplit",
+        "ParametricHighlightSplit",
+    ]
+
+    /// The neutral value of the secondary settings (a slider's radius,
+    /// detail, feather...) whose default is not 0: at it, a key is not listed.
+    static let secondaryDefaults: [String: Double] = [
+        "GrainSize": 25, "GrainFrequency": 50,
+        "PostCropVignetteMidpoint": 50, "PostCropVignetteFeather": 50, "PostCropVignetteStyle": 1,
+        "SharpenRadius": 1, "SharpenDetail": 25,
+        "ColorNoiseReduction": 25, "ColorNoiseReductionDetail": 50, "ColorNoiseReductionSmoothness": 50,
+        "LuminanceNoiseReductionDetail": 50, "VignetteMidpoint": 50,
+        "LensProfileDistortionScale": 100,
+        "LensProfileChromaticAberrationScale": 100, "LensProfileVignettingScale": 100,
+        "DefringePurpleHueLo": 30, "DefringePurpleHueHi": 70,
+        "DefringeGreenHueLo": 40, "DefringeGreenHueHi": 60,
+    ]
+
+    /// "GrainSize" -> "Grain size": a key as words, for the sheet.
+    static func plainLabel(_ key: String) -> String {
+        var out = ""
+        for (i, c) in key.enumerated() {
+            if i > 0, c.isUppercase, let prev = out.last, !prev.isUppercase, prev != " " {
+                out.append(" ")
+                out.append(Character(c.lowercased()))
+            } else {
+                out.append(c)
+            }
+        }
+        return out
     }
 
     private static func clamp(_ value: Double, _ kind: AdjustmentKind) -> Double {

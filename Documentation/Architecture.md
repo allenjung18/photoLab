@@ -1068,8 +1068,12 @@ half `XMPPreset.parametricLift` per +100) and named in
 with a plain label by `XMPPreset.unsupportedRules` (profile, Look, Dehaze,
 Texture, calibration, Kelvin white balance, per-channel curves, the global
 grading wheel and blending, black & white, noise reduction, lens
-corrections, transform, crop, masks, brushes, gradients, spot removal);
-neutral ones are not listed. The recipe starts from `Recipe.neutral`, so it
+corrections, transform, crop, masks, brushes, gradients, spot removal,
+process 2010 tone); any other key away from its default
+(`XMPPreset.secondaryDefaults`, else 0), a non-identity curve or a nested
+structure is listed under `XMPPreset.plainLabel` of its key, so nothing that
+may change a photo goes unlisted; `XMPPreset.metadataKeys` describe the file
+and are skipped. Neutral settings are not listed. The recipe starts from `Recipe.neutral`, so it
 carries no geometry, lens kind or mask, and `Preset(name:from:)` takes it as
 any other (`XMPPresetTests`). No screen reads it yet.
 

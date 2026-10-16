@@ -149,6 +149,30 @@ final class XMPPresetTests: XCTestCase {
         XCTAssertEqual(zero.unsupported, [])
     }
 
+    func testKeyOutsideBothTablesIsListedAtItsDefaultItIsNot() throws {
+        let r = try importFile("pv2010.xmp", xmp(attributes: """
+            crs:ProcessVersion="5.7" crs:Exposure="+0.50" crs:Brightness="+50" crs:Clarity="+40"
+            crs:GrainSize="40" crs:GrainFrequency="50" crs:SharpenRadius="+1.0" crs:ParametricShadowSplit="40"
+            crs:SomeFutureSlider="+12" crs:EnableCalibration="True"
+            """))
+        XCTAssertEqual(r.unsupported, [
+            XMPImport.Unsupported(setting: "Exposure", label: "Process 2010 tone"),
+            XMPImport.Unsupported(setting: "Clarity", label: "Process 2010 tone"),
+            XMPImport.Unsupported(setting: "GrainSize", label: "Grain size"),
+            XMPImport.Unsupported(setting: "SomeFutureSlider", label: "Some future slider"),
+        ])
+        XCTAssertTrue(r.recipe.isDefault)
+    }
+
+    func testKelvinWhiteBalanceIsListedUnlessAsShot() throws {
+        let bare = try importFile("k.xmp", xmp(attributes: #"crs:Temperature="5200" crs:Tint="+12""#))
+        XCTAssertEqual(bare.unsupported.map(\.setting), ["Temperature", "Tint"])
+        let custom = try importFile("k2.xmp", xmp(attributes: #"crs:WhiteBalance="Custom" crs:Temperature="5200" crs:Tint="+12""#))
+        XCTAssertEqual(custom.unsupported.map(\.setting), ["WhiteBalance", "Temperature", "Tint"])
+        let asShot = try importFile("k3.xmp", xmp(attributes: #"crs:WhiteBalance="As Shot" crs:Temperature="5200" crs:Tint="+12""#))
+        XCTAssertEqual(asShot.unsupported, [])
+    }
+
     func testDefaultLookIsNotListedACreativeOneIs() throws {
         func look(_ name: String) -> String {
             xmp(attributes: #"crs:Exposure2012="+0.20""#, body: """
@@ -220,7 +244,8 @@ final class XMPPresetTests: XCTestCase {
             crs:HasCrop="True" crs:CropTop="0.1" crs:CropLeft="0.1" crs:CropBottom="0.9" crs:CropRight="0.9"
             crs:CropAngle="3.5" crs:Exposure2012="+0.30"
             """))
-        XCTAssertEqual(r.unsupported.map(\.label), ["Crop", "Crop"])
+        XCTAssertEqual(r.unsupported.map(\.setting), ["HasCrop", "CropAngle", "CropTop", "CropLeft", "CropBottom", "CropRight"])
+        XCTAssertEqual(Set(r.unsupported.map(\.label)), ["Crop"])
         let preset = Preset(name: r.name, from: r.recipe)
         for kind in AdjustmentKind.geometryKinds {
             XCTAssertEqual(preset.recipe.value(of: kind), kind.neutral, kind.label)
