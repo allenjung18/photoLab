@@ -119,6 +119,22 @@ the clipping overlay; the histogram stays the After frame's. Leaving compare
 mode drops `beforeImage` and clears the in-flight request, so a Before
 still rendering then finds itself unwanted and is discarded.
 
+Crop mode (`Library.cropMode`, `R`) is the same model with a different
+recipe: the canvas requests `CropMath.uncropped(_:)`, the recipe with its
+four crop edges at neutral. Rotate is the first stage of the chain and the
+crop the second, so that frame is the rotated frame whole, and the crop the
+renderer will cut is an axis-aligned rectangle in it: `CropOverlay` draws
+it there and its handles move square to the frame as shown, with no
+rotation arithmetic. A crop drag changes only the crop edges, so the
+requested recipe, and the frame, stay the same through it; only the
+overlay moves. `PreviewModel.imageRecipe` is the recipe the shown frame
+came from, and the overlay is drawn only over a frame
+`CropMath.isCropFrame` accepts (uncropped, at the current rotation), never
+over the cropped frame still up from before. The mapping from view points
+to the crop is `CropMath` (`CropMath.swift`): pure functions over the fit
+rect `ZoomMath.fitRect` gives, in points, so the display scale never
+enters.
+
 ### The loupe at 1:1
 
 `PreviewModel.zoom` is `PreviewZoom.fit` (the whole frame in the view) or
@@ -593,6 +609,11 @@ step and the sidecar is written once. At most one edit is open at a time:
 and made a step), and `endEdit` closes whatever edit is open regardless of
 the id it is handed, so a loupe photo that changes mid-drag cannot leave an
 edit on the unsaved path. `undo` and `redo` drop an open edit too.
+A crop handle drag in the loupe is the same: the first
+`Library.dragCrop(_:by:fit:for:)` of a drag calls `beginEdit` and records
+the crop it starts from, every move writes the handle's edges through
+`setRecipe` (measured from that start, so the edges follow the pointer
+without drift), and `Library.endCropDrag(_:)` calls `endEdit`.
 
 ### Undo and redo
 

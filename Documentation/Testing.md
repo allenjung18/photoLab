@@ -49,7 +49,10 @@ not only the pass.
   `.unreadable-<stamp>` backup of the next save, a junk sidecar survives an
   edit through the `Library` as that backup, undo and redo walk the history
   and persist each step, and a slider drag is one undo step written once at
-  the end.
+  the end; so is a crop handle drag (`Library.dragCrop`): the crop follows
+  live with no sidecar write until `endCropDrag`, one undo takes the whole
+  drag back, and a corner writes only its two edges. Shown to bite by
+  dropping the drag's `beginEdit` (a write mid-drag).
 - `EditStateTests.swift` — `Recipe.isNeutral` versus `Recipe.isDefault`: a
   disabled-only edit renders as identity but is still an edit, in memory and
   on disk; `Library.endEdit` closes whatever edit is open and `beginEdit` on
@@ -221,6 +224,15 @@ not only the pass.
   with `Region.rect(in:)`; a photo that fits the view stays at fit; a pan
   moves the window by the drag times the display scale and stops at the
   edge. Shown to bite by removing the clamp (7 failures in 2 tests).
+- `CropMathTests.swift` — crop mode's arithmetic (`CropMath`): a handle
+  dragged in view points maps to the same normalised crop at display scale
+  1 and 2 (the fit rect is in points) and the handle lands under the
+  pointer; every inset is clamped at the image's edge; an edge dragged
+  across the other stops at the slider's 40%, holding `CropMath.minSize`;
+  a corner moves its two edges and no other; a written crop is the
+  recipe's percent and leaves the edges the handle does not own alone; and
+  crop mode's frame is the recipe uncropped at the same rotation. Shown to
+  bite by removing the clamp (9 failures in 2 tests).
 - `SortTests.swift` — `PhotoSort`: each key in both directions over a mix
   of file and asset ids through the one function, ties by name ascending
   then id, undated photos last in either direction, the order independent
@@ -251,7 +263,9 @@ not only the pass.
   G, E, Esc and Return move the view, Reset Photo, Undo, Redo, Copy
   Settings and Select All act on the selection; Z toggles 1:1 in the loupe
   only, and the arrows, even at either end, a click on another photo and
-  leaving the loupe all return to fit).
+  leaving the loupe all return to fit; R toggles crop mode in the loupe
+  only, entering it returns to fit and ends compare, Esc leaves it before
+  the loupe, and Z, Y and leaving the loupe end it).
 - `WorkflowTests.swift` — one photographer's session through the real
   model layer, nothing faked but the Photos writer (`FakePhotosWriter`):
   six synthetic JPEGs and PNGs (one portrait) open in natural order with a

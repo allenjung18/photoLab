@@ -691,6 +691,10 @@ struct LoupeView: View {
 /// clicked; a drag pans, the window held inside the frame; a click at 1:1
 /// goes back to fit. In compare mode both halves show the same region and
 /// either half takes the click and the drag. The arithmetic is `ZoomMath`.
+///
+/// Crop mode (`Library.cropMode`, R): the canvas renders the recipe without
+/// its crop (the rotated frame whole) and `CropOverlay` draws the crop over
+/// it; the zoom click and the pan are off while it is on.
 private struct PreviewCanvas: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
@@ -704,7 +708,11 @@ private struct PreviewCanvas: View {
     /// The 1:1 centre a pan started from (clamped), while a drag is panning.
     @State private var panStart: CGPoint?
 
-    private var recipe: Recipe { library.showBefore ? .neutral : library.recipe(for: photo.id) }
+    private var recipe: Recipe {
+        if library.showBefore { return .neutral }
+        let r = library.recipe(for: photo.id)
+        return library.cropMode ? CropMath.uncropped(r) : r
+    }
 
     /// One pane in points: the whole canvas, or one half of it side by side.
     private var pane: CGSize {
@@ -738,6 +746,7 @@ private struct PreviewCanvas: View {
                     }
                 } else {
                     zoomable(afterFrame, fitFrame: preview.image)
+                        .overlay { cropOverlay }
                         .overlay(alignment: .topLeading) { if library.showBefore { badge("Before") } }
                 }
             }
@@ -863,7 +872,7 @@ private struct PreviewCanvas: View {
     /// it started at (clamped first, so a centre clicked near an edge pans
     /// at once). At fit, or before the window has landed, it does nothing.
     private func pan(_ translation: CGSize) {
-        guard case .actual(let center) = library.loupeZoom, zoomWindow != nil,
+        guard !library.cropMode, case .actual(let center) = library.loupeZoom, zoomWindow != nil,
               panStart != nil || isDrag(translation) else { return }
         let frame = preview.zoomFrameSize
         let start = panStart ?? ZoomMath.clamp(center, window: window, frame: frame)
@@ -875,12 +884,28 @@ private struct PreviewCanvas: View {
     /// At fit, 1:1 at the point clicked (a click on the black around the
     /// photo does nothing); at 1:1, back to fit.
     private func click(at point: CGPoint, fitFrame: CGImage?) {
+        guard !library.cropMode else { return }
         if zoomed { library.loupeZoom = .fit; return }
         guard let fitFrame,
               let center = ZoomMath.center(forClick: point,
                                            frame: CGSize(width: fitFrame.width, height: fitFrame.height),
                                            pane: pane) else { return }
         library.loupeZoom = .actual(center: center)
+    }
+
+    /// Crop mode's rectangle and handles, over the fit frame once the frame
+    /// shown is the uncropped one (`CropMath.isCropFrame`); not at 1:1 and
+    /// not while Show Original is held.
+    @ViewBuilder private var cropOverlay: some View {
+        let current = library.recipe(for: photo.id)
+        if library.cropMode, !zoomed, !library.showBefore, let file, preview.imageURL == file,
+           let cg = preview.image, let shown = preview.imageRecipe,
+           CropMath.isCropFrame(shown, for: current) {
+            let fit = ZoomMath.fitRect(frame: CGSize(width: cg.width, height: cg.height), pane: pane)
+            CropOverlay(fit: fit, crop: CropMath.crop(of: current),
+                        drag: { handle, t in library.dragCrop(handle, by: t, fit: fit.size, for: photo.id) },
+                        end: { library.endCropDrag(photo.id) })
+        }
     }
 
     /// "1:1" while zoomed, with a spinner until the first window lands.
@@ -927,6 +952,67 @@ private struct PreviewCanvas: View {
     private func request() {
         guard let file else { return }
         preview.request(url: file, recipe: recipe, maxPixelSize: pixelSize, viewPixelSize: window)
+    }
+}
+
+/// The crop rectangle over the fit frame `fit` (view points): the area cut
+/// away dimmed, the kept area outlined with its thirds, and the four edge
+/// and four corner handles. A handle's drag is measured in the overlay's
+/// own coordinate space from where it started (`drag` gets the
+/// translation; `end` the mouse-up), so the handle moving under the pointer
+/// does not feed back into the drag. The arithmetic is `CropMath`.
+struct CropOverlay: View {
+    let fit: CGRect
+    let crop: CropMath.Crop
+    let drag: (CropMath.Handle, CGSize) -> Void
+    let end: () -> Void
+
+    private static let space = "cropOverlay"
+    /// A handle's hit area, larger than what is drawn.
+    private static let hitSize: CGFloat = 22
+
+    var body: some View {
+        let r = CropMath.rect(crop, in: fit)
+        ZStack(alignment: .topLeading) {
+            Path { p in
+                p.addRect(fit)
+                p.addRect(r)
+            }
+            .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
+            Path { p in
+                for i in 1...2 {
+                    let x = r.minX + r.width * CGFloat(i) / 3, y = r.minY + r.height * CGFloat(i) / 3
+                    p.move(to: CGPoint(x: x, y: r.minY)); p.addLine(to: CGPoint(x: x, y: r.maxY))
+                    p.move(to: CGPoint(x: r.minX, y: y)); p.addLine(to: CGPoint(x: r.maxX, y: y))
+                }
+            }
+            .stroke(Color.white.opacity(0.35), lineWidth: 0.5)
+            Path { $0.addRect(r) }.stroke(Color.white, lineWidth: 1)
+            ForEach(CropMath.Handle.allCases) { handle in
+                handleMark(handle)
+                    .frame(width: Self.hitSize, height: Self.hitSize)
+                    .contentShape(Rectangle())
+                    .position(handle.point(in: r))
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+                            .onChanged { drag(handle, $0.translation) }
+                            .onEnded { _ in end() })
+                    .accessibilityLabel("Crop \(handle.label)")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .coordinateSpace(name: Self.space)
+    }
+
+    /// A white square at a corner, a short bar along an edge.
+    private func handleMark(_ handle: CropMath.Handle) -> some View {
+        let horizontalBar = handle == .top || handle == .bottom
+        let size: CGSize = handle.isCorner ? CGSize(width: 9, height: 9)
+            : horizontalBar ? CGSize(width: 18, height: 5) : CGSize(width: 5, height: 18)
+        return Rectangle()
+            .fill(Color.white)
+            .frame(width: size.width, height: size.height)
+            .shadow(color: .black.opacity(0.6), radius: 1)
     }
 }
 
@@ -1002,6 +1088,7 @@ struct AdjustmentsPanel: View {
                                         row(.hsl(hslChannel, band))
                                     }
                                 } else {
+                                    if section == .geometry { cropButton }
                                     ForEach(section.kinds) { kind in row(kind) }
                                 }
                             }
@@ -1073,6 +1160,21 @@ struct AdjustmentsPanel: View {
                 hslChannel = start.hslChannel
             }
         }
+    }
+
+    /// Crop mode on and off, beside the crop sliders: the same command as
+    /// Photo › Crop and its key.
+    private var cropButton: some View {
+        let command = AppCommand.command(.crop)
+        let key = command.key.map(AppCommand.label(for:)) ?? ""
+        return Button {
+            command.perform(CommandContext(library: library))
+        } label: {
+            Label(library.cropMode ? "Done Cropping" : "Crop on Photo", systemImage: "crop")
+        }
+        .controlSize(.small)
+        .disabled(!command.isEnabled(CommandContext(library: library)))
+        .help("Drag the crop's edges and corners on the photo (\(key)); Esc to finish")
     }
 
     private func row(_ kind: AdjustmentKind) -> some View {

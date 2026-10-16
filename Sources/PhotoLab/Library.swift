@@ -101,6 +101,7 @@ final class Library {
             if selection != oldValue {
                 selectedIDs = selection.map { [$0] } ?? []
                 loupeZoom = .fit
+                cropDragStart = nil
             }
             saveViewState()
         }
@@ -110,7 +111,7 @@ final class Library {
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false {
         didSet {
-            if !loupe { loupeZoom = .fit }
+            if !loupe { loupeZoom = .fit; cropMode = false }
             saveViewState()
         }
     }
@@ -119,6 +120,25 @@ final class Library {
     /// arrows, a filmstrip click, any new anchor) and when the loupe closes;
     /// never remembered.
     var loupeZoom: PreviewZoom = .fit
+    /// Crop mode (R, Photo › Crop, the Crop & Rotate section's button): the
+    /// loupe shows the rotated, uncropped frame with the crop rectangle and
+    /// its eight handles over it (`CropMath`). Entering returns the zoom to
+    /// fit and ends compare; Esc, R, Z, compare and leaving the loupe end it.
+    /// Kept across photo changes, like the loupe's other modes; never
+    /// remembered.
+    var cropMode = false {
+        didSet {
+            guard cropMode != oldValue else { return }
+            if cropMode {
+                loupeZoom = .fit
+                compare = false
+            } else {
+                cropDragStart = nil
+            }
+        }
+    }
+    /// The crop a handle drag started from, while one is in progress.
+    private var cropDragStart: CropMath.Crop?
     /// Copy Settings: the recipe and the name of the photo it came from.
     private(set) var copiedSettings: (recipe: Recipe, name: String)?
     /// A Sync / Paste Settings sheet the window should show.
@@ -134,7 +154,9 @@ final class Library {
     var showBefore = false
     /// Before / After side by side in the loupe (Y, or the toolbar toggle):
     /// the canvas splits into the neutral render and the recipe's.
-    var compare = false
+    var compare = false {
+        didSet { if compare { cropMode = false } }
+    }
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
     var showClipping = false
@@ -363,6 +385,7 @@ final class Library {
     /// Z: 1:1 at the middle of the photo, or back to fit.
     func toggleZoom() {
         if case .fit = loupeZoom {
+            cropMode = false
             loupeZoom = .actual(center: CGPoint(x: 0.5, y: 0.5))
         } else {
             loupeZoom = .fit
@@ -694,6 +717,29 @@ final class Library {
         persist(edit.id)
     }
 
+    /// A crop handle dragged `translation` view points over a fit frame
+    /// `fit` points in size, measured from where the drag started: the crop
+    /// edges the handle owns move through `setRecipe`, inside one
+    /// `beginEdit` … `endEdit`, so the whole drag is ONE undo step and ONE
+    /// sidecar write (at `endCropDrag`). The first call of a drag opens it.
+    func dragCrop(_ handle: CropMath.Handle, by translation: CGSize, fit: CGSize, for id: Photo.ID) {
+        if cropDragStart == nil {
+            beginEdit(id)
+            cropDragStart = CropMath.crop(of: recipe(for: id))
+        }
+        guard let start = cropDragStart else { return }
+        var r = recipe(for: id)
+        CropMath.write(CropMath.drag(handle, from: start, by: translation, fit: fit),
+                       edges: handle.edges, into: &r)
+        setRecipe(r, for: id)
+    }
+
+    /// The crop drag's mouse-up: the edit closes (one undo step, one write).
+    func endCropDrag(_ id: Photo.ID) {
+        cropDragStart = nil
+        endEdit(id)
+    }
+
     var canUndo: Bool { selection.map { history[$0]?.undo.isEmpty == false } ?? false }
     var canRedo: Bool { selection.map { history[$0]?.redo.isEmpty == false } ?? false }
 
@@ -703,6 +749,7 @@ final class Library {
     func undo() {
         guard let id = selection, let top = history[id]?.undo.last else { return }
         openEdit = nil
+        cropDragStart = nil
         for pid in members(of: top.batch, anchor: id, top: { $0.undo.last }) {
             guard var h = history[pid], let step = h.undo.popLast() else { continue }
             h.redo.append(EditHistory.Step(recipe: recipe(for: pid), batch: step.batch))
@@ -717,6 +764,7 @@ final class Library {
     func redo() {
         guard let id = selection, let top = history[id]?.redo.last else { return }
         openEdit = nil
+        cropDragStart = nil
         for pid in members(of: top.batch, anchor: id, top: { $0.redo.last }) {
             guard var h = history[pid], let step = h.redo.popLast() else { continue }
             h.undo.append(EditHistory.Step(recipe: recipe(for: pid), batch: step.batch))

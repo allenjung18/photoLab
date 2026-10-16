@@ -347,6 +347,29 @@ Nothing else; the copied settings live in memory.
   tell a click from a double-click by waiting out the double-click
   interval, so keeping both would delay every zoom click. **G** and **Esc**
   were already the way back.
+- **Crop mode.** **R** (Photo › **Crop**, or **Crop on Photo** at the top
+  of the Crop & Rotate section, the same `AppCommand`) toggles
+  `Library.cropMode`, in the loupe only. Entering returns the zoom to fit
+  and ends compare; **R** again, **Esc** (before it leaves the loupe),
+  **Z**, **Y** and leaving the loupe end it; a photo change keeps it.
+  While it is on, `PreviewCanvas` renders `CropMath.uncropped(_:)` (the
+  recipe without its four crop edges: the rotated frame whole, since the
+  chain rotates before it crops) and `CropOverlay` draws the crop over the
+  fit frame: the cut-away part dimmed, the kept part outlined with its
+  thirds, a handle on each edge and each corner. It waits for a frame
+  rendered that way (`PreviewModel.imageRecipe`, `CropMath.isCropFrame`)
+  and is hidden at 1:1 and while Show Original is on; the zoom click and
+  the pan are off. A handle's drag is `Library.dragCrop(_:by:fit:for:)`:
+  the translation in view points over the fit rect's size
+  (`ZoomMath.fitRect`, so the display scale never enters) moves the
+  handle's edges (`CropMath.drag`, a corner two), each clamped at the
+  image's edge and at the slider's 40% (`CropMath.clamp`, which keeps
+  `CropMath.minSize` of the frame), written as percent and enabled
+  (`CropMath.write`, only the handle's own edges) through
+  `Library.setRecipe`, inside `beginEdit` … `endEdit`: the sliders follow
+  live, and mouse-up (`Library.endCropDrag(_:)`) makes the drag one undo
+  step and one sidecar write. The histogram shows the uncropped frame
+  while crop mode is on.
 - **Before.** `BeforeButton(isPressed:)` (`ContentView.swift`) is a
   press-and-hold bound to `Library.showBefore`; `\` toggles the same flag.
   While it is on, `PreviewCanvas` substitutes `Recipe.neutral` for the
@@ -428,6 +451,8 @@ redo, Reset, the render time and any sidecar error.
   sidecar write.
 - **Sections.** `AdjustmentKind.Section` (`Adjustments.swift`) gives each
   kind its section (`section`) and each section its `title` and `kinds`.
+  Crop & Rotate opens with **Crop on Photo** / **Done Cropping**, which
+  runs the **Crop** command (see Loupe, Crop mode).
   The HSL section is different: a segmented `AdjustmentKind.HSLChannel`
   picker (hue, saturation, luminance), then one row per
   `AdjustmentKind.HSLBand` for that channel, the kind looked up with
@@ -617,15 +642,17 @@ key is typed anywhere else; the README's Keys table is the user's list.
     `Library.sort.key`), then **Ascending** / **Descending**
     (`Library.sort.ascending`), enabled while a source is open.
   - **Photo**: **Pick** **P**, **Reject** **X**, **Unflag** **U**, **No
-    Rating** **0** to **5 Stars** **5**, then **Reset Photo** **⇧⌘R**
+    Rating** **0** to **5 Stars** **5**, then **Crop** **R**
+    (`Library.cropMode`, loupe only) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
   background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it
   (selecting the first photo when none is), and both are disabled while
   `Library.visiblePhotos` is empty, so on the Welcome view **Return** is its
-  **Open Folder…** default button; **Esc** leaves the loupe or, in
-  the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
+  **Open Folder…** default button; **Esc** leaves crop mode, else the
+  loupe or, in the grid, collapses the selection; **R** toggles
+  `Library.cropMode` in the loupe; **←** / **→** are `Library.select(offset:)`;
   **Z** toggles `Library.loupeZoom` in the loupe;
   `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and
   from the grid enters the loupe with it on); **J** toggles `Library.showClipping`

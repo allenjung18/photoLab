@@ -230,6 +230,58 @@ final class SidecarTests: XCTestCase {
     }
 
 
+    /// A crop handle drag in the loupe (`Library.dragCrop`): the crop moves
+    /// live through the one recipe path, the whole drag is ONE undo step and
+    /// ONE sidecar write, at mouse-up; edges the handle does not own keep
+    /// their values.
+    func testACropHandleDragIsOneUndoStepAndOneSidecarWrite() throws {
+        try makePhoto("crop.png")
+        let store = SidecarStore(folder: folder)
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let photo = try XCTUnwrap(lib.photos.first).id
+        lib.selection = photo
+        lib.loupe = true
+        lib.cropMode = true
+        var before = Recipe.neutral
+        before.set(.cropLeft, to: 7)
+        before.set(.exposure, to: 0.5)
+        lib.setRecipe(before, for: photo)
+        XCTAssertEqual(try store.load(for: photo), before)
+
+        let fit = CGSize(width: 900, height: 600)
+        for x in stride(from: -10.0, through: -90.0, by: -10.0) {
+            lib.dragCrop(.bottomRight, by: CGSize(width: x, height: x), fit: fit, for: photo)
+            XCTAssertEqual(try store.load(for: photo), before, "no sidecar write mid-drag")
+            XCTAssertEqual(lib.recipe(for: photo).value(of: .cropRight), -x / 900 * 100, accuracy: 1e-9,
+                           "the crop moves live")
+        }
+        let live = lib.recipe(for: photo)
+        XCTAssertEqual(live.value(of: .cropBottom), 90.0 / 600 * 100, accuracy: 1e-9)
+        XCTAssertEqual(live.value(of: .cropLeft), 7, "the corner owns right and bottom only")
+        XCTAssertEqual(live.value(of: .cropTop), 0)
+        XCTAssertEqual(live.value(of: .exposure), 0.5)
+
+        lib.endCropDrag(photo)
+        XCTAssertEqual(try store.load(for: photo), live, "one write, at mouse-up")
+
+        // One undo takes the whole drag back; the one before it is the setRecipe.
+        lib.undo()
+        XCTAssertEqual(lib.recipe(for: photo), before, "the whole drag is one undo step")
+        XCTAssertEqual(try store.load(for: photo), before)
+        lib.undo()
+        XCTAssertEqual(lib.recipe(for: photo), .neutral)
+        XCTAssertFalse(lib.canUndo)
+
+        // The next drag starts from the crop as it is now, not the last one's start.
+        lib.redo()
+        lib.redo()
+        lib.dragCrop(.left, by: CGSize(width: 90, height: 0), fit: fit, for: photo)
+        lib.endCropDrag(photo)
+        XCTAssertEqual(lib.recipe(for: photo).value(of: .cropLeft), 17, accuracy: 1e-9)
+        XCTAssertEqual(lib.recipe(for: photo).value(of: .cropRight), 10, accuracy: 1e-9)
+    }
+
     // MARK: Unreadable files are kept, never overwritten
 
     /// The file's bytes with `version` set to `v`: a sidecar a newer build wrote.

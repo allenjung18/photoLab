@@ -62,7 +62,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.isEmpty && $0.key != nil })
         let keys = Set(HiddenShortcuts.commands.map { $0.key!.character })
         let expected: [KeyEquivalent] = ["g", "e", "z", "y", "\\", "j", "f", "p", "x", "u",
-                                         "0", "1", "2", "3", "4", "5",
+                                         "0", "1", "2", "3", "4", "5", "r",
                                          .return, .escape, .leftArrow, .rightArrow]
         XCTAssertEqual(keys, Set(expected.map(\.character)))
     }
@@ -90,7 +90,7 @@ final class CommandsTests: XCTestCase {
         let view = AppCommand.items(in: .view).map(\.name)
         XCTAssertEqual(view, [.grid, .loupe, .zoom, .compare, .showOriginal, .clipping, .filmstrip, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .resetPhoto])
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .resetPhoto])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos])
@@ -288,6 +288,44 @@ final class CommandsTests: XCTestCase {
         XCTAssertFalse(lib.loupe)
         XCTAssertEqual(lib.loupeZoom, .fit, "leaving the loupe")
         XCTAssertFalse(AppCommand.command(.zoom).isOn?(ctx) ?? true)
+    }
+
+    /// R toggles crop mode, in the loupe only; entering returns the zoom to
+    /// fit and ends compare; Esc leaves crop mode before it leaves the
+    /// loupe; Z, compare and leaving the loupe end it too.
+    func testRTogglesCropModeAndEscLeavesItBeforeTheLoupe() throws {
+        let (lib, ctx, _) = try openThree()
+        XCTAssertFalse(AppCommand.command(.crop).isEnabled(ctx), "the grid has no crop mode")
+        run(.loupe, ctx)
+        run(.zoom, ctx)
+        run(.compare, ctx)
+        XCTAssertTrue(lib.compare)
+        run(.crop, ctx)
+        XCTAssertTrue(lib.cropMode)
+        XCTAssertEqual(AppCommand.command(.crop).isOn?(ctx), true)
+        XCTAssertEqual(lib.loupeZoom, .fit, "entering crop mode returns to fit")
+        XCTAssertFalse(lib.compare, "entering crop mode ends compare")
+        run(.crop, ctx)
+        XCTAssertFalse(lib.cropMode, "R again leaves it")
+
+        run(.crop, ctx)
+        run(.back, ctx)
+        XCTAssertFalse(lib.cropMode, "Esc leaves crop mode")
+        XCTAssertTrue(lib.loupe, "and not the loupe")
+        run(.back, ctx)
+        XCTAssertFalse(lib.loupe)
+
+        run(.loupe, ctx)
+        run(.crop, ctx)
+        run(.zoom, ctx)
+        XCTAssertFalse(lib.cropMode, "Z leaves crop mode")
+        XCTAssertNotEqual(lib.loupeZoom, .fit)
+        run(.crop, ctx)
+        run(.compare, ctx)
+        XCTAssertFalse(lib.cropMode, "compare leaves crop mode")
+        run(.crop, ctx)
+        run(.grid, ctx)
+        XCTAssertFalse(lib.cropMode, "leaving the loupe leaves crop mode")
     }
 
     func testEditAndPhotoMenuItemsActOnTheSelection() throws {

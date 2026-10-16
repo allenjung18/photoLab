@@ -58,7 +58,8 @@ in Xcode works too.
 | `G` | Grid |
 | `E` or `Return` | Loupe (the selected photo, or the first) |
 | `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
-| `Esc` | Back to the grid; in the grid, collapse the selection to the anchor |
+| `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
+| `Esc` | Leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
@@ -78,7 +79,7 @@ Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Reset Photo). A single-letter key is written after its menu item's
+ratings, Crop, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
@@ -133,7 +134,12 @@ the last frame.
 - **Effects** — vignette (negative darkens the corners).
 - **Crop & Rotate** — rotate (degrees, positive is clockwise; the frame is
   cropped to the largest same-shape rectangle, so no empty corners) and a
-  crop from each edge in percent of the frame.
+  crop from each edge in percent of the frame (up to 40% each, so at least
+  a fifth of the frame is kept). **Crop on Photo** (or `R`) shows the whole
+  rotated frame with the crop drawn over it: drag any edge or corner, the
+  four values follow live, and one drag is one undo step. The crop is cut
+  from the rotated frame, so the handles move square to the photo as you
+  see it.
 
 Every slider is one entry in the photo's recipe, so the sidecar, undo,
 presets and batch apply treat them all alike. Spatial effects (clarity,

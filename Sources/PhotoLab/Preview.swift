@@ -20,6 +20,9 @@ final class PreviewModel {
     /// The latest rendered frame and the photo it belongs to.
     private(set) var image: CGImage?
     private(set) var imageURL: URL?
+    /// The recipe `image` was rendered from (crop mode draws its rectangle
+    /// only over a frame rendered uncropped, `CropMath.isCropFrame`).
+    private(set) var imageRecipe: Recipe?
     /// Core Image time of the latest frame, ms (filter graph + readback).
     private(set) var renderMilliseconds: Double = 0
     private(set) var masterSize: CGSize = .zero
@@ -343,6 +346,7 @@ final class PreviewModel {
                 self.frameGeneration += 1
                 self.image = result.shown
                 self.imageURL = req.url
+                self.imageRecipe = req.recipe
                 self.renderMilliseconds = result.milliseconds
                 self.scheduleHistogram()
             }

@@ -40,7 +40,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case resetPhoto
+        case crop, resetPhoto
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
@@ -217,11 +217,17 @@ struct AppCommand: Identifiable {
                    perform: { $0.library.select(offset: 1) }),
 
         // Photo: flag and rate the batch targets (every selected photo in
-        // the grid, the one photo in the loupe), then Reset Photo.
+        // the grid, the one photo in the loupe), then Crop and Reset Photo.
         flag(.pick, title: "Pick", key: "p"),
         flag(.reject, title: "Reject", key: "x"),
         flag(nil, title: "Unflag", key: "u"),
         rate(0), rate(1), rate(2), rate(3), rate(4), rate(5),
+        // Crop mode: the crop's handles on the photo, in the loupe only
+        // (Lightroom's R). Esc leaves it as well (Back).
+        AppCommand(name: .crop, title: "Crop", key: "r", modifiers: [], placement: .photo, section: 2,
+                   isOn: { c in c.library.loupe && c.library.cropMode },
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil },
+                   perform: { $0.library.cropMode.toggle() }),
         AppCommand(name: .resetPhoto, title: "Reset Photo", key: "r", modifiers: [.command, .shift],
                    placement: .photo, section: 2,
                    isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },
@@ -241,13 +247,19 @@ struct AppCommand: Identifiable {
                    isEnabled: { $0.library.source != nil },
                    perform: { $0.library.sort.ascending = false }),
 
-        // Keys with no menu item: Escape leaves the loupe (from the grid it
-        // collapses the selection), Return opens it. Return is enabled only
+        // Keys with no menu item: Escape leaves crop mode, else the loupe
+        // (from the grid it collapses the selection), Return opens it. Return is enabled only
         // when there is a photo to open, as Loupe (E) is: the Welcome view
         // has none, and its Open Folder… button holds Return there.
         AppCommand(name: .back, title: "Back", key: .escape, modifiers: [], placement: .keysOnly,
                    perform: { c in
-                       if c.library.loupe { c.library.loupe = false } else { c.library.collapseSelection() }
+                       if c.library.cropMode {
+                           c.library.cropMode = false
+                       } else if c.library.loupe {
+                           c.library.loupe = false
+                       } else {
+                           c.library.collapseSelection()
+                       }
                    }),
         AppCommand(name: .open, title: "Open in Loupe", key: .return, modifiers: [], placement: .keysOnly,
                    isEnabled: { !$0.library.visiblePhotos.isEmpty },
