@@ -64,8 +64,11 @@ same at their different sizes.
   says which happened); at the loupe's size that is a decode for most files,
   at the strip's and the grid's sizes a camera RAW's embedded preview usually
   serves.
-- `Renderer.fullResolution(_:)` is the export's input: `CIImage(contentsOf:)`
-  with the orientation property applied, the whole file.
+- `Renderer.fullResolution(_:decodeNow:)` is the export's input:
+  `CIImage(contentsOf:)` with the orientation property applied, the whole
+  file, decoded lazily by Core Image at render time. The loupe's 1:1 master
+  is the same call with `decodeNow` (`.cacheImmediately`): the same decoder
+  and the same pixels, decoded once into memory off the main thread.
 
 ### Output
 
@@ -75,7 +78,15 @@ nil renders at source size), applies the recipe, then, if `resize` is given,
 sizes the output: `OutputSize` is an exact long side (`longSide`) or a
 percentage (`percent`) of the rendered, cropped size, and
 `OutputSize.size(fitting:)` returns nil for any target at or above the
-rendered size, so an export is never upscaled. That resize is a Lanczos
+rendered size, so an export is never upscaled. Instead of `resize`, a
+`Renderer.Region` cuts the output to a window of the rendered frame, the
+loupe's 1:1 view: a centre normalised in the rendered frame (after crop and
+rotate, 0…1, origin top-left) and a size in pixels; `Region.rect(in:)`
+slides the window inside the frame at the edges. The chain is built over
+the whole source exactly as for the whole frame and only the pixels read
+back differ, so every spatial radius stays a fraction of the whole image;
+never render a cropped input instead. `Result.frameSize` is the whole
+rendered frame's size and `Result.region` the window it holds. That resize is a Lanczos
 scale, the last step of the chain, done once. The result is an 8-bit
 `CGImage` in the source's color space, returned as `Renderer.Result` with the
 wall time of the whole step in `milliseconds` (the loupe's footer and the
@@ -107,6 +118,39 @@ or rendering (a slider move re-renders After only), and it never carries
 the clipping overlay; the histogram stays the After frame's. Leaving compare
 mode drops `beforeImage` and clears the in-flight request, so a Before
 still rendering then finds itself unwanted and is discarded.
+
+### The loupe at 1:1
+
+`PreviewModel.zoom` is `PreviewZoom.fit` (the whole frame in the view) or
+`.actual(center:)`, one image pixel per view pixel around a centre
+normalised in the rendered frame (after crop and rotate, origin top-left).
+`setZoom(_:)` changes it; `request(url:recipe:maxPixelSize:viewPixelSize:)`
+carries the view's pixel size, which is the window's. While 1:1 each request
+also records a window request, rendered by `pump` through
+`Renderer.render(_:recipe:region:)` over the photo's full-resolution master
+into `zoomImage` / `zoomURL`, with `zoomRegion` (where the window landed in
+the full-resolution rendered frame, slid inside it at the edges) and
+`zoomFrameSize` (that frame's size) for the view to pan and map clicks.
+`image` and the histogram stay the fit frame's: a waiting window and a
+waiting fit frame take turns, so a drag updates both. The window carries
+the clipping overlay like the fit frame; `setClipping` re-renders it.
+
+The full-resolution master (`Renderer.fullResolution(_:decodeNow:)`) is
+decoded off the main thread on the first 1:1 of a photo and held for that
+photo only: about 4 bytes a pixel for an 8-bit source, 96 MB for a 24 MP
+photo, more for a 16-bit or RAW one. Back to fit drops the window but keeps
+the master, so zooming in again decodes nothing; `load` of another photo
+drops the master and the window, as compare mode's Before frame goes with
+its photo, and a window still rendering then is discarded. A region step
+over a 24 MP master renders in about 12 ms on this machine, since Core Image
+evaluates only the pixels the window needs.
+
+Because the window is the export's own chain over the export's own pixels,
+it matches the same crop of an export render to within 1 level. Core
+Image's result depends on the area it is asked for at about that level
+(two windows disagree on their overlap by as much, measured), and strong
+sharpening across a hard edge can lift it to 2 to 4 on a few edge pixels;
+`ZoomTests` gates within 1 at the documented settings.
 
 ### The histogram and the clipping overlay
 

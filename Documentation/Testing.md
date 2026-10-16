@@ -195,6 +195,19 @@ not only the pass.
   both again; Before lands during a sustained drag rather than after it;
   leaving compare mode drops the second frame, and a Before from an
   earlier compare session never shows; opening a folder turns it off.
+- `ZoomTests.swift` — 1:1 in `PreviewModel`: on a synthetic 24 MP photo
+  with clarity, sharpening and vignette on, the window at a centre and at a
+  corner equals the same crop of a full-resolution render of the whole
+  image (maxDiff at most 1), and again with crop and rotate on (moderate
+  detail amounts; Architecture, The loupe at 1:1), so the centre is in the
+  rendered frame's coordinates; `image` and the histogram stay the fit
+  frame's; `Region.rect(in:)` slides the window inside the frame; the
+  full-resolution master is decoded on the first 1:1, kept by fit, and
+  dropped (with the window) when the photo changes, the new photo decoding
+  its own; a window still rendering when fit returns never lands; a drag
+  while zoomed ends on the newest recipe in both frames; the timed region
+  step. Shown to bite by rendering the cropped input (maxDiff 114 at the
+  centre, 63 at the corner).
 - `CommandsTests.swift` — the command table (`AppCommand.all`): no two
   entries share a key and modifiers, and none takes a system menu key
   (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button
@@ -299,6 +312,10 @@ each prints a `BENCH` line and fails above a bound.
   and is printed beside the gated number, not gated.
 - `testPreviewSizedFrameUnderTwentyMilliseconds` (`HistogramTests`): the
   histogram of a preview-sized frame after one warm-up.
+- `testRegionStepRendersWithinTheFrameBudget` (`ZoomTests`): a sweep of
+  exposure steps rendering a 2600×1600 1:1 window of the 24 MP
+  full-resolution master with clarity, sharpening and vignette on; the
+  median step must fit one 60 Hz frame.
 
 The source for the render timings is `PHOTOLAB_BENCH_IMAGE` when set (a real
 photo, through the loupe's own master decode), else a synthetic 6000×4000

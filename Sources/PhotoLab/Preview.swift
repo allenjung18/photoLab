@@ -9,7 +9,9 @@ import Observation
 /// one render is in flight and the newest request replaces any waiting one.
 /// In compare mode (`setCompare`) a second, neutral request of the same
 /// master at the same size rides beside each one, so Before and After come
-/// out of the one chain at equal pixel size.
+/// out of the one chain at equal pixel size. At 1:1 (`setZoom`) a third
+/// request renders a window of the full-resolution image through the same
+/// chain (`zoomImage`).
 @MainActor
 @Observable
 final class PreviewModel {
@@ -41,6 +43,30 @@ final class PreviewModel {
     private(set) var beforeImage: CGImage?
     private(set) var beforeURL: URL?
 
+    /// Fit (the whole frame in the view) or 1:1 around a centre. While 1:1,
+    /// every request also asks for the window of the full-resolution render
+    /// the view's pixels cover, which lands in `zoomImage`; `image` and the
+    /// histogram stay the fit frame's.
+    private(set) var zoom: PreviewZoom = .fit
+    /// The 1:1 window and the photo it belongs to: one image pixel per view
+    /// pixel, cut from the full-resolution render (`Renderer.render` with a
+    /// `region`), so it matches the export pixel for pixel.
+    private(set) var zoomImage: CGImage?
+    private(set) var zoomURL: URL?
+    /// Where `zoomImage` sits: a rect in the full-resolution rendered frame,
+    /// origin top-left, slid inside the frame at the edges
+    /// (`Renderer.Region.rect(in:)`).
+    private(set) var zoomRegion: CGRect?
+    /// The full-resolution rendered frame's size (after crop and rotate) the
+    /// region was cut from: what a pan clamps against and a click maps into.
+    private(set) var zoomFrameSize: CGSize = .zero
+    /// Core Image time of the latest 1:1 window, ms.
+    private(set) var zoomMilliseconds: Double = 0
+    /// The photo whose full-resolution master is held (decoded on the first
+    /// 1:1 of that photo, dropped when the photo changes), and its pixel size.
+    private(set) var fullResolutionURL: URL?
+    private(set) var fullResolutionSize: CGSize = .zero
+
     private var master: CIImage?
     private var masterURL: URL?
     private var loadTask: Task<Void, Never>?
@@ -64,10 +90,33 @@ final class PreviewModel {
     private var beforeInFlight: Request?
     private var beforeShown: Request?
 
+    /// The full-resolution master behind 1:1: the whole file decoded once
+    /// (`Renderer.fullResolution(_:decodeNow:)`), held for one photo.
+    private var fullMaster: CIImage?
+    private var fullLoadTask: Task<Void, Never>?
+    /// The view's pixel size from the newest request: the 1:1 window's size.
+    private var lastViewPixelSize: CGSize = .zero
+    /// The 1:1 slot, run like compare's: waiting (latest wins), rendering,
+    /// shown. Leaving 1:1 or changing photo clears the in-flight one, so a
+    /// window still rendering then is discarded.
+    private var pendingZoom: ZoomRequest?
+    private var zoomInFlight: ZoomRequest?
+    private var zoomShown: ZoomRequest?
+    /// Which slot rendered last, so a waiting window and a waiting fit frame
+    /// take turns under a drag and neither starves.
+    private var lastRenderWasZoom = false
+
     private struct Request: Equatable {
         let url: URL
         let recipe: Recipe
         let maxPixelSize: Int
+    }
+
+    private struct ZoomRequest: Equatable {
+        let url: URL
+        let recipe: Recipe
+        let region: Renderer.Region
+        let overlay: Bool
     }
 
     /// Decodes the master for `url` off the main thread, then renders the
@@ -79,6 +128,10 @@ final class PreviewModel {
         master = nil
         masterURL = url
         histogram = nil
+        dropFullResolution()
+        // Still 1:1 with a request for this photo already in: its own
+        // full-resolution master starts decoding beside the preview master.
+        requestZoom()
         let size = Self.masterPixelSize
         loadTask = Task { [weak self] in
             let decoded = await Task.detached(priority: .userInitiated) {
@@ -106,13 +159,93 @@ final class PreviewModel {
 
     /// Asks for a frame; `maxPixelSize` is the view's longest side in pixels.
     /// In compare mode the caller passes the size of one half; both frames
-    /// are rendered at it.
-    func request(url: URL, recipe: Recipe, maxPixelSize: Int) {
+    /// are rendered at it. `viewPixelSize` is the view's size in pixels, the
+    /// 1:1 window's size (a square of `maxPixelSize` when not given).
+    func request(url: URL, recipe: Recipe, maxPixelSize: Int, viewPixelSize: CGSize? = nil) {
         let req = Request(url: url, recipe: recipe, maxPixelSize: max(1, maxPixelSize))
         pending = req
         lastRequest = req
+        lastViewPixelSize = viewPixelSize ?? CGSize(width: req.maxPixelSize, height: req.maxPixelSize)
         if compare { requestBefore(for: req) }
+        requestZoom()
         pump()
+    }
+
+    /// Fit or 1:1. Into 1:1 (or a new centre): the window for the newest
+    /// request is asked for, decoding the photo's full-resolution master
+    /// first if this is its first 1:1. Back to fit: the window is dropped
+    /// (and any waiting or rendering); the master stays until the photo
+    /// changes, so zooming in again on the same photo decodes nothing.
+    func setZoom(_ zoom: PreviewZoom) {
+        let zoom = zoom.clamped
+        guard zoom != self.zoom else { return }
+        self.zoom = zoom
+        if case .fit = zoom {
+            clearZoomFrame()
+        } else {
+            requestZoom()
+            pump()
+        }
+    }
+
+    /// Waits for the full-resolution decode `setZoom` started (tests).
+    func awaitFullResolution() async {
+        await fullLoadTask?.value
+    }
+
+    private func requestZoom() {
+        guard case .actual(let center) = zoom, let last = lastRequest else { pendingZoom = nil; return }
+        let z = ZoomRequest(url: last.url, recipe: last.recipe,
+                            region: Renderer.Region(center: center, size: lastViewPixelSize), overlay: showClipping)
+        guard z != zoomShown, z != zoomInFlight else { pendingZoom = nil; return }
+        pendingZoom = z
+        loadFullResolution(z.url)
+    }
+
+    /// Decodes the whole file once, off the main thread, for the photo the
+    /// loupe shows. A decode that fails leaves 1:1 with no window.
+    private func loadFullResolution(_ url: URL) {
+        guard url == masterURL, fullResolutionURL != url else { return }
+        fullLoadTask?.cancel()
+        fullMaster = nil
+        fullResolutionURL = url
+        fullResolutionSize = .zero
+        fullLoadTask = Task { [weak self] in
+            let decoded = await Task.detached(priority: .userInitiated) {
+                Renderer.fullResolution(url, decodeNow: true)
+            }.value
+            guard let self, !Task.isCancelled, self.fullResolutionURL == url else { return }
+            guard let decoded else {
+                self.fullResolutionURL = nil
+                if self.pendingZoom?.url == url { self.pendingZoom = nil }
+                return
+            }
+            self.fullMaster = decoded
+            self.fullResolutionSize = decoded.extent.size
+            self.pump()
+        }
+    }
+
+    /// A new photo: its full-resolution master is decoded on its own first
+    /// 1:1, never carried over. The old one (about 4 bytes a pixel, 96 MB
+    /// for a 24 MP photo) is released here, with the window cut from it.
+    private func dropFullResolution() {
+        fullLoadTask?.cancel()
+        fullLoadTask = nil
+        fullMaster = nil
+        fullResolutionURL = nil
+        fullResolutionSize = .zero
+        clearZoomFrame()
+    }
+
+    private func clearZoomFrame() {
+        pendingZoom = nil
+        zoomInFlight = nil
+        zoomShown = nil
+        zoomImage = nil
+        zoomURL = nil
+        zoomRegion = nil
+        zoomFrameSize = .zero
     }
 
     /// Turns Before / After side by side on or off. On: the neutral frame for
@@ -143,20 +276,31 @@ final class PreviewModel {
 
     /// One render in flight. A waiting Before goes first: it is asked for
     /// once per photo or size, so a slider drag that keeps `pending` full
-    /// cannot starve it.
+    /// cannot starve it. A waiting 1:1 window (once its full-resolution
+    /// master is decoded) and a waiting fit frame take turns.
     private func pump() {
         guard !rendering, let master, let masterURL else { return }
         let req: Request
         let isBefore: Bool
+        let zoomReady = pendingZoom.map { $0.url == masterURL && fullResolutionURL == $0.url && fullMaster != nil } ?? false
+        let fitReady = pending.map { $0.url == masterURL } ?? false
         if let b = pendingBefore, b.url == masterURL {
             req = b
             pendingBefore = nil
             beforeInFlight = b
             isBefore = true
-        } else if let a = pending, a.url == masterURL {
+        } else if zoomReady && (!fitReady || !lastRenderWasZoom), let z = pendingZoom, let full = fullMaster {
+            pendingZoom = nil
+            zoomInFlight = z
+            rendering = true
+            lastRenderWasZoom = true
+            renderZoom(z, from: full)
+            return
+        } else if fitReady, let a = pending {
             req = a
             pending = nil
             isBefore = false
+            lastRenderWasZoom = false
         } else {
             return
         }
@@ -209,11 +353,42 @@ final class PreviewModel {
         }
     }
 
+    /// The 1:1 window: the one chain over the whole full-resolution master,
+    /// the output cut to the view's region, never a render of a cropped
+    /// input. Kept only if it is still the wanted one and the photo has not
+    /// changed. Carries the clipping overlay like the fit frame (the same
+    /// per-pixel rule); the histogram stays the fit frame's.
+    private func renderZoom(_ req: ZoomRequest, from full: CIImage) {
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { () -> (image: CGImage, frame: CGSize, region: CGRect, milliseconds: Double)? in
+                guard let r = Renderer.shared.render(full, recipe: req.recipe, region: req.region),
+                      let region = r.region else { return nil }
+                let shown = req.overlay ? (ClippingOverlay.compose(over: r.image, context: Renderer.shared.context) ?? r.image) : r.image
+                return (shown, r.frameSize, region, r.milliseconds)
+            }.value
+            guard let self else { return }
+            self.rendering = false
+            let wanted = self.zoomInFlight == req
+            if wanted { self.zoomInFlight = nil }
+            if let result, wanted, case .actual = self.zoom, self.masterURL == req.url {
+                self.zoomImage = result.image
+                self.zoomURL = req.url
+                self.zoomRegion = result.region
+                self.zoomFrameSize = result.frame
+                self.zoomMilliseconds = result.milliseconds
+                self.zoomShown = req
+            }
+            self.pump()
+        }
+    }
+
     /// Turns the clipping overlay on or off. The current frame is re-composed
-    /// (or shown plain) without a render; later frames carry the choice.
+    /// (or shown plain) without a render; later frames carry the choice. A
+    /// 1:1 window is rendered again with the new choice.
     func setClipping(_ on: Bool) {
         guard on != showClipping else { return }
         showClipping = on
+        if case .actual = zoom { requestZoom(); pump() }
         guard let frame else { return }
         guard on else { image = frame; return }
         let generation = frameGeneration
@@ -242,5 +417,23 @@ final class PreviewModel {
             if let computed, self.frameGeneration == generation { self.histogram = computed }
             if self.histogramDirty { self.scheduleHistogram() }
         }
+    }
+}
+
+/// The loupe's zoom. `fit` shows the whole rendered frame in the view;
+/// `actual` shows it at one image pixel per view pixel (1:1) around
+/// `center`, normalised in the rendered frame (after crop and rotate), 0…1
+/// on each axis, origin top-left. A centre near an edge is kept as given;
+/// the window slides inside the frame when it is cut
+/// (`Renderer.Region.rect(in:)`), and `PreviewModel.zoomRegion` says where
+/// it landed.
+enum PreviewZoom: Equatable, Sendable {
+    case fit
+    case actual(center: CGPoint)
+
+    /// The centre held to 0…1 on each axis.
+    var clamped: PreviewZoom {
+        guard case .actual(let c) = self else { return self }
+        return .actual(center: CGPoint(x: min(max(c.x, 0), 1), y: min(max(c.y, 0), 1)))
     }
 }

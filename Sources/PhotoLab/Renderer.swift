@@ -61,9 +61,16 @@ final class Renderer: @unchecked Sendable {
         return CIImage(cgImage: cg)
     }
 
-    /// Full-resolution decode for export, orientation applied.
-    static func fullResolution(_ url: URL) -> CIImage? {
-        CIImage(contentsOf: url, options: [.applyOrientationProperty: true])
+    /// Full-resolution decode for export, orientation applied. The export
+    /// leaves the decode to Core Image (lazy, at render time); the loupe's
+    /// 1:1 master passes `decodeNow` so the whole file is decoded once, here,
+    /// off the main thread, and every region render reads the cached pixels.
+    /// The same decoder either way, so a 1:1 region and the export start from
+    /// the same pixels.
+    static func fullResolution(_ url: URL, decodeNow: Bool = false) -> CIImage? {
+        var options: [CIImageOption: Any] = [.applyOrientationProperty: true]
+        if decodeNow { options[.cacheImmediately] = true }
+        return CIImage(contentsOf: url, options: options)
     }
 
     // MARK: The chain
@@ -282,6 +289,35 @@ final class Renderer: @unchecked Sendable {
         /// Wall time of the step (building the chain, including any cube,
         /// plus the Core Image render and readback), ms.
         let milliseconds: Double
+        /// The size of the whole rendered frame (after crop and rotate, before
+        /// any `resize`), whatever part of it `image` holds.
+        var frameSize: CGSize = .zero
+        /// With a `region`, the pixels `image` holds: a rect in the rendered
+        /// frame, origin top-left, in whole pixels. Nil for a whole frame.
+        var region: CGRect?
+    }
+
+    /// A window onto the rendered frame at one image pixel per output pixel:
+    /// the loupe's 1:1 view. `center` is normalised in the rendered frame
+    /// (after crop and rotate), 0…1 on each axis, origin top-left; `size` is
+    /// the window in pixels.
+    struct Region: Equatable, Sendable {
+        var center: CGPoint
+        var size: CGSize
+
+        /// The pixels shown for a frame of `frame` size: `size` (no larger
+        /// than the frame) around `center`, slid back inside the frame where
+        /// it would cross an edge, so a centre near a corner shows the corner
+        /// rather than empty space. Whole pixels, origin top-left.
+        func rect(in frame: CGSize) -> CGRect {
+            let fw = frame.width.rounded(.down), fh = frame.height.rounded(.down)
+            let w = min(max(1, size.width.rounded()), fw)
+            let h = min(max(1, size.height.rounded()), fh)
+            let cx = min(max(center.x, 0), 1), cy = min(max(center.y, 0), 1)
+            let x = min(max((cx * fw - w / 2).rounded(), 0), fw - w)
+            let y = min(max((cy * fh - h / 2).rounded(), 0), fh - h)
+            return CGRect(x: x, y: y, width: w, height: h)
+        }
     }
 
     /// Renders `recipe` over `source`, scaled to fit `maxPixelSize` (never
@@ -290,7 +326,17 @@ final class Renderer: @unchecked Sendable {
     /// exact long side or percentage, never upscaling: that is the export's
     /// resize, done once at the end of the one chain. Synchronous; call off
     /// the main thread.
-    func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil, resize: OutputSize? = nil) -> Result? {
+    ///
+    /// `region` cuts the OUTPUT to a window of the rendered frame
+    /// (`Region.rect(in:)`), the loupe's 1:1 view: the chain is built over the
+    /// whole source exactly as for the whole frame, and only the pixels read
+    /// back differ. Never render a cropped input instead: every spatial
+    /// parameter is a fraction of the image's own size, so a cropped input
+    /// would change clarity, sharpening, grain and vignette. Core Image
+    /// evaluates only what the window needs, so a region of a 24 MP source
+    /// costs about the window's pixels. Not combined with `resize`.
+    func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil, resize: OutputSize? = nil,
+                region: Region? = nil) -> Result? {
         let t0 = DispatchTime.now().uptimeNanoseconds
         var image = source
         let extent = source.extent
@@ -304,7 +350,14 @@ final class Renderer: @unchecked Sendable {
         image = apply(recipe, to: image)
         var rect = image.extent.integral
         guard !rect.isEmpty else { return nil }
-        if let target = resize?.size(fitting: rect.size) {
+        let frameSize = rect.size
+        var shownRegion: CGRect?
+        if let region {
+            // Top-left window to Core Image's bottom-left coordinates.
+            let r = region.rect(in: rect.size)
+            shownRegion = r
+            rect = CGRect(x: rect.minX + r.minX, y: rect.maxY - r.maxY, width: r.width, height: r.height)
+        } else if let target = resize?.size(fitting: rect.size) {
             // Lanczos down to the exact target. The edges are clamped so the
             // integer rect below never reads outside the picture, and the
             // CGImage is cut to exactly `target` pixels.
@@ -325,6 +378,6 @@ final class Renderer: @unchecked Sendable {
             return nil
         }
         let t1 = DispatchTime.now().uptimeNanoseconds
-        return Result(image: cg, milliseconds: Double(t1 - t0) / 1_000_000)
+        return Result(image: cg, milliseconds: Double(t1 - t0) / 1_000_000, frameSize: frameSize, region: shownRegion)
     }
 }
