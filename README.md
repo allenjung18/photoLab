@@ -59,7 +59,7 @@ in Xcode works too.
 | `E` or `Return` | Loupe (the selected photo, or the first) |
 | `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
 | `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
-| `Esc` | Leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
+| `Esc` | Put the straighten tool down; else leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
@@ -148,7 +148,17 @@ the last frame.
   rotated frame with the crop drawn over it: drag any edge or corner, the
   four values follow live, and one drag is one undo step. The crop is cut
   from the rotated frame, so the handles move square to the photo as you
-  see it.
+  see it. **Aspect** locks the corners to a ratio (Original, Free, 1:1,
+  4:5, 3:2, 16:9; the swap button turns it between portrait and
+  landscape): picking one refits the crop at once (the largest of that
+  shape around the crop's centre, one undo step), a corner drag then
+  keeps the shape, and the edge handles are hidden until Free.
+  **Straighten** (crop mode) takes the next drag on the photo as a line:
+  draw it along a horizon and rotate is set so the line is level, or
+  along something within 45° of upright and it is made upright; one undo
+  step, and `Esc` puts the tool down. The aspect is a tool setting, not
+  part of the edit: it stays while you move between photos and is
+  forgotten when the app quits.
 
 Every slider is one entry in the photo's recipe, so the sidecar, undo,
 presets and batch apply treat them all alike. Spatial effects (clarity,

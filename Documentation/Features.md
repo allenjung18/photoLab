@@ -371,6 +371,39 @@ Nothing else; the copied settings live in memory.
   live, and mouse-up (`Library.endCropDrag(_:)`) makes the drag one undo
   step and one sidecar write. The histogram shows the uncropped frame
   while crop mode is on.
+- **Aspect lock.** `Library.cropAspect` (a `CropMath.Aspect`: a `Preset`,
+  Original, Free, 1:1, 4:5, 3:2 or 16:9, and `swapped`) is tool state,
+  never in a recipe or remembered; Free is the default. The Crop & Rotate
+  section's **Aspect** menu calls `Library.setCropAspect(_:frame:for:)` and
+  its swap button `Library.swapCropAspect(frame:for:)` (disabled for Free
+  and 1:1, `Aspect.canSwap`), with the decoded master's size
+  (`PreviewModel.masterSize`) as the frame, since rotate keeps the frame's
+  aspect. A locked pick refits the photo's crop through `setRecipe` (one
+  undo step, one sidecar write): `CropMath.refit` is the largest rectangle
+  of the ratio around the crop's centre inside the image and the sliders'
+  40%, or around the frame's centre when that centre leaves none; a crop
+  that already holds the ratio is not touched. Under a lock `CropOverlay`
+  shows the corners alone (`CropMath.handles(locked:)`) and
+  `Library.dragCrop` passes the ratio of the fit frame
+  (`Aspect.normalized(frame:)`) to `CropMath.drag(_:from:by:fit:ratio:)`:
+  the opposite corner stays, the size follows whichever axis the pointer
+  moved further, and both axes are bounded together so the ratio holds; a
+  crop that does not hold it (a slider moved it, another photo) is
+  refitted first, and every edge that moved is written
+  (`CropMath.edgesToWrite`).
+- **Straighten.** The section's **Straighten** toggle sets
+  `Library.straightening`, which enters crop mode; leaving crop mode,
+  **Esc** (before it leaves crop mode) or the line itself clears it. While
+  it is on, `CropOverlay` hides the handles and the fit frame takes a drag,
+  drawn as a dashed line; mouse-up calls
+  `Library.straighten(from:to:for:)`, which sets rotate to
+  `StraightenMath.rotate(levelling:_:current:)` through `setRecipe` (one
+  undo step, one write, the crop kept). The angle is read in view points,
+  y down, folded so a line has no direction; within 45° of horizontal the
+  line is levelled, steeper it is made upright (`StraightenMath.tilt`); the
+  correction is taken off the current rotate (the frame shown is already
+  turned by it) and held in the slider's ±45°. A press under
+  `StraightenMath.minLength` points changes nothing.
 - **Before.** `BeforeButton(isPressed:)` (`ContentView.swift`) is a
   press-and-hold bound to `Library.showBefore`; `\` toggles the same flag.
   While it is on, `PreviewCanvas` substitutes `Recipe.neutral` for the
@@ -470,7 +503,9 @@ redo, Reset, the render time and any sidecar error.
 - **Sections.** `AdjustmentKind.Section` (`Adjustments.swift`) gives each
   kind its section (`section`) and each section its `title` and `kinds`.
   Crop & Rotate opens with **Crop on Photo** / **Done Cropping**, which
-  runs the **Crop** command (see Loupe, Crop mode).
+  runs the **Crop** command (see Loupe, Crop mode), then the **Aspect**
+  menu, its swap button and the **Straighten** toggle (see Loupe, Aspect
+  lock and Straighten).
   The HSL section is different: a segmented `AdjustmentKind.HSLChannel`
   picker (hue, saturation, luminance), then one row per
   `AdjustmentKind.HSLBand` for that channel, the kind looked up with
@@ -669,7 +704,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
   background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it
   (selecting the first photo when none is), and both are disabled while
   `Library.visiblePhotos` is empty, so on the Welcome view **Return** is its
-  **Open Folder…** default button; **Esc** leaves crop mode, else the
+  **Open Folder…** default button; **Esc** clears
+  `Library.straightening`, else leaves crop mode, else the
   loupe or, in the grid, collapses the selection; **R** toggles
   `Library.cropMode` in the loupe; **←** / **→** are `Library.select(offset:)`;
   **Z** toggles `Library.loupeZoom` in the loupe;

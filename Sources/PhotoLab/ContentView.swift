@@ -902,9 +902,11 @@ private struct PreviewCanvas: View {
            let cg = preview.image, let shown = preview.imageRecipe,
            CropMath.isCropFrame(shown, for: current) {
             let fit = ZoomMath.fitRect(frame: CGSize(width: cg.width, height: cg.height), pane: pane)
-            CropOverlay(fit: fit, crop: CropMath.crop(of: current),
+            CropOverlay(fit: fit, crop: CropMath.crop(of: current), locked: library.cropAspect.isLocked,
+                        straightening: library.straightening,
                         drag: { handle, t in library.dragCrop(handle, by: t, fit: fit.size, for: photo.id) },
-                        end: { library.endCropDrag(photo.id) })
+                        end: { library.endCropDrag(photo.id) },
+                        straighten: { a, b in library.straighten(from: a, to: b, for: photo.id) })
         }
     }
 
@@ -957,15 +959,25 @@ private struct PreviewCanvas: View {
 
 /// The crop rectangle over the fit frame `fit` (view points): the area cut
 /// away dimmed, the kept area outlined with its thirds, and the four edge
-/// and four corner handles. A handle's drag is measured in the overlay's
+/// and four corner handles (the corners alone under an aspect lock,
+/// `CropMath.handles(locked:)`). A handle's drag is measured in the overlay's
 /// own coordinate space from where it started (`drag` gets the
 /// translation; `end` the mouse-up), so the handle moving under the pointer
 /// does not feed back into the drag. The arithmetic is `CropMath`.
+///
+/// While the straighten tool is armed the handles go and a drag anywhere on
+/// the frame draws a line; its mouse-up hands both ends to `straighten`
+/// (`StraightenMath` turns them into a rotate value).
 struct CropOverlay: View {
     let fit: CGRect
     let crop: CropMath.Crop
+    let locked: Bool
+    let straightening: Bool
     let drag: (CropMath.Handle, CGSize) -> Void
     let end: () -> Void
+    let straighten: (CGPoint, CGPoint) -> Void
+    /// The straighten line while it is being drawn.
+    @State private var line: (start: CGPoint, end: CGPoint)?
 
     private static let space = "cropOverlay"
     /// A handle's hit area, larger than what is drawn.
@@ -988,7 +1000,20 @@ struct CropOverlay: View {
             }
             .stroke(Color.white.opacity(0.35), lineWidth: 0.5)
             Path { $0.addRect(r) }.stroke(Color.white, lineWidth: 1)
-            ForEach(CropMath.Handle.allCases) { handle in
+            if straightening {
+                straightenLayer
+            } else {
+                handles(r)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .coordinateSpace(name: Self.space)
+        .onChange(of: straightening) { line = nil }
+    }
+
+    /// The eight handles, or the four corners under an aspect lock.
+    @ViewBuilder private func handles(_ r: CGRect) -> some View {
+            ForEach(CropMath.handles(locked: locked)) { handle in
                 handleMark(handle)
                     .frame(width: Self.hitSize, height: Self.hitSize)
                     .contentShape(Rectangle())
@@ -999,9 +1024,40 @@ struct CropOverlay: View {
                             .onEnded { _ in end() })
                     .accessibilityLabel("Crop \(handle.label)")
             }
+    }
+
+    /// The straighten tool: the whole frame takes the drag, the line is
+    /// drawn from where it started to the pointer, and a hint says what to do.
+    @ViewBuilder private var straightenLayer: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .contentShape(Rectangle())
+            .frame(width: fit.width, height: fit.height)
+            .position(x: fit.midX, y: fit.midY)
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+                    .onChanged { line = ($0.startLocation, $0.location) }
+                    .onEnded { g in
+                        line = nil
+                        straighten(g.startLocation, g.location)
+                    })
+            .accessibilityLabel("Straighten: drag along a line that should be level")
+        if let line {
+            Path { p in
+                p.move(to: line.start)
+                p.addLine(to: line.end)
+            }
+            .stroke(Color.yellow, style: StrokeStyle(lineWidth: 1.5, dash: [6, 3]))
+            .shadow(color: .black.opacity(0.6), radius: 1)
+            .allowsHitTesting(false)
+        } else {
+            Text("Drag along a horizon or an upright to straighten")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.thinMaterial, in: Capsule())
+                .position(x: fit.midX, y: fit.minY + 20)
+                .allowsHitTesting(false)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .coordinateSpace(name: Self.space)
     }
 
     /// A white square at a corner, a short bar along an edge.
@@ -1095,7 +1151,10 @@ struct AdjustmentsPanel: View {
                                         row(.hsl(hslChannel, band))
                                     }
                                 } else {
-                                    if section == .geometry { cropButton }
+                                    if section == .geometry {
+                                        cropButton
+                                        aspectRow
+                                    }
                                     ForEach(section.kinds) { kind in row(kind) }
                                 }
                             }
@@ -1182,6 +1241,46 @@ struct AdjustmentsPanel: View {
         .controlSize(.small)
         .disabled(!command.isEnabled(CommandContext(library: library)))
         .help("Drag the crop's edges and corners on the photo (\(key)); Esc to finish")
+    }
+
+    /// The crop's aspect lock and the straighten tool, under the crop
+    /// button. Picking a ratio (or swapping it) refits the crop at once
+    /// (`Library.setCropAspect`, one undo step); the frame's aspect is the
+    /// decoded master's, which rotate keeps.
+    private var aspectRow: some View {
+        let aspect = library.cropAspect
+        let frame = preview.masterSize
+        return HStack(spacing: 6) {
+            Picker("Aspect", selection: Binding(
+                get: { aspect.preset },
+                set: { preset in
+                    var a = aspect
+                    a.preset = preset
+                    library.setCropAspect(a, frame: frame, for: photo.id)
+                })) {
+                ForEach(CropMath.Aspect.Preset.allCases) { Text(aspect.title(of: $0)).tag($0) }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+            .help("Lock the crop's corners to a ratio; picking one refits the crop")
+            Button {
+                library.swapCropAspect(frame: frame, for: photo.id)
+            } label: {
+                Image(systemName: "rectangle.portrait.rotate")
+            }
+            .disabled(!aspect.canSwap)
+            .help("Swap portrait and landscape")
+            .accessibilityLabel("Swap portrait and landscape")
+            Spacer(minLength: 0)
+            Toggle(isOn: Binding(get: { library.straightening }, set: { library.straightening = $0 })) {
+                Label("Straighten", systemImage: "level")
+            }
+            .toggleStyle(.button)
+            .disabled(!library.loupe)
+            .help("Drag a line along a horizon on the photo to level it; Esc to cancel")
+        }
+        .controlSize(.small)
+        .disabled(frame == .zero)
     }
 
     private func row(_ kind: AdjustmentKind) -> some View {

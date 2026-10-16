@@ -175,7 +175,193 @@ enum CropMath {
     /// most the slider's bound, and never so far that less than `minSize`
     /// of the frame is left beside the `opposite` inset.
     static func clamp(_ inset: CGFloat, opposite: CGFloat) -> CGFloat {
-        let most = max(0, min(maxInset, 1 - minSize - opposite))
-        return min(max(inset, 0), most)
+        min(max(inset, 0), most(opposite: opposite))
+    }
+
+    /// The most an inset may take beside `opposite` (see `clamp`).
+    static func most(opposite: CGFloat) -> CGFloat {
+        max(0, min(maxInset, 1 - minSize - opposite))
+    }
+
+    // MARK: Aspect lock
+
+    /// The crop's aspect picker: a preset and the portrait/landscape swap.
+    /// Free leaves the handles as they are; any other preset locks a corner
+    /// drag to its ratio (and hides the edge handles) and refits the crop
+    /// when picked (`Library.setCropAspect`). Tool state, never part of a
+    /// recipe: what a crop keeps is its four insets.
+    struct Aspect: Equatable {
+        enum Preset: CaseIterable, Identifiable {
+            case original, free, square, fourFive, threeTwo, sixteenNine
+
+            var id: Self { self }
+
+            /// Width and height as the preset is named; nil for Original
+            /// (the frame's own) and Free.
+            var sides: (width: CGFloat, height: CGFloat)? {
+                switch self {
+                case .original, .free: nil
+                case .square: (1, 1)
+                case .fourFive: (4, 5)
+                case .threeTwo: (3, 2)
+                case .sixteenNine: (16, 9)
+                }
+            }
+        }
+
+        var preset: Preset = .free
+        /// Width and height exchanged: 4:5 reads 5:4, 3:2 reads 2:3,
+        /// Original is the frame's ratio turned on its side.
+        var swapped = false
+
+        static let free = Aspect()
+
+        var isLocked: Bool { preset != .free }
+        /// Free has no ratio to turn, and 1:1 turns into itself.
+        var canSwap: Bool { preset != .free && preset != .square }
+
+        /// The picker's title for `preset` under this aspect's swap.
+        func title(of preset: Preset) -> String {
+            switch preset {
+            case .original: return swapped ? "Original, swapped" : "Original"
+            case .free: return "Free"
+            default:
+                let s = preset.sides!
+                let (w, h) = swapped ? (s.height, s.width) : (s.width, s.height)
+                return "\(Int(w)):\(Int(h))"
+            }
+        }
+
+        var title: String { title(of: preset) }
+
+        /// The crop's width over its height in PIXELS of a frame `frame`
+        /// in size (any unit: only its aspect is used); nil when Free or
+        /// the frame is empty.
+        func ratio(frame: CGSize) -> CGFloat? {
+            guard isLocked, frame.width > 0, frame.height > 0 else { return nil }
+            let r: CGFloat
+            if let s = preset.sides { r = s.width / s.height } else { r = frame.width / frame.height }
+            return swapped ? 1 / r : r
+        }
+
+        /// The same ratio in the crop's own units, fractions of the frame:
+        /// the kept width fraction over the kept height fraction.
+        func normalized(frame: CGSize) -> CGFloat? {
+            ratio(frame: frame).map { $0 * frame.height / frame.width }
+        }
+    }
+
+    /// True when `crop` keeps the normalised ratio `k`.
+    static func holds(_ crop: Crop, ratio k: CGFloat) -> Bool {
+        let r = crop.rect
+        return abs(r.width - k * r.height) <= 1e-9 * max(1, k)
+    }
+
+    /// The crop refitted to the normalised ratio `k`: the largest rectangle
+    /// of that ratio centred where the crop's centre is, inside the frame
+    /// and within the sliders' bound. When that centre leaves no such
+    /// rectangle (an off-centre crop and a ratio far from it) the frame's
+    /// centre is used; a ratio the bound cannot hold at all (more than 5:1
+    /// in frame fractions) is kept as near as the bound allows.
+    static func refit(_ crop: Crop, ratio k: CGFloat) -> Crop {
+        guard k > 0 else { return crop }
+        let r = crop.rect
+        if let c = largest(ratio: k, center: CGPoint(x: r.midX, y: r.midY)) { return c }
+        if let c = largest(ratio: k, center: CGPoint(x: 0.5, y: 0.5)) { return c }
+        let w = max(minSize, min(1, k)), h = max(minSize, min(1, 1 / k))
+        return Crop(left: (1 - w) / 2, top: (1 - h) / 2, right: (1 - w) / 2, bottom: (1 - h) / 2)
+    }
+
+    /// The largest crop of ratio `k` centred on `c`, or nil when it would
+    /// need an inset past the sliders' bound.
+    private static func largest(ratio k: CGFloat, center c: CGPoint) -> Crop? {
+        let wMax = 2 * min(c.x, 1 - c.x), hMax = 2 * min(c.y, 1 - c.y)
+        let h = min(hMax, wMax / k), w = k * h
+        guard w > 0, h > 0 else { return nil }
+        let crop = Crop(left: max(0, c.x - w / 2), top: max(0, c.y - h / 2),
+                        right: max(0, 1 - c.x - w / 2), bottom: max(0, 1 - c.y - h / 2))
+        let insets = [crop.left, crop.top, crop.right, crop.bottom]
+        return insets.allSatisfy { $0 <= maxInset + 1e-12 } ? crop : nil
+    }
+
+    /// `handle` dragged with the aspect locked to the normalised ratio `k`
+    /// (nil is a free drag, `drag(_:from:by:fit:)`). A corner keeps its
+    /// opposite corner where it is and sizes the crop to the ratio from
+    /// whichever axis the pointer has moved further, then holds it inside
+    /// the bounds `clamp` keeps, on both axes at once so the ratio holds.
+    /// An edge handle does nothing under a lock (the overlay hides it). A
+    /// crop that does not hold the ratio (a slider moved it, another photo)
+    /// is refitted first.
+    static func drag(_ handle: Handle, from start: Crop, by translation: CGSize, fit: CGSize, ratio k: CGFloat?) -> Crop {
+        guard let k else { return drag(handle, from: start, by: translation, fit: fit) }
+        guard k > 0, handle.isCorner, fit.width > 0, fit.height > 0 else { return start }
+        let base = holds(start, ratio: k) ? start : refit(start, ratio: k)
+        let hEdge = handle.edges.first(where: \.isHorizontal)!
+        let vEdge = handle.edges.first(where: { !$0.isHorizontal })!
+        let anchorX = base[hEdge.opposite], anchorY = base[vEdge.opposite]
+        // The size the pointer asks for: a drag that grows an inset shrinks the crop.
+        let wantW = base.rect.width - hEdge.sign * translation.width / fit.width
+        let wantH = base.rect.height - vEdge.sign * translation.height / fit.height
+        // Heights the bounds allow on both axes (the moving inset in 0…most).
+        let lo = max(1 - anchorY - most(opposite: anchorY), (1 - anchorX - most(opposite: anchorX)) / k)
+        let hi = min(1 - anchorY, (1 - anchorX) / k)
+        guard lo <= hi + 1e-12 else { return base }
+        let height = base.rect.height, dW = wantW / k - height, dH = wantH - height
+        let h = min(max(height + (abs(dW) >= abs(dH) ? dW : dH), lo), hi), w = k * h
+        var c = base
+        c[hEdge] = max(0, 1 - anchorX - w)
+        c[vEdge] = max(0, 1 - anchorY - h)
+        return c
+    }
+
+    /// The edges a drag from `start` to `end` must write: the handle's own,
+    /// and under a lock any other the refit moved.
+    static func edgesToWrite(_ handle: Handle, from start: Crop, to end: Crop) -> [Edge] {
+        Edge.allCases.filter { handle.edges.contains($0) || start[$0] != end[$0] }
+    }
+
+    /// The handles the overlay shows: the corners alone under a lock.
+    static func handles(locked: Bool) -> [Handle] {
+        locked ? Handle.allCases.filter(\.isCorner) : Handle.allCases
+    }
+}
+
+/// The straighten tool's arithmetic: a line dragged along something that
+/// should be level (a horizon) or upright (a wall) on the frame crop mode
+/// shows, and the rotate value that makes it so. Angles are in the view's
+/// own points, y DOWN, so a line at +3.2° falls to the right; the renderer's
+/// rotate is clockwise-positive on screen (`Renderer.stage`, `.rotate`), so
+/// levelling that line takes -3.2°. The frame shown is already turned by the
+/// current rotate and the fit scale is uniform, so the angle seen is the
+/// angle in the frame, and the correction adds to the current value.
+enum StraightenMath {
+    /// A press shorter than this (points) is not a line.
+    static let minLength: CGFloat = 8
+
+    /// The line's angle in degrees, y down, folded to -90…90 (a line has no
+    /// direction: drawn right to left it is the same line); nil when too short.
+    static func angle(from a: CGPoint, to b: CGPoint) -> Double? {
+        let dx = b.x - a.x, dy = b.y - a.y
+        guard hypot(dx, dy) >= minLength else { return nil }
+        var deg = Double(atan2(dy, dx)) * 180 / .pi
+        if deg > 90 { deg -= 180 } else if deg <= -90 { deg += 180 }
+        return deg
+    }
+
+    /// How far the line is from level (within 45° of horizontal) or from
+    /// upright (steeper than that), clockwise-positive on screen.
+    static func tilt(from a: CGPoint, to b: CGPoint) -> Double? {
+        guard let deg = angle(from: a, to: b) else { return nil }
+        if abs(deg) <= 45 { return deg }
+        return deg > 0 ? deg - 90 : deg + 90
+    }
+
+    /// The rotate value that levels (or uprights) the line drawn over a
+    /// frame turned by `current`, held in the rotate slider's range; nil
+    /// when the line is too short to read.
+    static func rotate(levelling a: CGPoint, _ b: CGPoint, current: Double) -> Double? {
+        guard let t = tilt(from: a, to: b) else { return nil }
+        let range = AdjustmentKind.rotate.range
+        return min(max(current - t, range.lowerBound), range.upperBound)
     }
 }

@@ -133,7 +133,14 @@ came from, and the overlay is drawn only over a frame
 over the cropped frame still up from before. The mapping from view points
 to the crop is `CropMath` (`CropMath.swift`): pure functions over the fit
 rect `ZoomMath.fitRect` gives, in points, so the display scale never
-enters.
+enters. The aspect lock works in the same units: a pixel ratio becomes a
+ratio of frame fractions through the frame's own aspect
+(`CropMath.Aspect.normalized(frame:)`), which rotate never changes, so a
+locked crop keeps its shape at any rotation. The straighten line is read
+over the same frame: it is already turned by the current rotate and laid
+out at a uniform scale, so the angle seen on screen is the angle in the
+frame, and `StraightenMath` (also `CropMath.swift`) takes it off the
+current value.
 
 ### The loupe at 1:1
 
@@ -617,7 +624,10 @@ A crop handle drag in the loupe is the same: the first
 `Library.dragCrop(_:by:fit:for:)` of a drag calls `beginEdit` and records
 the crop it starts from, every move writes the handle's edges through
 `setRecipe` (measured from that start, so the edges follow the pointer
-without drift), and `Library.endCropDrag(_:)` calls `endEdit`.
+without drift), and `Library.endCropDrag(_:)` calls `endEdit`. Picking a
+crop aspect (`Library.setCropAspect(_:frame:for:)`) and the straighten
+line (`Library.straighten(from:to:for:)`) are single `setRecipe` calls,
+one step each, like a menu command.
 
 ### Undo and redo
 

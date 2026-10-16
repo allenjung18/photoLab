@@ -233,6 +233,32 @@ not only the pass.
   recipe's percent and leaves the edges the handle does not own alone; and
   crop mode's frame is the recipe uncropped at the same rotation. Shown to
   bite by removing the clamp (9 failures in 2 tests).
+- `AspectMathTests.swift` — the crop's aspect lock (`CropMath.Aspect`,
+  `CropMath.refit`, `CropMath.drag(_:from:by:fit:ratio:)`): every locked
+  preset, each way round, on a 24 MP frame landscape and portrait, holds
+  its ratio to within 1 px after six drags of each corner, read back from
+  the recipe's percent too, with the opposite corner fixed and every inset
+  in bounds, and the renderer cuts that size to within 2 px (`integral`);
+  a locked corner follows the axis the pointer moved further; the swap
+  inverts the ratio and the title, and 1:1 and Free cannot swap; a refit
+  from five starting crops stays inside the image and the 40% bound, holds
+  the ratio and touches an edge; under a lock the edge handles are hidden
+  and inert; through `Library`, a pick refits as one undo step and one
+  write, the same pick or Free adds none, and a locked drag holds 5:4 and
+  is one step. Mutants (failures over both files): the drag's width not
+  locked (996), the refit's bound check removed (36), the swap a no-op
+  (8), `Library.dragCrop` passing no ratio (1).
+- `StraightenTests.swift` — `StraightenMath` and `Library.straighten`: a
+  line at +3.2° (y down) gives rotate -3.2 drawn either way, -2° gives
+  +2; near-vertical lines (87°, -86°) are made upright and 45° is the last
+  angle read as a horizon; the correction adds to the current rotate and
+  stops at ±45°; a press is not a line; the renderer itself levels a line
+  drawn at +3.2° in a test image at the rotate the tool computes (ends
+  within a row; ~17 rows apart before); through `Library`, arming enters
+  crop mode, the line is one undo step and one write with the crop kept
+  and disarms the tool, and Esc disarms it before leaving crop mode.
+  Mutants: the sign flipped (11 failures, the renderer check among them)
+  and the upright fold removed (5).
 - `SortTests.swift` — `PhotoSort`: each key in both directions over a mix
   of file and asset ids through the one function, ties by name ascending
   then id, undated photos last in either direction, the order independent
@@ -280,7 +306,8 @@ not only the pass.
   only, and the arrows, even at either end, a click on another photo and
   leaving the loupe all return to fit; R toggles crop mode in the loupe
   only, entering it returns to fit and ends compare, Esc leaves it before
-  the loupe, and Z, Y and leaving the loupe end it).
+  the loupe, and Z, Y and leaving the loupe end it; Esc putting the
+  straighten tool down first is in `StraightenTests`).
 - `WorkflowTests.swift` — one photographer's session through the real
   model layer, nothing faked but the Photos writer (`FakePhotosWriter`):
   six synthetic JPEGs and PNGs (one portrait) open in natural order with a

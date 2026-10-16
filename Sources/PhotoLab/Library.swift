@@ -136,8 +136,21 @@ final class Library {
                 compare = false
             } else {
                 cropDragStart = nil
+                straightening = false
             }
         }
+    }
+    /// The crop's aspect lock (the Crop & Rotate section's Aspect picker and
+    /// swap): Free, or a ratio a corner drag holds. Tool state like the
+    /// zoom: kept across photos, never in a recipe, never remembered.
+    /// Changed through `setCropAspect` / `swapCropAspect`, which refit.
+    private(set) var cropAspect = CropMath.Aspect.free
+    /// The straighten tool is armed (the section's Straighten button): the
+    /// next drag on the photo draws a line, and its mouse-up sets rotate so
+    /// the line is level (`straighten`). Arming it enters crop mode; leaving
+    /// crop mode, Esc, or the line itself disarms it.
+    var straightening = false {
+        didSet { if straightening, !cropMode { cropMode = true } }
     }
     /// The crop a handle drag started from, while one is in progress.
     private var cropDragStart: CropMath.Crop?
@@ -743,9 +756,51 @@ final class Library {
             cropDragStart = CropMath.crop(of: recipe(for: id))
         }
         guard let start = cropDragStart else { return }
+        // Under an aspect lock a corner holds the ratio of the fit frame
+        // (the rotated frame's aspect); `fit` is that frame in points.
+        let moved = CropMath.drag(handle, from: start, by: translation, fit: fit,
+                                  ratio: cropAspect.normalized(frame: fit))
         var r = recipe(for: id)
-        CropMath.write(CropMath.drag(handle, from: start, by: translation, fit: fit),
-                       edges: handle.edges, into: &r)
+        CropMath.write(moved, edges: CropMath.edgesToWrite(handle, from: start, to: moved), into: &r)
+        setRecipe(r, for: id)
+    }
+
+    /// Picks the crop's aspect. A locked one refits the photo's crop to the
+    /// ratio of a frame `frame` in size (the rotated frame's aspect: the
+    /// decoded master's, since rotate keeps it) through `setRecipe`, ONE undo
+    /// step and one sidecar write; a crop that already holds it, or Free,
+    /// changes nothing. With no photo the pick is only remembered.
+    func setCropAspect(_ aspect: CropMath.Aspect, frame: CGSize, for id: Photo.ID?) {
+        cropAspect = aspect
+        guard let id, let k = aspect.normalized(frame: frame) else { return }
+        let start = CropMath.crop(of: recipe(for: id))
+        guard !CropMath.holds(start, ratio: k) else { return }
+        let fitted = CropMath.refit(start, ratio: k)
+        var r = recipe(for: id)
+        CropMath.write(fitted, edges: CropMath.Edge.allCases.filter { fitted[$0] != start[$0] }, into: &r)
+        setRecipe(r, for: id)
+    }
+
+    /// The portrait/landscape swap: the same preset turned on its side,
+    /// refitted as `setCropAspect` does. Free and 1:1 have nothing to turn.
+    func swapCropAspect(frame: CGSize, for id: Photo.ID?) {
+        guard cropAspect.canSwap else { return }
+        var a = cropAspect
+        a.swapped.toggle()
+        setCropAspect(a, frame: frame, for: id)
+    }
+
+    /// The straighten line's mouse-up: rotate is set so the line from `a`
+    /// to `b` (view points over the crop-mode frame) is level, or upright
+    /// when it is steeper than 45°, through `setRecipe` (one undo step, one
+    /// write). The tool disarms; a line too short to read changes nothing.
+    func straighten(from a: CGPoint, to b: CGPoint, for id: Photo.ID) {
+        straightening = false
+        let current = recipe(for: id)
+        guard let value = StraightenMath.rotate(levelling: a, b, current: current.effective(.rotate)) else { return }
+        var r = current
+        r.set(.rotate, to: value)
+        r.setEnabled(.rotate, true)
         setRecipe(r, for: id)
     }
 

@@ -256,13 +256,16 @@ struct AppCommand: Identifiable {
                    isEnabled: { $0.library.source != nil },
                    perform: { $0.library.sort.ascending = false }),
 
-        // Keys with no menu item: Escape leaves crop mode, else the loupe
-        // (from the grid it collapses the selection), Return opens it. Return is enabled only
+        // Keys with no menu item: Escape disarms the straighten tool, else
+        // leaves crop mode, else the loupe (from the grid it collapses the
+        // selection), Return opens it. Return is enabled only
         // when there is a photo to open, as Loupe (E) is: the Welcome view
         // has none, and its Open Folder… button holds Return there.
         AppCommand(name: .back, title: "Back", key: .escape, modifiers: [], placement: .keysOnly,
                    perform: { c in
-                       if c.library.cropMode {
+                       if c.library.straightening {
+                           c.library.straightening = false
+                       } else if c.library.cropMode {
                            c.library.cropMode = false
                        } else if c.library.loupe {
                            c.library.loupe = false
