@@ -147,4 +147,14 @@ final class AutoMaskSyncTests: XCTestCase {
         XCTAssertNil(found[ids[1]]?[.sky], "no detector for sky yet")
         XCTAssertEqual(lib.sidecarWrites, writes)
     }
+
+    func testASkyMaskCopiesAsItWasAndABusyBatchSaysSo() async throws {
+        let (lib, ids) = try open(FakeDetector(byWidth: [20: bitmap(row: 1)]))
+        var r = lib.recipe(for: ids[0])
+        r.masks = [LocalMask(shape: .auto(AutoMask(kind: .sky, bitmap: bitmap(row: 4))))]
+        lib.setRecipe(r, for: ids[0])
+        _ = await lib.syncRedetecting(lib.recipe(for: ids[0]), mask: .everything, from: ids[0], to: [ids[1]])
+        XCTAssertEqual(auto(lib, ids[1])?.bitmap.digest, bitmap(row: 4).digest, "no sky detector: copied")
+        XCTAssertNil(lib.autoNote)
+    }
 }

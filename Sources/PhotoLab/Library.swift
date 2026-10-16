@@ -1747,10 +1747,14 @@ final class Library {
                          to ids: [Photo.ID]) async -> Int {
         let masks = source.normalized.masks
         let kinds: [AutoMaskKind] = mask.masks ? masks.compactMap {
-            if case .auto(let a) = $0.shape { return a.kind }
+            if case .auto(let a) = $0.shape, a.kind != .sky { return a.kind }
             return nil
         } : []
         guard !kinds.isEmpty else { return sync(source, mask: mask, to: ids) }
+        guard !autoToning else {
+            autoNote = "Sync not applied: another batch is running, try again when it ends"
+            return 0
+        }
         let same: (Photo.ID) -> Bool = { id in sourceID.map { id.master == $0.master } ?? false }
         guard let found = await detectAutoMasks(kinds, for: ids.filter { !same($0) }) else { return 0 }
         // A drag left open would fold the sync into its step.
@@ -1760,7 +1764,7 @@ final class Library {
             guard !same(id) else { return (id, source) }
             var r = source
             r.masks = masks.compactMap { local in
-                guard case .auto(let a) = local.shape else { return local }
+                guard case .auto(let a) = local.shape, a.kind != .sky else { return local }
                 guard let bitmap = found[id]?[a.kind] else { skipped += 1; return nil }
                 var out = local
                 out.shape = .auto(AutoMask(kind: a.kind, bitmap: bitmap))
