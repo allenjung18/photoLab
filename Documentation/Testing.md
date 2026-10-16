@@ -291,15 +291,23 @@ temp `PresetStore`, an `ExportQueue` with `FakePhotosWriter` (and a held or
 failing worker for the export bar), `PhotosTests.FakePhotoKit` for Photos
 sources, and a temp folder of synthetic photos per state (12 JPEGs, a PNG,
 a junk `.JPG` and a junk sidecar where a state needs them). One production
-seam exists for it: `PanelStart` (an environment value, unset in the app)
-opens the adjustments panel with chosen sections expanded.
+seams exist for it, each with the app's behavior as the default:
+`PanelStart` (an environment value, unset in the app) opens the adjustments
+panel with chosen sections expanded; `hasBundle` (an environment value
+defaulting to `PhotosAccess.hasBundle`) lets the Welcome view, the toolbar
+and the Export sheet be hosted with or without an app bundle; and
+`PhotosAlbumSheet(access:)` takes a fake Photos access. The Sync, Export and
+Photos-album sheets are each hosted as their own root view at their fitting
+size (no window dimming or sheet chrome); no state ever calls
+`requestAuthorization`. `PHOTOLAB_SNAPSHOT_GROUP=main|sheets` takes one
+group while iterating (its index is `index-<group>.txt`).
 
 The gate with the variable set: every state is written in both modes, none
 is a single flat color, none times out. Without it the tests skip and the
 suite is as fast as before. The grid is lazy, so a state's thumbnails load
 only for the cells in the viewport, as in the app; materials may render
-flatter than on screen (read `index.txt`); sheets, alerts and the menu bar
-are not part of the main-window states.
+flatter than on screen (read `index.txt`); system alerts, file panels and
+the menu bar are not part of the catalogue.
 
 ## The direction tests
 

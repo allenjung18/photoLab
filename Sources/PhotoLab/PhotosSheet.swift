@@ -9,9 +9,14 @@ import SwiftUI
 struct PhotosAlbumSheet: View {
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
-    @State private var browser = PhotosBrowser(access: .live)
+    @State private var browser: PhotosBrowser
     @State private var selected: PhotosAlbum.ID?
     @State private var requesting = false
+
+    /// `access` is the app's live Photos; a test hands in a fake.
+    init(access: PhotosAccess = .live) {
+        _browser = State(initialValue: PhotosBrowser(access: access))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

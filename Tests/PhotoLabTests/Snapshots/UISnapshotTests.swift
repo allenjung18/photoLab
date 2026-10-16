@@ -18,10 +18,12 @@ final class UISnapshotTests: XCTestCase {
 
     /// A scene on a fresh fixture folder: the library open on it, then `setup`.
     private func scene(junk: Bool = false,
+                       big: Bool = false,
+                       unreadablePreset: Bool = false,
                        sidecarJunkFor: String? = nil,
                        setup: (Library, SnapshotFixture, ExportQueue) async throws -> Void = { _, _, _ in }) async throws
         -> SnapshotHarness.Scene {
-        let fx = try SnapshotFixture(junk: junk)
+        let fx = try SnapshotFixture(junk: junk, big: big)
         if let name = sidecarJunkFor {
             let store = SidecarStore(folder: fx.folder)
             let url = store.url(for: fx.folder.appendingPathComponent(name))
@@ -35,6 +37,10 @@ final class UISnapshotTests: XCTestCase {
         var mono = Recipe.neutral
         mono.set(.saturation, to: -100); mono.set(.contrast, to: 20)
         _ = presets.save(mono, as: "Mono")
+        if unreadablePreset {
+            try Data("{ not a preset".utf8).write(to: fx.presetDirectory.appendingPathComponent("Faded film.json"))
+            presets.reload()
+        }
         let exports = ExportQueue(remember: false, photos: FakePhotosWriter(), stagingDirectory: fx.stagingDirectory)
         var scene = SnapshotHarness.Scene(presets: presets, exports: exports)
         scene.cleanup = { fx.remove() }
@@ -124,24 +130,47 @@ final class UISnapshotTests: XCTestCase {
 
     // MARK: The catalogue, states 1-15
 
-    func testMainWindowStatesAreWrittenInBothModes() async throws {
+    /// `PHOTOLAB_SNAPSHOT_GROUP` = `main` or `sheets` takes only that group
+    /// (while iterating); unset takes the whole catalogue into `index.txt`.
+    func testCatalogueIsWrittenInBothModes() async throws {
         let out = try SnapshotHarness.requireOutput()
         let h = try SnapshotHarness(out: out)
-        let hasBundle = PhotosAccess.hasBundle
+        let group = ProcessInfo.processInfo.environment["PHOTOLAB_SNAPSHOT_GROUP"] ?? "all"
+        if group != "sheets" { await shootMainWindowStates(h) }
+        if group != "main" { await shootSheetStates(h) }
+        try h.writeIndex(notes: Self.notes, file: group == "all" ? "index.txt" : "index-\(group).txt")
+        XCTAssertEqual(h.failures, [], "states that failed to write")
+        if group == "all" { XCTAssertEqual(h.written.count, 36, "every state of the catalogue was taken") }
+        // Every state in both modes, none flat.
+        for s in h.written {
+            for mode in SnapshotHarness.Mode.allCases {
+                let url = out.appendingPathComponent(mode.rawValue).appendingPathComponent(s.file)
+                let data = try XCTUnwrap(FileManager.default.contents(atPath: url.path), "\(mode.rawValue)/\(s.file) was written")
+                let stats = try SnapshotHarness.stats(data)
+                XCTAssertFalse(stats.isFlat, "\(mode.rawValue)/\(s.file) is flat: \(stats)")
+            }
+        }
+    }
+
+    private func shootMainWindowStates(_ h: SnapshotHarness) async {
         let toolbarNote = "the window toolbar and title are drawn only if the hosted window's frame view includes them; look for them in the PNG"
         let materialNote = "materials (.thinMaterial badges, .bar) and vibrancy may render flat without the window server compositing them"
 
-        // 1. welcome
-        await h.shoot(shot("01", "welcome", "no source: the Welcome view",
-                           model: "Library with no source; PhotosAccess.hasBundle = \(hasBundle) in this test process",
-                           caveat: "the other bundle variant is not selectable until hasBundle is injectable; " + toolbarNote)) {
-            SnapshotHarness.Scene(presets: PresetLibrary(store: PresetStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-p-\(UUID().uuidString)"))),
-                                  exports: ExportQueue(remember: false, photos: FakePhotosWriter(), stagingDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-s-\(UUID().uuidString)")))
+        // 1. welcome, with and without an app bundle
+        for (suffix, name, bundle) in [("", "welcome", true), ("c", "welcome-no-bundle", false)] {
+            await h.shoot(shot("01\(suffix)", name, "no source: the Welcome view" + (bundle ? "" : " as a bare swift run binary (no app bundle)"),
+                               model: "Library with no source; hasBundle injected = \(bundle)", caveat: toolbarNote)) {
+                var s = SnapshotHarness.Scene(presets: PresetLibrary(store: PresetStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-p-\(UUID().uuidString)"))),
+                                              exports: ExportQueue(remember: false, photos: FakePhotosWriter(), stagingDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-s-\(UUID().uuidString)")))
+                s.hasBundle = bundle
+                return s
+            }
         }
         await h.shoot(shot("01b", "welcome-open-error", "Welcome with the error of opening a missing path",
                            model: "Library.open(<missing path>) so openError is set", caveat: toolbarNote)) {
-            let s = SnapshotHarness.Scene(presets: PresetLibrary(store: PresetStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-p-\(UUID().uuidString)"))),
+            var s = SnapshotHarness.Scene(presets: PresetLibrary(store: PresetStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-p-\(UUID().uuidString)"))),
                                           exports: ExportQueue(remember: false, photos: FakePhotosWriter(), stagingDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("snap-s-\(UUID().uuidString)")))
+            s.hasBundle = true
             s.library.open(URL(fileURLWithPath: "/nonexistent/Lake trip 2026"))
             return s
         }
@@ -203,6 +232,16 @@ final class UISnapshotTests: XCTestCase {
                            model: "IMG_0001 selected, loupe on, exposure +0.6, contrast +20, temperature +15, vibrance +30; 2 presets",
                            caveat: materialNote + "; " + toolbarNote, )) {
             var s = try await self.scene { lib, _, _ in try self.loupe(lib) }
+            s.needsCanvas = true
+            return s
+        }
+        await h.shoot(shot("08z", "loupe-zoomed", "the loupe at 1:1 on a 3200x2000 photo, the 1:1 badge, centred",
+                           model: "IMG_0000-big.jpg selected, loupe on, exposure +0.6, loupeZoom = .actual(centre of the frame); the filmstrip shows along the bottom as in 08",
+                           caveat: materialNote + "; the zoom window renders asynchronously and the harness cannot see its readiness, so the PNG may show the fit image with the badge spinner (see the file)")) {
+            var s = try await self.scene(big: true) { lib, _, _ in
+                try self.loupe(lib, name: SnapshotFixture.big)
+                lib.loupeZoom = .actual(center: CGPoint(x: 0.5, y: 0.5))
+            }
             s.needsCanvas = true
             return s
         }
@@ -274,24 +313,105 @@ final class UISnapshotTests: XCTestCase {
             }
         }
 
-        try h.writeIndex(notes: [
+    }
+
+    private static let notes: [String] = [
             "Hosting: NSHostingController (sceneBridgingOptions = .all) as the contentViewController of a titled NSWindow that is never ordered on screen; the window's frame view is drawn with cacheDisplay into a 2x bitmap.",
             "Readiness: a state is written once its model predicate holds (grid: every decodable visible photo's thumbnail is in the shared cache) and two successive captures are identical; a loupe or canvas state must also show a non-flat canvas. A state that does not settle in 45 s fails by name.",
             "Light and dark: the window's appearance (aqua / darkAqua) and the colorScheme environment.",
             "Fixtures: 12 JPEGs (two portrait, one with a long name), one PNG; broken.JPG (junk bytes) only in states 12 and 12b; a junk sidecar only in state 13. Folders are temp, library and presets and export queue are injected (nothing remembered, nothing touching the real Photos library).",
-            "Not here: the Photos sheets, the Sync and Export sheets (their own root views), preset alert dialogs and the menu bar; they are reviewed from code or in the sheets states.",
-        ])
-        XCTAssertEqual(h.failures, [], "states that failed to write")
-        XCTAssertEqual(h.written.count, 22, "every state of the catalogue was taken")
-        // Every state in both modes, none flat.
-        for s in h.written {
-            for mode in SnapshotHarness.Mode.allCases {
-                let url = out.appendingPathComponent(mode.rawValue).appendingPathComponent(s.file)
-                let data = try XCTUnwrap(FileManager.default.contents(atPath: url.path), "\(mode.rawValue)/\(s.file) was written")
-                let stats = try SnapshotHarness.stats(data)
-                XCTAssertFalse(stats.isFlat, "\(mode.rawValue)/\(s.file) is flat: \(stats)")
+            "Sheets (16-19) are each hosted as their own root view at the size they ask for (fittingSize), not presented over the main window: no dimming of the window behind, no sheet chrome or shadow. Their content, layout and copy are exact.",
+            "Seams for the sheets: the hasBundle environment value (welcome 01/01c, Export 18d) and PhotosAlbumSheet(access:). No state ever calls requestAuthorization: the Allow buttons are drawn, never clicked.",
+            "Not in the catalogue: the menu bar, system alerts and the open/save panels (not hostable offscreen); preset rename and delete confirmation dialogs; the export-destination folder chooser.",
+        ]
+
+    // MARK: Sheets, states 16-20
+
+    private func shootSheetStates(_ h: SnapshotHarness) async {
+        let sheetNote = "a sheet shown as its own root view at its fitting size, not presented over the window: no window dimming, no sheet chrome, no sheet shadow"
+        let fit = SnapshotHarness.fitting
+
+        await h.shoot(shot("16", "sync-sheet", "the Sync Settings sheet: From IMG_0001.jpg onto 3 photos, the sections collapsed, last mask",
+                           model: "SyncRequest from an edited IMG_0001 onto the next three; mask = the library's lastSyncMask", caveat: sheetNote, size: fit)) {
+            try await self.sheetScene { lib, _, _ in
+                let ids = lib.photos.map(\.id)
+                self.edited(lib, ids[0]) { $0.set(.exposure, to: 0.6); $0.set(.vibrance, to: 30) }
+                return AnyView(SyncSheet(request: SyncRequest(source: lib.recipe(for: ids[0]), sourceName: "IMG_0001.jpg",
+                                                              targets: Array(ids[1...3]), mask: lib.lastSyncMask)))
             }
         }
+        await h.shoot(shot("17", "export-folder", "Export to a folder, a folder chosen, 4 photos",
+                           model: "ExportSheet with 4 items, destination folder, the folder set; hasBundle true", caveat: sheetNote, size: fit)) {
+            try await self.sheetScene { lib, exports, items in
+                AnyView(ExportSheet(request: .init(items: items), options: exports.options,
+                                    folder: URL(fileURLWithPath: "/Volumes/Archive/Lake trip exports", isDirectory: true), album: nil, toPhotos: false))
+            }
+        }
+        let photosVariants: [(String, String, PhotosAuthorization, Bool, String)] = [
+            ("18a", "export-photos-authorized", .authorized, true, "FakePhotosWriter authorized; hasBundle true"),
+            ("18b", "export-photos-not-determined", .notDetermined, true, "FakePhotosWriter notDetermined: the Allow Access row (never clicked); hasBundle true"),
+            ("18c", "export-photos-denied", .denied, true, "FakePhotosWriter denied: the not-allowed row with its two buttons; hasBundle true"),
+            ("18d", "export-photos-no-bundle", .authorized, false, "hasBundle false while Export to Photos was asked for: the sheet falls back to the folder and says why"),
+        ]
+        for (number, name, status, bundle, model) in photosVariants {
+            await h.shoot(shot(number, name, "Export to Photos, 4 photos", model: model, caveat: sheetNote, size: fit)) {
+                var s = try await self.sheetScene(status: status) { lib, exports, items in
+                    AnyView(ExportSheet(request: .init(items: items), options: exports.options, folder: nil, album: ExportTarget.defaultAlbum, toPhotos: true))
+                }
+                s.hasBundle = bundle
+                return s
+            }
+        }
+        let albums: [(String, String, PhotosAuthorization, [PhotosAlbum], String)] = [
+            ("19a", "photos-sheet-not-determined", .notDetermined, [], "the permission prompt and its Allow button (never clicked)"),
+            ("19b", "photos-sheet-denied", .denied, [], "the System Settings pointer and Check Again"),
+            ("19c", "photos-sheet-albums", .authorized, [PhotosTests.recents, PhotosTests.trip], "Recents and a regular album with counts, none selected"),
+            ("19d", "photos-sheet-empty", .authorized, [], "authorized but no albums: the No albums text"),
+            ("19e", "photos-sheet-restricted", .restricted, [], "the restricted-on-this-Mac text"),
+        ]
+        for (number, name, status, list, what) in albums {
+            await h.shoot(shot(number, name, "the Open Photos Library sheet: " + what,
+                               model: "PhotosAlbumSheet(access:) on FakePhotoKit(status: \(status)), \(list.count) albums; requestAuthorization is never called",
+                               caveat: sheetNote, size: fit)) {
+                let base = FileManager.default.temporaryDirectory.appendingPathComponent("photolab-snap-sheet-\(UUID().uuidString)", isDirectory: true)
+                let kit = PhotosTests.FakePhotoKit(status: status)
+                kit.albumList = list
+                let access = PhotosAccess(client: kit, sidecarDirectory: base.appendingPathComponent("sidecars"),
+                                          originalsDirectory: base.appendingPathComponent("originals"))
+                var s = SnapshotHarness.Scene(presets: PresetLibrary(store: PresetStore(directory: base.appendingPathComponent("presets"))),
+                                              exports: ExportQueue(remember: false, photos: FakePhotosWriter(),
+                                                                   stagingDirectory: base.appendingPathComponent("staging")))
+                s.view = AnyView(PhotosAlbumSheet(access: access))
+                s.cleanup = { try? FileManager.default.removeItem(at: base) }
+                return s
+            }
+        }
+        await h.shoot(shot("20", "loupe-presets-unreadable", "the loupe's presets strip with a preset file that cannot be read",
+                           model: "as 08, plus Faded film.json of junk in the presets folder, so the strip shows its two presets and the library carries the unreadable-file error",
+                           caveat: "materials may render flat; if the error is an alert, it is a window-level sheet and may not draw offscreen (look in the PNG)")) {
+            var s = try await self.scene(unreadablePreset: true) { lib, _, _ in try self.loupe(lib) }
+            s.needsCanvas = true
+            return s
+        }
+    }
+
+    /// A scene for a sheet shown as its own root: a library on the fixture
+    /// folder with 4 photos selected, an export queue whose Photos writer has
+    /// `status`, and the view `make` builds from the library, the queue and
+    /// the 4 export items.
+    private func sheetScene(status: PhotosAuthorization = .authorized,
+                            make: (Library, ExportQueue, [ExportQueue.Item]) throws -> AnyView) async throws -> SnapshotHarness.Scene {
+        let fx = try SnapshotFixture()
+        let presets = PresetLibrary(store: PresetStore(directory: fx.presetDirectory))
+        let exports = ExportQueue(remember: false, photos: FakePhotosWriter(status: status), stagingDirectory: fx.stagingDirectory)
+        var s = SnapshotHarness.Scene(presets: presets, exports: exports)
+        s.cleanup = { fx.remove() }
+        s.library.open(fx.folder)
+        let lib = s.library
+        lib.click(lib.photos[0].id); lib.click(lib.photos[3].id, extending: true)
+        let items = try await lib.exportItems(for: lib.batchTargets)
+        s.view = try make(lib, exports, items)
+        return s
     }
 
     // MARK: Export bar scenes

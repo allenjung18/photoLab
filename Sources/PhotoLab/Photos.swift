@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import AppKit
 import Photos
 import UniformTypeIdentifiers
@@ -630,5 +631,21 @@ final class PhotosBrowser {
 
     func openSettings() {
         NSWorkspace.shared.open(Self.settingsURL)
+    }
+}
+
+// MARK: - The bundle seam
+
+private struct HasBundleKey: EnvironmentKey {
+    static let defaultValue = PhotosAccess.hasBundle
+}
+
+extension EnvironmentValues {
+    /// Whether this process is an app bundle (the only kind that can be
+    /// granted Photos access). The app reads the real value; a test sets it
+    /// to host the Welcome view or the Export sheet in either variant.
+    var hasBundle: Bool {
+        get { self[HasBundleKey.self] }
+        set { self[HasBundleKey.self] = newValue }
     }
 }

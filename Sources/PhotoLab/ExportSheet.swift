@@ -10,6 +10,7 @@ import AppKit
 struct ExportSheet: View {
     @Environment(ExportQueue.self) private var exports
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.hasBundle) private var hasBundle
     let request: ExportQueue.Request
 
     @State private var options: ExportOptions
@@ -29,7 +30,7 @@ struct ExportSheet: View {
         self.request = request
         _options = State(initialValue: options)
         _folder = State(initialValue: folder)
-        _destination = State(initialValue: toPhotos && PhotosAccess.hasBundle ? .photos : .folder)
+        _destination = State(initialValue: toPhotos ? .photos : .folder)
         _albumText = State(initialValue: album ?? "")
         switch options.resize {
         case .longSide(let n):
@@ -40,6 +41,10 @@ struct ExportSheet: View {
             _sizeMode = State(initialValue: .original); _longSide = State(initialValue: 2048); _percent = State(initialValue: 50)
         }
     }
+
+    /// Without an app bundle the Photos library cannot be chosen: the folder
+    /// is the destination whatever was asked for.
+    private var shownDestination: Destination { hasBundle ? destination : .folder }
 
     private var count: Int { request.items.count }
     private var noun: String { count == 1 ? "Photo" : "Photos" }
@@ -104,7 +109,7 @@ struct ExportSheet: View {
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle)
                     }
-                    if destination == .folder {
+                    if shownDestination == .folder {
                         Picker("If the file exists", selection: $options.collision) {
                             ForEach(ExportOptions.Collision.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
@@ -112,14 +117,14 @@ struct ExportSheet: View {
                     Toggle("Keep camera info (EXIF, GPS, IPTC) from the original", isOn: $options.keepMetadata)
                 }
                 Section("Export to") {
-                    Picker("Export to", selection: $destination) {
+                    Picker("Export to", selection: Binding(get: { shownDestination }, set: { destination = $0 })) {
                         Text("Folder").tag(Destination.folder)
                         Text("Photos library").tag(Destination.photos)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .disabled(!PhotosAccess.hasBundle)
-                    switch destination {
+                    .disabled(!hasBundle)
+                    switch shownDestination {
                     case .folder:
                         HStack {
                             Text(folder?.path(percentEncoded: false) ?? "No folder chosen")
@@ -132,7 +137,7 @@ struct ExportSheet: View {
                                 }
                             }
                         }
-                        if !PhotosAccess.hasBundle {
+                        if !hasBundle {
                             Text("Exporting to Photos needs the app bundle (scripts/bundle.sh).")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -168,7 +173,7 @@ struct ExportSheet: View {
     }
 
     private var canExport: Bool {
-        switch destination {
+        switch shownDestination {
         case .folder: return folder != nil
         case .photos: return photosStatus?.canRead == true
         }
@@ -218,7 +223,7 @@ struct ExportSheet: View {
     }
 
     private var target: ExportTarget? {
-        switch destination {
+        switch shownDestination {
         case .folder: return folder.map { .folder($0) }
         case .photos: return .photosLibrary(album: ExportTarget.album(from: albumText))
         }

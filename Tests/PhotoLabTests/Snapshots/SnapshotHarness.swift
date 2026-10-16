@@ -24,6 +24,9 @@ final class SnapshotHarness {
         var scheme: ColorScheme { self == .light ? .light : .dark }
     }
 
+    /// A `Shot.size` that means "the view's own fitting size" (a sheet).
+    static let fitting = CGSize(width: -1, height: -1)
+
     struct Shot {
         let number: String
         let name: String
@@ -46,6 +49,8 @@ final class SnapshotHarness {
         /// The canvas (everything left of the 280 pt panel) must show a photo.
         var needsCanvas = false
         var panelStart: PanelStart?
+        /// Overrides the process's `hasBundle` (nil: the real value).
+        var hasBundle: Bool?
         var cleanup: () -> Void = {}
 
         init(presets: PresetLibrary, exports: ExportQueue) {
@@ -107,6 +112,7 @@ final class SnapshotHarness {
             .environment(scene.exports)
             .environment(\.colorScheme, mode.scheme)
             .environment(\.panelStart, scene.panelStart)
+            .environment(\.hasBundle, scene.hasBundle ?? PhotosAccess.hasBundle)
         let host = NSHostingController(rootView: root)
         host.sceneBridgingOptions = .all
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: shot.size),
@@ -116,6 +122,13 @@ final class SnapshotHarness {
         window.appearance = mode.appearance
         window.contentViewController = host
         window.setContentSize(shot.size)
+        if shot.size == Self.fitting {
+            // A sheet shown as its own root: the size it asks for.
+            window.setContentSize(CGSize(width: 800, height: 600))
+            window.layoutIfNeeded()
+            let fit = host.view.fittingSize
+            window.setContentSize(CGSize(width: max(fit.width, 200), height: max(fit.height, 100)))
+        }
         // Never ordered on screen: the window is drawn from its own view tree.
         defer { window.contentViewController = nil; window.close() }
 
@@ -225,13 +238,13 @@ final class SnapshotHarness {
     // MARK: Index
 
     /// Writes `index.txt`: one line per state, then the harness-wide notes.
-    func writeIndex(notes: [String]) throws {
+    func writeIndex(notes: [String], file: String = "index.txt") throws {
         var text = "# One line per state: file | what it shows | model state set | offscreen caveat\n"
         text += "# Each file exists in light/ and dark/. Taken by an in-process harness: no window was ever on screen.\n\n"
         text += lines.joined(separator: "\n") + "\n\n# Offscreen notes\n"
         text += notes.map { "- " + $0 }.joined(separator: "\n") + "\n"
         if !failures.isEmpty { text += "\n# FAILED\n" + failures.map { "- " + $0 }.joined(separator: "\n") + "\n" }
-        try text.write(to: out.appendingPathComponent("index.txt"), atomically: true, encoding: .utf8)
+        try text.write(to: out.appendingPathComponent(file), atomically: true, encoding: .utf8)
     }
 }
 
@@ -251,9 +264,11 @@ struct SnapshotFixture {
     static let portraits: Set<String> = ["IMG_0003.jpg", "IMG_0008.jpg"]
     static let png = "scan-0012.png"
     static let junk = "broken.JPG"
+    /// A photo big enough for the loupe's 1:1 zoom (the others are too small to zoom).
+    static let big = "IMG_0000-big.jpg"
 
     /// `junk`: also a `.JPG` of junk bytes (a decode failure).
-    init(junk: Bool = false) throws {
+    init(junk: Bool = false, big: Bool = false) throws {
         base = FileManager.default.temporaryDirectory.appendingPathComponent("photolab-snap-\(UUID().uuidString)", isDirectory: true)
         folder = base.appendingPathComponent("Lake trip 2026", isDirectory: true)
         presetDirectory = base.appendingPathComponent("presets", isDirectory: true)
@@ -266,6 +281,7 @@ struct SnapshotFixture {
             try Self.write(folder.appendingPathComponent(name), width: portrait ? h : w, height: portrait ? w : h, type: UTType.jpeg)
         }
         try Self.write(folder.appendingPathComponent(Self.png), width: 400, height: 300, type: UTType.png)
+        if big { try Self.write(folder.appendingPathComponent(Self.big), width: 3200, height: 2000, type: UTType.jpeg) }
         if junk { try Data("this is not an image".utf8).write(to: folder.appendingPathComponent(Self.junk)) }
     }
 

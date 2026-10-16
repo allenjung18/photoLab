@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(Library.self) private var library
     @Environment(ExportQueue.self) private var exports
+    @Environment(\.hasBundle) private var hasBundle
 
     var body: some View {
         @Bindable var library = library
@@ -27,8 +28,8 @@ struct ContentView: View {
                 Button { library.choosePhotosAlbum() } label: {
                     Label("Open Photos Library", systemImage: "photo.on.rectangle")
                 }
-                .disabled(!PhotosAccess.hasBundle)
-                .help(PhotosAccess.hasBundle
+                .disabled(!hasBundle)
+                .help(hasBundle
                       ? "Open a Photos album (⇧⌘O)"
                       : "The Photos library opens from the app bundle (scripts/bundle.sh)")
             }
@@ -115,6 +116,7 @@ struct ContentView: View {
 }
 
 struct WelcomeView: View {
+    @Environment(\.hasBundle) private var hasBundle
     @Environment(Library.self) private var library
 
     var body: some View {
@@ -135,10 +137,10 @@ struct WelcomeView: View {
                 Button("Open Folder…") { library.chooseFolder() }
                     .keyboardShortcut(.defaultAction)
                 Button("Open Photos Library…") { library.choosePhotosAlbum() }
-                    .disabled(!PhotosAccess.hasBundle)
+                    .disabled(!hasBundle)
             }
             RecentList()
-            if !PhotosAccess.hasBundle {
+            if !hasBundle {
                 // Photos access is granted to an app bundle, never to a bare
                 // `swift run` binary.
                 Text("The Photos library opens from the app bundle: run scripts/bundle.sh --open and use build/PhotoLab.app.")
