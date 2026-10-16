@@ -105,6 +105,27 @@ final class RendererTests: XCTestCase {
         XCTAssertGreaterThan(maxDiff(render(recipe(.vibrance, 80)), base), 10)
     }
 
+    /// Contrast should pivot on middle gray: a flat sRGB 50 % gray stays
+    /// where it is at any contrast, and only the tones either side of it
+    /// spread. Found by the workflow test: `CIColorControls` pivots at 0.5
+    /// in the LINEAR working space (about sRGB 186), so + contrast darkens
+    /// middle gray, and a whole photo, and − contrast lightens it.
+    func testContrastLeavesMiddleGrayWhereItIs() {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(colorSpace: space, components: [0.5, 0.5, 0.5, 1])!)
+        ctx.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        let gray = CIImage(cgImage: ctx.makeImage()!)
+        let base = meanRGB(render(.neutral, gray)).g
+        XCTExpectFailure("Contrast pivots at linear 0.5, not middle gray: + contrast darkens the photo (pinned for the UI review)") {
+            for v in [-50.0, 50.0] {
+                let moved = meanRGB(render(recipe(.contrast, v), gray)).g
+                XCTAssertEqual(moved, base, accuracy: 6, "contrast \(v) moved middle gray from \(base) to \(moved)")
+            }
+        }
+    }
+
     func testPreviewScalesDownToFitAndNeverUp() {
         let fit = render(.neutral, max: 128)
         XCTAssertEqual(fit.width, 128)

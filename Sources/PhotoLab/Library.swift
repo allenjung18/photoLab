@@ -199,7 +199,9 @@ final class Library {
     /// selection, the open drag and the undo history are reset. A source
     /// whose listing fails is refused the same way as a missing path: the
     /// current source stays and `openError` says why. The shared thumbnail
-    /// cache decodes `.asset` ids through the open source from here on.
+    /// cache decodes `.asset` ids through the open source from here on. A
+    /// pending Sync / Paste sheet is dropped: its targets were the old
+    /// source's photos.
     func open(_ source: any PhotoSource) {
         let listed: [Photo]
         do {
@@ -216,6 +218,7 @@ final class Library {
         showBefore = false
         compare = false
         openEdit = nil
+        syncRequest = nil
         history = [:]
         sidecarError = nil
         photosSave = .idle
@@ -511,13 +514,16 @@ final class Library {
     /// Copies the kinds in `mask` from `source` onto every photo in `ids`,
     /// each through `setRecipe` (its own sidecar, written at once). The
     /// whole batch is ONE undo step: ⌘Z on any photo of it takes them all
-    /// back. A photo the sync would not change is skipped. Returns how many
-    /// photos changed.
+    /// back. A photo the sync would not change is skipped, and so is one
+    /// that is not in the open source (a request made before another source
+    /// was opened): its sidecar would land in this source's store. Returns
+    /// how many photos changed.
     @discardableResult
     func sync(_ source: Recipe, mask: SyncMask, to ids: [Photo.ID]) -> Int {
         let batch = UUID()
+        let listed = Set(photos.map(\.id))
         var changed = 0
-        for id in ids {
+        for id in ids where listed.contains(id) {
             let current = recipe(for: id)
             let next = current.syncing(mask, from: source)
             guard next != current.normalized else { continue }

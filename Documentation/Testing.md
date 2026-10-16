@@ -18,7 +18,11 @@ real-PhotoKit tests: two in `PhotosTests`, which run only in a process that
 is already authorized for Photos, and the import in `ExportTests` and the
 edit in `AdjustmentDataTests`, which also need `PHOTOLAB_PHOTOS_WRITE=1`),
 and a timed gate that misses on a
-swamped box skips rather than fails (Load sensitivity, below). The timed
+swamped box skips rather than fails (Load sensitivity, below). A known
+defect that is not fixed yet is pinned with `XCTExpectFailure("<what>")`:
+the run stays green while it fails as described, and goes red the day it
+is fixed, so the pin is removed with the fix (one today: contrast,
+`RendererTests`). The timed
 tests print a `BENCH` line with their numbers beside the verdict; read it,
 not only the pass.
 
@@ -28,7 +32,10 @@ not only the pass.
   JSON round trip), the neutral recipe is the identity, a disabled entry
   changes nothing, the direction of exposure, temperature, tint and
   saturation, the preview fit (down, never up), and the timed slider step on
-  a 24 MP photo.
+  a 24 MP photo. `testContrastLeavesMiddleGrayWhereItIs` is pinned with
+  `XCTExpectFailure`: contrast pivots at 0.5 in the linear working space
+  (about sRGB 188), so +50 takes a flat sRGB 128 gray to 77 and −50 to 161;
+  + contrast darkens a whole photo.
 - `ToneSetTests.swift` — the direction tests for the whole tone set (below),
   the sidecar shape holding one entry per kind, the timed sweep of every
   slider over an everything-on recipe, and the load guard's own test
@@ -123,7 +130,9 @@ not only the pass.
   `PresetLibrary` reports errors and recovers and a failed operation's
   message is not masked by the standing unreadable-file one, a saved preset applied to
   another photo after a reopen reproduces the edit, applying the preset a
-  photo already shows is no step, and the timed strip.
+  photo already shows is no step, the preset `save` returns equals the one
+  read back (`updated` kept to the whole second the file holds), and the
+  timed strip.
 - `BatchTests.swift` — `Recipe.syncing` takes only the masked kinds, a
   preset applied to a multi-selection writes one sidecar per photo and one
   undo takes them all back, a later single edit sits on top of a batch, the
@@ -198,6 +207,28 @@ not only the pass.
   the loupe in compare, J and backslash toggle their overlays, the arrows,
   G, E, Esc and Return move the view, Reset Photo, Undo, Redo, Copy
   Settings and Select All act on the selection).
+- `WorkflowTests.swift` — one photographer's session through the real
+  model layer, nothing faked but the Photos writer (`FakePhotosWriter`):
+  six synthetic JPEGs and PNGs (one portrait) open in natural order with a
+  plain thumbnail each; an Exposure drag on one photo is one undo step and
+  one sidecar, and its thumbnail is brighter; its look saved as a preset
+  and applied to another photo keeps that photo's rotation and crop; flags
+  and ratings, and a reset that takes the edit and keeps the marks; the
+  Picks filter moves a hidden anchor to the next pick with the loupe up,
+  and the arrows, Select All and the batch targets see the picks only; a
+  shift-click under the filter skips the hidden reject, and a Grade sync
+  keeps each target's exposure and framing and leaves every other photo
+  alone; one undo takes the whole sync back, redo returns it, and a rating
+  is not an undo step; the picks export to a folder (suffix, long side,
+  exactly the exporter's pixels for each recipe, the hidden reject not
+  written) and to Photos (album, names, nothing left staged); Copy Settings
+  pastes with the last mask onto a photo of another folder; a fresh
+  `Library` and `PresetLibrary` read every recipe, mark and preset back
+  with no undo history, and a trip to another folder and back keeps it all.
+  Each failure names its step. A second test pins a seam the session
+  found: a Sync sheet left up while another folder opens is dropped, and a
+  sync naming another source's photos writes nothing into the new folder
+  (it used to overwrite a namesake photo's sidecar there).
 - `TestImages.swift` — no tests; the shared helpers. `syntheticImage(width:height:space:)`
   draws the photo every pixel test reads (a luminance ramp with coloured
   bands, so both neutral and saturated pixels are present; sRGB unless a

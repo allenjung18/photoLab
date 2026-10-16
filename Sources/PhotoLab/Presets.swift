@@ -18,10 +18,12 @@ struct Preset: Codable, Hashable, Identifiable {
 
     /// A preset holding `recipe` with its geometry neutralized, every kind
     /// present in chain order (so two presets of the same look compare equal
-    /// whatever order their sources listed the kinds in).
+    /// whatever order their sources listed the kinds in). `updated` is kept
+    /// to the whole second, which is what the file holds (ISO 8601), so the
+    /// preset `PresetLibrary.save` returns equals the one read back.
     init(name: String, from recipe: Recipe, updated: Date = Date()) {
         self.name = name
-        self.updated = updated
+        self.updated = Date(timeIntervalSince1970: updated.timeIntervalSince1970.rounded(.down))
         var r = recipe.normalized
         for kind in AdjustmentKind.geometryKinds { r[kind] = Adjustment(kind: kind, value: kind.neutral) }
         self.recipe = r

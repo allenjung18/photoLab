@@ -113,6 +113,18 @@ final class PresetTests: XCTestCase {
         XCTAssertEqual(reopened.loadAll().presets.map(\.name), ["Golden Hour"])
     }
 
+    /// The preset `save` hands back is the one the library and a fresh store
+    /// read from disk, `updated` included: the file keeps whole seconds
+    /// (ISO 8601), so a sub-second date in memory would make the two differ.
+    func testASavedPresetIsEqualToTheOneReadBack() throws {
+        let presets = PresetLibrary(store: PresetStore(directory: presetsDir))
+        let saved = try XCTUnwrap(presets.save(sampleLook, as: "Golden Hour"))
+        XCTAssertEqual(presets.preset(named: "Golden Hour"), saved, "the library's own entry")
+        XCTAssertEqual(try PresetStore(directory: presetsDir).load("Golden Hour"), saved, "a fresh store's read")
+        let made = Preset(name: "x", from: sampleLook, updated: Date(timeIntervalSince1970: 1_000.75))
+        XCTAssertEqual(made.updated, Date(timeIntervalSince1970: 1_000), "kept to the second the file holds")
+    }
+
     func testFileNameIsSanitizedAndTheNameKept() throws {
         let store = PresetStore(directory: presetsDir)
         try store.save(Preset(name: "  Warm / Film: v2 ", from: sampleLook))
