@@ -317,6 +317,19 @@ not only the pass.
   one from the matched recipe, give the same values with a kind outside
   the twelve kept; `base`, `applying` and `mask` cover exactly the twelve;
   and the timed whole solve.
+- `XMPPresetTests.swift` — `XMPPreset.parse` on hand-written `.xmp` text
+  saved to a temp directory: the attribute and element forms of one
+  preset give one recipe (Sharpness rescaled, the file's stem as the name),
+  `crs:PresetName` and the `crs:Name` alt text name it, HSL Aqua and Blue
+  land on their own bands and every HSL row of `XMPPreset.mapping` names
+  its own band, an out-of-range value is clamped and listed, Dehaze and a
+  mask group are listed unsupported while a zero Dehaze is not and the
+  mask's own keys stay out of the recipe, Adobe Color's Look is not listed
+  and a creative one is, Split Toning maps alone and yields to Color
+  Grading, the curves are approximated and listed, malformed XML and an
+  XMP without Camera Raw settings throw by name, another prefix for the
+  namespace reads, and the recipe through `Preset(name:from:)` carries no
+  geometry, lens kind or mask.
 - `CompareTests.swift` — compare mode in `PreviewModel`: Before and After
   come out at equal pixel size from one master, Before equal to the neutral
   render (maxDiff 0) and After to the recipe's; no second frame outside

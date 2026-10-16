@@ -1039,6 +1039,40 @@ deleted; `writeStarters()` is the strip's Restore Starter Presets.
 `PresetLibrary` is the store read into memory for the views, re-read after
 every change, with the last error for the panel to show.
 
+### `XMPPreset`: Lightroom `.xmp` presets
+
+`XMPPreset.parse(_:fileName:)` (`XMPPreset.swift`) reads the bytes of a
+Lightroom Classic / Camera Raw `.xmp` preset into an `XMPImport` and never
+writes the file. `XMPPreset.settings(in:)` runs Foundation's `XMLParser`
+with namespaces on and collects every top-level setting of the Camera Raw
+namespace (`XMPPreset.namespace`, whatever prefix the file binds it to),
+in both forms Adobe writes: attributes of an `rdf:Description` and
+elements, as `XMPPreset.Raw` text, a list (an `rdf:Seq` / `Bag` / `Alt`) or a
+nested structure; the `crs:` keys inside a mask's correction or a Look's
+parameters are never read as global settings. Malformed XML throws
+`XMPImportError.notXML`, no Camera Raw setting `.noCameraRawSettings`.
+
+`XMPPreset.interpret` applies D-471 (a). `XMPPreset.mapping` is the one
+table of direct settings (the file's key, the `AdjustmentKind` it sets, a
+scale): the 2012 basic tone, the incremental temperature and tint,
+vibrance, saturation, clarity, Sharpness (0…150 onto 0…100), grain, the
+post-crop vignette, the 24 HSL sliders, Color Grading and the older Split
+Toning, an earlier row winning when two set one kind. A value outside the
+kind's `range` is clamped and named in `XMPImport.clamped`. The point curve
+(`XMPPreset.pointCurveKey`) and the parametric curve
+(`XMPPreset.parametricKeys`) are approximated onto the five curve points
+(`XMPPreset.approximateCurve`: the point curve read linearly at 0, ¼, ½, ¾,
+1, each parametric region lifting the inner points either side of it by
+half `XMPPreset.parametricLift` per +100) and named in
+`XMPImport.approximated`. A non-neutral setting with no slider is named
+with a plain label by `XMPPreset.unsupportedRules` (profile, Look, Dehaze,
+Texture, calibration, Kelvin white balance, per-channel curves, the global
+grading wheel and blending, black & white, noise reduction, lens
+corrections, transform, crop, masks, brushes, gradients, spot removal);
+neutral ones are not listed. The recipe starts from `Recipe.neutral`, so it
+carries no geometry, lens kind or mask, and `Preset(name:from:)` takes it as
+any other (`XMPPresetTests`). No screen reads it yet.
+
 ### `ExportOptions`
 
 One value per export run, carried unchanged through the queue to every item:

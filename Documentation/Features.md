@@ -1221,6 +1221,11 @@ Writes: the preset files under `PresetStore.defaultDirectory` (save, update,
 rename, delete, restore). Applying a preset writes the photo's sidecar
 through `setRecipe`, never a preset file.
 
+Lightroom presets: `XMPPreset.parse(_:fileName:)` (Architecture 2,
+`XMPPreset`) reads an `.xmp` preset into a recipe and the lists of mapped,
+approximated, unsupported and clamped settings an import sheet would show;
+no menu or sheet calls it yet.
+
 ## Export
 
 **Export…** comes from the batch bar, from **⇧⌘E** or the File menu (the item
