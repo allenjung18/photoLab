@@ -63,7 +63,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(HiddenShortcuts.commands.allSatisfy { $0.modifiers.subtracting(.shift).isEmpty && $0.key != nil })
         let keys = Set(HiddenShortcuts.commands.map { $0.key!.character })
         let expected: [KeyEquivalent] = ["g", "e", "z", "y", "\\", "j", "f", "p", "x", "u",
-                                         "0", "1", "2", "3", "4", "5", "r", "w", "o", "m", "k",
+                                         "0", "1", "2", "3", "4", "5", "r", "w", "o", "m", "k", "[", "]",
                                          .return, .escape, .leftArrow, .rightArrow]
         XCTAssertEqual(keys, Set(expected.map(\.character)))
     }
@@ -92,7 +92,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(view, [.grid, .loupe, .map, .zoom, .compare, .showOriginal, .clipping, .maskOverlay, .filmstrip, .info, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
         XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords, .renameInPlace, .removeFromCollection,
-                               .newLinearMask, .newRadialMask, .brushMask, .trashRejects])
+                               .newLinearMask, .newRadialMask, .brushMask, .brushSmaller, .brushLarger, .trashRejects])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos, .deleteCollection])

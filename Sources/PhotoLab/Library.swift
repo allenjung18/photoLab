@@ -233,18 +233,30 @@ final class Library {
     var selectedMask: UUID? {
         didSet {
             guard selectedMask != oldValue else { return }
-            maskBrushArmed = false
-            if maskDragStart?.mask != selectedMask { finishMaskDrag() }
+            if maskDragStart?.mask != selectedMask || brushStrokeMask != nil { finishMaskDrag() }
+            // A brush mask selected in the loupe is ready to paint into
+            // (`paintingBrush`); any other selection puts the brush down.
+            maskBrushArmed = loupe && selectedMaskIsBrush
         }
     }
+    /// The selected mask is a brush mask of the selected photo.
+    var selectedMaskIsBrush: Bool {
+        guard let photo = selection, let id = selectedMask,
+              let mask = recipe(for: photo).masks.first(where: { $0.id == id }),
+              case .brush = mask.shape else { return false }
+        return true
+    }
     /// The brush is armed on the selected brush mask (K, Photo › Brush, the
-    /// Masks section's New Brush): drags on the photo will paint into it.
+    /// Masks section's New Brush, or a brush mask picked in the list): drags
+    /// on the photo paint into it (`paintBrush`, `Library.paintingBrush`).
     /// Tool state like the eyedropper: arming leaves crop mode, ends compare
     /// and puts the eyedropper down; any of those, another mask selected,
-    /// Esc and leaving the loupe disarm it.
+    /// Esc and leaving the loupe disarm it, ending a stroke in progress.
     var maskBrushArmed = false {
         didSet {
-            guard maskBrushArmed != oldValue, maskBrushArmed else { return }
+            guard maskBrushArmed != oldValue else { return }
+            // Put down mid-stroke (Esc): the stroke so far is kept.
+            guard maskBrushArmed else { if brushStrokeMask != nil { finishMaskDrag() }; return }
             cropMode = false
             compare = false
             whiteBalancePicking = false
@@ -275,6 +287,13 @@ final class Library {
     /// frame (`MaskTint`, composed by `PreviewModel` like the clipping
     /// warning). Never in compare's Before, a thumbnail or an export.
     var showMaskOverlay = false
+    /// The brush new strokes are painted with (Size, Feather, Flow in the
+    /// selected brush's rows; [ and ] for the size). Tool state: never in a
+    /// recipe, never remembered.
+    var brush = BrushSettings()
+    /// The brush mask a stroke is being painted into, while one is
+    /// (`paintBrush` ... `endBrushStroke`).
+    @ObservationIgnored var brushStrokeMask: UUID?
     /// Why the last eyedropper click changed nothing (a clipped or too dark
     /// patch, an unreadable photo), for the panel's status line; cleared by
     /// arming the tool again and by a balanced pick.
@@ -1808,14 +1827,15 @@ final class Library {
         return mask.id
     }
 
-    /// Ends a mask drag the overlay can no longer finish: SwiftUI cancels a
+    /// Ends a mask drag or a brush stroke the overlay can no longer finish: SwiftUI cancels a
     /// gesture whose view goes (Esc, compare, crop mode, Before, another
     /// mask or photo, a kind switched mid-placement) without calling its
     /// `onEnded`, so `endMaskDrag` would never come. The edit so far closes
     /// as one undo step and one write, and the next drag starts afresh.
     func finishMaskDrag() {
-        guard maskDragStart != nil else { return }
+        guard maskDragStart != nil || brushStrokeMask != nil else { return }
         maskDragStart = nil
+        brushStrokeMask = nil
         closeOpenEdit()
     }
 

@@ -682,6 +682,30 @@ not only the pass.
   in any row. Shown to bite by a mutant (the slider skipping `beginEdit`: 3
   failures in the drag test, 15 writes mid-drag and an undo that stops one
   step in).
+- `BrushToolTests.swift` — painting the brush (`BrushTool.swift`): a
+  synthetic drag of 2000 view points, mapped through rotate 7.5 and a crop
+  as the overlay maps it, is one stroke with the brush's size, feather and
+  flow, its points at least a quarter radius apart (a few dozen, at most
+  the drag's length over that gap plus one), the first the drag's start in
+  the source frame and every one a mapped pointer position back on the
+  dragged line; an erase drag is an erase stroke; a stroke writes nothing
+  while it grows and once at mouse-up, one undo takes it away and leaves the
+  mask, and one cut off by putting the brush down is kept as one step; [
+  and ] step the size by 1.25 and stop at both ends of its range, off with
+  nothing to paint and while typing; a drag with no mask, a linear selected
+  or a brush in the list but not selected changes nothing, picking the
+  brush arms it, Esc puts it down, and K arms the selected brush rather
+  than adding one. `LiveRasterTests`: three strokes (a paint, an erase, a
+  hard paint) grown a point at a time give a fresh `BrushRaster.render`'s
+  bytes at every step (two follow-ons, one rebuild), as do an undo and an
+  edited stroke (rebuilds). `BrushStrokeBudgetTests`: over the
+  everything-on recipe with a linear, a radial and a 500-point brush at
+  2600 px, a new stroke growing 10 points a frame for 30 frames misses the
+  raster cache every frame, takes the incremental path every frame
+  (`BrushRasterCache.lastPath`), and its frames' 90th percentile is under
+  16 ms (`assertFrameBudget`, best of three sweeps; the bench line prints
+  the median, p90, max and the same recipe's cached frame). Shown to bite
+  by a mutant (thinning removed: 2001 points against at most 68).
 - `CommandsTests.swift` — the command table (`AppCommand.all`): no two
   entries share a key and modifiers, and none takes a system menu key
   (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button

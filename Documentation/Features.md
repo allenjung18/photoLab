@@ -920,11 +920,37 @@ redo, Reset, the render time and any sidecar error.
   one `Library.updateMask` / `setRecipe` step, and each slider goes
   through `MaskSliderEdit`, which calls `beginEdit` on mouse-down and
   `endEdit` on mouse-up, so a drag is one undo step and one sidecar write.
-  **Brush** (`K`) adds an empty brush mask and arms it
-  (`Library.maskBrushArmed`: arming leaves crop mode, ends compare and puts
-  the eyedropper down; `K` again, `Esc`, another mask selected, crop mode,
-  compare, the eyedropper and leaving the loupe disarm it). Painting on the
-  photo is not built yet: an armed brush does nothing on a drag.
+  **Brush** (`K`) arms the selected brush mask, or adds an empty one and
+  arms it (`Library.maskBrushArmed`: arming leaves crop mode, ends compare
+  and puts the eyedropper down; `K` again, `Esc`, another mask selected,
+  crop mode, compare, the eyedropper and leaving the loupe disarm it;
+  selecting a brush mask in the loupe arms it, `Library.selectedMask`).
+  **Painting** (`BrushTool.swift`): while the brush is armed on the
+  selected brush mask (`Library.paintingBrush`) the loupe photo takes the
+  drag (`BrushOverlay`, over the After frame at fit or 1:1, on the same
+  conditions as the handles). Each pointer position is mapped to the source
+  (`MaskMath.viewToSource`) and goes to
+  `Library.paintBrush(from:to:erase:size:for:)`: the first opens a
+  `beginEdit` and appends one `BrushStroke` at the drag's start with the
+  brush's size, feather and flow (`Library.brush`, a `BrushSettings`; an
+  erase stroke when `⌥` is down as the drag starts, read once); every later
+  one is added only at least a quarter of the radius from the last point
+  kept (`BrushThinning`, long-side units, the raster's dab spacing), so a
+  long drag stays a few hundred points. The stroke grows in place through
+  `updateMask` / `setRecipe`, so the loupe re-renders as it grows, and the
+  mouse-up (`Library.endBrushStroke`) closes the edit: one stroke, one undo
+  step, one sidecar write. A stroke cut off (Esc, compare, crop, another
+  mask or photo) ends through `Library.finishMaskDrag` and is kept as one
+  step. A circle of the brush's radius in view points, with a dashed ring at
+  radius × (1 − feather), follows the pointer over the photo. The selected
+  brush shows **Size** (`BrushSettings.sizeRange`, 0.5%–30% of the long
+  side, default 5%), **Feather** (0–100%, default 50%) and **Flow**
+  (5–100%, default 100%) rows (`BrushSettingsRows`, double-click a name to
+  reset) above its sliders; they are tool state, never in a recipe or
+  remembered, and change only the strokes painted next. **[** and **]**
+  (Photo › **Smaller Brush** / **Larger Brush**, enabled while
+  `Library.paintingBrush` is set) divide or multiply the size by
+  `BrushSettings.sizeStep` (1.25), held in its range.
   **Handles** (`MaskOverlay.swift`): the selected linear or radial mask is
   drawn over the loupe's After frame, at fit or in the 1:1 window, beside
   `CropOverlay`. A linear shows its start and end lines (solid) and centre
@@ -1396,8 +1422,10 @@ key is typed anywhere else; the README's Keys table is the user's list.
     menu the app adds or SwiftUI supplies. Then **New Linear Gradient** **M**, **New
     Radial Gradient** **⇧M** and **Brush** **K** (`Library.addMask(_:for:)`
     on the loupe photo, loupe only; Brush is checked while
-    `Library.maskBrushArmed` and, checked, puts the brush down; see
-    Adjustments panel, Masks). Last, **Move Rejected Photos to Trash…**
+    `Library.maskBrushArmed` and, checked, puts the brush down; unchecked
+    with a brush mask selected it arms that one), **Smaller Brush** **[**
+    and **Larger Brush** **]** (`Library.stepBrushSize(larger:)`, while
+    `Library.paintingBrush` is set); see Adjustments panel, Masks). Last, **Move Rejected Photos to Trash…**
     **⌘⌫** (`Library.requestTrashRejects()`; see Move rejects to the Trash).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's

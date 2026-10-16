@@ -990,6 +990,8 @@ struct LoupeView: View {
 /// Masks: `MaskOverlay` draws the selected linear or radial mask's handles
 /// over the After frame, at fit or 1:1, and takes a placement drag while
 /// New Linear or New Radial is armed; not in compare, crop mode or Before.
+/// `BrushOverlay` takes the drag and paints while the brush is armed on a
+/// selected brush mask (`Library.paintingBrush`), with the same mapping.
 private struct PreviewCanvas: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
@@ -1048,6 +1050,7 @@ private struct PreviewCanvas: View {
                     zoomable(afterFrame, fitFrame: preview.image)
                         .overlay { cropOverlay }
                         .overlay { maskHandles }
+                        .overlay { brushOverlay }
                         .overlay(alignment: .topLeading) { if library.showBefore { badge("Before") } }
                         .overlay(alignment: .top) { whiteBalanceHint }
                 }
@@ -1289,6 +1292,26 @@ private struct PreviewCanvas: View {
                         place: { kind, a, b in library.dragPlacement(kind, from: a, to: b, size: size, for: id) },
                         click: { kind, p in library.placeMask(kind, at: p, for: id) },
                         end: { library.endMaskDrag(id) })
+        }
+    }
+
+    /// The painting layer and the brush cursor while the brush is armed on
+    /// a selected brush mask, under the same conditions as `maskHandles`
+    /// (the frame shown rendered with the current rotate and crop; not in
+    /// crop mode or while Show Original is held).
+    @ViewBuilder private var brushOverlay: some View {
+        let current = library.recipe(for: photo.id)
+        if library.paintingBrush != nil,
+           !library.cropMode, !library.showBefore, let file, preview.imageURL == file,
+           let cg = preview.image, let shown = zoomWindow != nil ? preview.zoomRecipe : preview.imageRecipe,
+           MaskRender.geometryKinds.allSatisfy({ shown.effective($0) == current.effective($0) }),
+           preview.masterSize.width > 0, preview.masterSize.height > 0 {
+            let geometry = MaskMath.Geometry(recipe: current, source: preview.masterSize)
+            let (viewport, bounds) = maskViewport(fitFrame: CGSize(width: cg.width, height: cg.height))
+            let id = photo.id, size = preview.masterSize
+            BrushOverlay(geometry: geometry, viewport: viewport, bounds: bounds, settings: library.brush,
+                         paint: { a, b, erase in library.paintBrush(from: a, to: b, erase: erase, size: size, for: id) },
+                         end: { library.endBrushStroke(id) })
         }
     }
 

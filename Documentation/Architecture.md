@@ -121,7 +121,10 @@ mask is built over the whole source and placed by the same stages as the
 pixels, a 1:1 region needs nothing of its own: it reads a window of the
 same chain.
 
-A brush mask is rastered on the CPU (`BrushRaster.swift`).
+A brush mask is rastered on the CPU (`BrushRaster.swift`, its pixel loops
+in the `BrushKernel` C target, `Sources/BrushKernel`, built with `-O3` in
+every configuration: unoptimised Swift loops cost about 250 ns a pixel, so
+a debug build could not paint live).
 `BrushRaster.render(strokes:width:height:)` is pure: one byte per pixel,
 rows top-down, each pixel the brush's weight at its centre. A stroke is
 round dabs every `BrushRaster.dabSpacing` (a quarter of the radius) of arc
@@ -141,7 +144,21 @@ bytes are the weights) in `BrushRasterCache.shared`, keyed by the strokes
 and the raster size (the `CubeCache` pattern, a handful of entries): a
 render whose strokes have not changed (a mask or global slider, a rotate or
 crop, which act on the mask after it is drawn) never rasters again, and
-`BrushRasterCache.rasters` counts the misses for the tests.
+`BrushRasterCache.rasters` counts the misses for the tests. A stroke being
+painted changes the strokes on every point, so every frame misses; a miss
+therefore rasters through a `LiveRaster` kept per raster size (at most
+three, the loupe, the 1:1 view and the preset strip, the most recent
+kept). It holds the weight of every stroke but the last (`acc`), the last
+stroke's walked dabs max-merged (`cover`) and the bytes. When the last
+stroke only grew (`LiveRaster.grows`: its points a prefix, the same radius,
+feather, flow and erase) only its new walked dabs (`BrushRaster.walk`, the
+dabs before the moving last-point dab) are stamped, and only the pixels
+they and the old and new last-point dabs touch are re-quantised; a new
+stroke after it composes it into `acc` over its own bounds first; anything
+else (an undo, an edited stroke) rebuilds. Max-merging is exact and every
+path runs the same C loops, so the bytes are a fresh raster's
+(`LiveRasterTests`), and `BrushRaster.render` itself is a rebuild of a
+fresh `LiveRaster`.
 
 ### The two inputs
 
@@ -717,7 +734,12 @@ its `updateMask` calls. Which mask the panel shows (`Library.selectedMask`)
 and whether the brush is armed (`Library.maskBrushArmed`) are tool state
 on `Library`, never in a recipe; `Library.apply` clears `selectedMask`
 whenever the selected photo's new recipe no longer holds it, which covers
-undo, redo, delete, reset and sync with one rule.
+undo, redo, delete, reset and sync with one rule. Painting (`BrushTool.swift`) is one more
+`updateMask` caller: `Library.paintBrush(from:to:erase:size:for:)` opens a
+`beginEdit` on a stroke's first point and grows the brush's last
+`BrushStroke` in place, and `Library.endBrushStroke` closes it, so a stroke
+is one step; the brush it paints with (`Library.brush`, a `BrushSettings`)
+is tool state like `selectedMask`.
 
 ### `Sidecar` and `SidecarStore`
 

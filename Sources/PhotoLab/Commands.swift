@@ -46,7 +46,7 @@ struct AppCommand: Identifiable {
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, resetPhoto, keywords, renameInPlace, removeFromCollection
         case newCollection
-        case newLinearMask, newRadialMask, brushMask
+        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger
         case trashRejects
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
@@ -369,8 +369,10 @@ struct AppCommand: Identifiable {
         // Local adjustments on the loupe photo (Lightroom's M, Shift-M, K):
         // New Linear and New Radial arm placement (`Library.maskPlacement`):
         // the next drag on the photo places the mask, a click its default
-        // shape; the same key again disarms. Brush adds an empty brush mask
-        // armed for painting, and puts the brush down when it is armed.
+        // shape; the same key again disarms. Brush arms the selected brush
+        // mask, else adds an empty brush mask armed for painting, and puts
+        // the brush down when it is armed. [ and ] change the brush's size
+        // while it is armed (`BrushSettings.stepped`).
         AppCommand(name: .newLinearMask, title: "New Linear Gradient", key: "m", modifiers: [],
                    placement: .photo, section: 5,
                    isOn: { c in c.library.loupe && c.library.maskPlacement == .linear },
@@ -389,10 +391,20 @@ struct AppCommand: Identifiable {
                        let lib = c.library
                        if lib.maskBrushArmed {
                            lib.maskBrushArmed = false
+                       } else if lib.selectedMaskIsBrush {
+                           lib.maskBrushArmed = true
                        } else if let id = lib.selection {
                            lib.addMask(.brush, for: id)
                        }
                    }),
+        AppCommand(name: .brushSmaller, title: "Smaller Brush", key: "[", modifiers: [],
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.paintingBrush != nil },
+                   perform: { $0.library.stepBrushSize(larger: false) }),
+        AppCommand(name: .brushLarger, title: "Larger Brush", key: "]", modifiers: [],
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.paintingBrush != nil },
+                   perform: { $0.library.stepBrushSize(larger: true) }),
         // Every rejected photo of the open folder or collection, visible or
         // not, to the macOS Trash after a confirm (`TrashRequest`); the one
         // command that changes an original (D-465). Edit › Undo Move to Trash
