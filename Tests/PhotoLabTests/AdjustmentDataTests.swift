@@ -59,6 +59,7 @@ final class AdjustmentDataTests: XCTestCase {
         func requestAuthorization() async -> PhotosAuthorization { .authorized }
         func albums() -> [PhotosAlbum] { [AdjustmentDataTests.album] }
         func assets(in album: PhotosAlbum) -> [PhotosAsset] { assetList }
+        func originalFilename(of assetID: String) -> String? { assetList.first { $0.id == assetID }?.originalFilename }
         func thumbnail(for assetID: String, maxPixelSize: Int) -> NSImage? { nil }
         func writeOriginal(of assetID: String, to url: URL) async throws {
             let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))

@@ -70,6 +70,9 @@ final class PhotosTests: XCTestCase {
             count { assetsCalls += 1 }
             return assetsByAlbum[album.id] ?? []
         }
+        func originalFilename(of assetID: String) -> String? {
+            assetsByAlbum.values.lazy.compactMap { $0.first { $0.id == assetID } }.first?.originalFilename
+        }
         func thumbnail(for assetID: String, maxPixelSize: Int) -> NSImage? {
             count { thumbnailCalls += 1 }
             guard assetsByAlbum.values.contains(where: { $0.contains { $0.id == assetID } }) else { return nil }

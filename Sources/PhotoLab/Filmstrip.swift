@@ -55,6 +55,7 @@ struct FilmstripView: View {
                     ForEach(items) { item in
                         FilmstripCell(item: item, side: cell)
                             .id(item.id)
+                            .task(id: item.id) { if !item.photo.isNamed { await library.resolveName(item.id) } }
                             .contextMenu { PhotoContextMenu(photo: item.photo) }
                             .onTapGesture {
                                 let flags = NSEvent.modifierFlags
@@ -135,7 +136,7 @@ private struct FilmstripCell: View {
         }
         .opacity(item.marks.flag == .reject ? 0.55 : 1)
         .contentShape(Rectangle())
-        .help(failed ? "Can't open \(item.photo.name)" : item.photo.name)
+        .help(failed ? "Can't open \(item.photo.caption)" : item.photo.caption)
         .task(id: item.key) {
             switch await Thumbnails.shared.resolve(item.key, showing: image) {
             case .image(let found): image = found; failed = false
@@ -144,7 +145,7 @@ private struct FilmstripCell: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(item.photo.name)
+        .accessibilityLabel(item.photo.caption)
         .accessibilityAddTraits(.isButton)
     }
 }

@@ -39,16 +39,19 @@ struct PhotosAlbum: Identifiable, Hashable, Sendable {
 }
 
 /// One image asset as listed: its `localIdentifier` (`UUID/L0/001`, the
-/// `PhotoID.asset` form) and the file name of the original resource that
-/// `PhotosSource.originalFile(for:)` writes out (the RAW of a RAW+JPEG
-/// pair, else the photo itself).
+/// `PhotoID.asset` form), its capture date, and the file name of the
+/// original resource that `PhotosSource.originalFile(for:)` writes out (the
+/// RAW of a RAW+JPEG pair, else the photo itself) when the listing read it.
+/// The live listing never does: the name is a resource read per asset, so
+/// it is asked per visible cell (`PhotoKitClient.originalFilename(of:)`).
 struct PhotosAsset: Hashable, Sendable {
     let id: String
-    let originalFilename: String
+    /// Nil when the listing did not read it (the live client's never does).
+    let originalFilename: String?
     /// The asset's `creationDate` (its capture time), nil when Photos has none.
     let creationDate: Date?
 
-    init(id: String, originalFilename: String, creationDate: Date? = nil) {
+    init(id: String, originalFilename: String?, creationDate: Date? = nil) {
         self.id = id
         self.originalFilename = originalFilename
         self.creationDate = creationDate
@@ -68,8 +71,15 @@ protocol PhotoKitClient: Sendable {
     func requestAuthorization() async -> PhotosAuthorization
     /// Recents first, then the regular albums by title.
     func albums() -> [PhotosAlbum]
-    /// The album's images, oldest capture first.
+    /// The album's images, oldest capture first: identifier and capture
+    /// date only (one pass over the fetch result, no resource read), so a
+    /// Recents of thousands lists at once; names come later, per asset.
     func assets(in album: PhotosAlbum) -> [PhotosAsset]
+    /// The original resource's file name (`PhotoKitLive.originalResource`),
+    /// or nil when the asset is gone or has none. Synchronous and off the
+    /// main thread (`PhotosSource.name(for:)` under
+    /// `Library.resolveName(_:)`); may check `Task.isCancelled` first.
+    func originalFilename(of assetID: String) -> String?
     /// A downsample of the UNADJUSTED asset (PhotoLab edits the original;
     /// an edit made in Photos is not shown), or nil.
     func thumbnail(for assetID: String, maxPixelSize: Int) -> NSImage?
@@ -218,6 +228,8 @@ struct PhotoKitLive: PhotoKitClient {
         return options
     }
 
+    /// The fetch result's identifiers and creation dates, nothing else: no
+    /// `PHAssetResource` read (that is `originalFilename(of:)`, per cell).
     func assets(in album: PhotosAlbum) -> [PhotosAsset] {
         guard canRead,
               let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id],
@@ -226,10 +238,14 @@ struct PhotoKitLive: PhotoKitClient {
         var out: [PhotosAsset] = []
         out.reserveCapacity(fetched.count)
         fetched.enumerateObjects { asset, _, _ in
-            let name = Self.originalResource(of: asset)?.originalFilename ?? asset.localIdentifier
-            out.append(PhotosAsset(id: asset.localIdentifier, originalFilename: name, creationDate: asset.creationDate))
+            out.append(PhotosAsset(id: asset.localIdentifier, originalFilename: nil, creationDate: asset.creationDate))
         }
         return out
+    }
+
+    func originalFilename(of assetID: String) -> String? {
+        guard !Task.isCancelled, let asset = asset(assetID) else { return nil }
+        return Self.originalResource(of: asset)?.originalFilename
     }
 
     private func asset(_ id: String) -> PHAsset? {
@@ -447,8 +463,10 @@ struct PhotosAccess: Sendable {
 
 /// One Photos album as a `PhotoSource`. Listing needs authorization
 /// (`photos()` throws `PhotosError.notAuthorized` before it, so `Library`
-/// refuses the open and nothing is fetched); names are the originals'
-/// file names; thumbnails come from Photos' own cache through the client;
+/// refuses the open and nothing is fetched) and reads identifiers and
+/// capture dates only; names are the originals' file names, read per
+/// asset when a cell asks (`name(for:)`, unnamed in the listing unless the
+/// client's listing carried them); thumbnails come from Photos' own cache through the client;
 /// an original is written ONCE into `originalsDirectory` and read from
 /// there by the loupe master and the export (`OriginalsCache`). Sidecars
 /// take the flat naming under `sidecarDirectory`.
@@ -473,6 +491,15 @@ struct PhotosSource: PhotoSource {
         let assets = client.assets(in: album)
         originals.remember(assets)
         return assets.map { Photo(id: .asset($0.id), name: $0.originalFilename, captureDate: $0.creationDate) }
+    }
+
+    /// The original's file name, read from the library (one resource read)
+    /// and kept by `originals`, which names the cached copy from it. An
+    /// asset with no original resource is named by its identifier, as the
+    /// listing named it before names were lazy.
+    func name(for id: PhotoID) -> String? {
+        guard case .asset(let assetID) = id, client.authorizationStatus().canRead, !Task.isCancelled else { return nil }
+        return originals.name(of: assetID, client: client)
     }
 
     var sidecars: SidecarStore { SidecarStore(directory: sidecarDirectory, naming: .flat) }
@@ -529,6 +556,8 @@ struct PhotosSource: PhotoSource {
 final class OriginalsCache: @unchecked Sendable {
     let directory: URL
     private let lock = NSLock()
+    /// Every listed asset; a write is refused for any other.
+    private var listed: Set<String> = []
     private var names: [String: String] = [:]
     private var inFlight: [String: Task<URL, Error>] = [:]
 
@@ -536,16 +565,40 @@ final class OriginalsCache: @unchecked Sendable {
         self.directory = directory
     }
 
-    /// The listing's names, which give each copy its extension.
+    /// The listing: its assets, and the names it carried (each copy's
+    /// extension comes from its name; a name the listing left out is read
+    /// by `name(of:client:)` when first needed).
     func remember(_ assets: [PhotosAsset]) {
         lock.lock(); defer { lock.unlock() }
-        for asset in assets { names[asset.id] = asset.originalFilename }
+        for asset in assets {
+            listed.insert(asset.id)
+            if let name = asset.originalFilename { names[asset.id] = name }
+        }
     }
 
-    /// Where the asset's copy lives (nil for an asset not listed).
+    /// Where the asset's copy lives (nil for an asset not listed, or not
+    /// named yet).
     func url(for assetID: String) -> URL? {
         lock.lock(); defer { lock.unlock() }
         return names[assetID].map { target(assetID, name: $0) }
+    }
+
+    /// The listed asset's original file name: the one known, else read from
+    /// the client (outside the lock) and kept; the identifier when the
+    /// client has none. Nil for an asset not listed, and for a read the
+    /// caller's cancellation cut short (nothing is kept then).
+    func name(of assetID: String, client: any PhotoKitClient) -> String? {
+        lock.lock()
+        let isListed = listed.contains(assetID), known = names[assetID]
+        lock.unlock()
+        guard isListed else { return nil }
+        if let known { return known }
+        let read = client.originalFilename(of: assetID)
+        if read == nil, Task.isCancelled { return nil }
+        lock.lock(); defer { lock.unlock() }
+        if let raced = names[assetID] { return raced }
+        names[assetID] = read ?? assetID
+        return read ?? assetID
     }
 
     private func target(_ assetID: String, name: String) -> URL {
@@ -555,6 +608,7 @@ final class OriginalsCache: @unchecked Sendable {
     }
 
     func file(for assetID: String, client: any PhotoKitClient) async throws -> URL {
+        _ = name(of: assetID, client: client)
         switch try claim(assetID, client: client) {
         case .onDisk(let url):
             return url

@@ -259,6 +259,21 @@ not only the pass.
   and disarms the tool, and Esc disarms it before leaving crop mode.
   Mutants: the sign flipped (11 failures, the renderer check among them)
   and the upright fold removed (5).
+- `PhotosLazyTests.swift` — a large Photos album behind `LazyPhotoKit`, a
+  fake that lists 5,000 unnamed assets and counts every name read (50 µs
+  each, optionally held on a semaphore): `Library.open(album:access:)`
+  returns inside a 50 ms `assertFrameBudget` with no name read, every photo
+  unnamed, in capture order, and the one sidecar found; names are read only
+  for the cells asked (`Library.resolveName`), once each, never on the main
+  thread; a cell cancelled while its read is held writes nothing, and a read
+  for a source reopened meanwhile is dropped; a sort by Name keeps the order
+  until `nameEveryPhoto` has named all, then sorts once; unnamed photos sort
+  last by id in either direction; an export names its output from the
+  asset's own name though no cell asked. Mutants: every name read in
+  `PhotosSource.photos()` (13 failures in the 4 ungated tests, the open at
+  349 ms against 50; the 2 gated tests hang on the held read), the
+  cancellation check dropped from `resolveName` (2), the Name sort's
+  naming rule dropped from `resort` (2).
 - `SortTests.swift` — `PhotoSort`: each key in both directions over a mix
   of file and asset ids through the one function, ties by name ascending
   then id, undated photos last in either direction, the order independent

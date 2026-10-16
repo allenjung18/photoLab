@@ -22,7 +22,10 @@ enum SortKey: String, CaseIterable, Sendable {
 /// A key and a direction; ties are broken by name (ascending, whatever the
 /// direction), then by the id, so the order is total and a re-sort never
 /// shuffles equal photos. A photo with no capture date sorts after every
-/// dated one in either direction.
+/// dated one in either direction, and an unnamed photo (`Photo.isNamed`
+/// false: a Photos asset whose name no cell has asked for yet) after every
+/// named one, unnamed ones by id. `Library.resort` never sorts by name
+/// while a photo is unnamed: it names them all first (`nameEveryPhoto`).
 struct PhotoSort: Equatable, Hashable, Sendable {
     var key: SortKey
     var ascending: Bool
@@ -80,9 +83,15 @@ struct PhotoSort: Equatable, Hashable, Sendable {
                 default: break
                 }
             case .name:
-                let c = Self.compareNames(a.photo, b.photo)
-                if c != .orderedSame { return ascending ? c == .orderedAscending : c == .orderedDescending }
-                return a.photo.id.cacheKey < b.photo.id.cacheKey
+                switch (a.photo.isNamed, b.photo.isNamed) {
+                case (true, false): return true
+                case (false, true): return false
+                case (false, false): return a.photo.id.cacheKey < b.photo.id.cacheKey
+                case (true, true):
+                    let c = Self.compareNames(a.photo, b.photo)
+                    if c != .orderedSame { return ascending ? c == .orderedAscending : c == .orderedDescending }
+                    return a.photo.id.cacheKey < b.photo.id.cacheKey
+                }
             case .rating, .edited:
                 if a.number != b.number { return ascending ? a.number < b.number : a.number > b.number }
             }
@@ -90,9 +99,15 @@ struct PhotoSort: Equatable, Hashable, Sendable {
         }.map(\.photo)
     }
 
-    /// Names in Finder's order (`IMG_2` before `IMG_10`).
+    /// Names in Finder's order (`IMG_2` before `IMG_10`); a named photo
+    /// before an unnamed one, two unnamed ones the same (the id decides).
     private static func compareNames(_ a: Photo, _ b: Photo) -> ComparisonResult {
-        a.name.localizedStandardCompare(b.name)
+        switch (a.isNamed, b.isNamed) {
+        case (true, true): return a.name.localizedStandardCompare(b.name)
+        case (true, false): return .orderedAscending
+        case (false, true): return .orderedDescending
+        case (false, false): return .orderedSame
+        }
     }
 
     /// Equal keys: by name, then by id, both ascending.
@@ -195,8 +210,20 @@ extension Library {
     }
 
     /// Re-orders `photos` by `sort`. Only the order moves: the selection,
-    /// the anchor, the loupe and every map keyed by id are untouched.
+    /// the anchor, the loupe and every map keyed by id are untouched. A sort
+    /// by name while some photo is unnamed (a Photos album) keeps the
+    /// current order and names every photo off the main thread first
+    /// (`nameEveryPhoto`), which sorts once when the names are in.
     func resort() {
+        if sort.key == .name, source != nil, photos.contains(where: { !$0.isNamed }) {
+            nameEveryPhoto()
+            return
+        }
+        sortNow()
+    }
+
+    /// `resort` without the naming rule: unnamed photos last, by id.
+    func sortNow() {
         photos = sort.sorted(photos,
                              captureDate: { captureDates.date(for: $0) },
                              rating: { rating(for: $0) },

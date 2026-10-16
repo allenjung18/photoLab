@@ -311,8 +311,11 @@ PhotoKit, so the test fake is complete and no `PHAsset` leaves
 `PhotoKitLive`: `authorizationStatus()` (never a prompt),
 `requestAuthorization()` (the Allow button and nothing else calls it),
 `albums()` (Recents, then the regular albums by title), `assets(in:)`
-(images only, oldest capture first: `PhotoKitLive.assetFetchOptions()`),
-`thumbnail(for:maxPixelSize:)`, `writeOriginal(of:to:)`, and the three
+(images only, oldest capture first: `PhotoKitLive.assetFetchOptions()`;
+one pass over the fetch result for each asset's identifier and
+`creationDate`, no `PHAssetResource` read), `originalFilename(of:)` (the
+original resource's file name, `PhotoKitLive.originalResource(of:)`, one
+asset at a time), `thumbnail(for:maxPixelSize:)`, `writeOriginal(of:to:)`, and the three
 calls of the adjustment data (below): `hasAdjustments(_:)`,
 `adjustment(of:)` and `saveEdit(_:to:render:)`. The live
 client needs an app bundle: the system keys Photos access to a bundle
@@ -323,9 +326,22 @@ Welcome view checks before offering the album sheet.
 `PhotosSource.photos()` throws `PhotosError.notAuthorized` until the status
 reads (`PhotosAuthorization.canRead`: authorized or limited), so `Library`
 refuses the open and nothing is fetched; it lists the album through the
-client and names each photo by its original's file name
-(`PhotosAsset.originalFilename`), dating it by the asset's capture time
-(`PhotosAsset.creationDate` -> `Photo.captureDate`). Thumbnails come from Photos' own cache:
+client, dating each photo by the asset's capture time
+(`PhotosAsset.creationDate` -> `Photo.captureDate`) and leaving it unnamed
+(`PhotosAsset.originalFilename` nil -> `Photo.isNamed` false) unless the
+client's listing carried the name. A name is read per asset when asked,
+`PhotosSource.name(for:)` (the `PhotoSource` requirement, defaulting to nil
+for a source whose listing names everything) through
+`OriginalsCache.name(of:client:)`, which keeps it (the cached copy's
+extension comes from it; an asset with no original resource is named by
+its identifier, and a read cut short by cancellation keeps nothing).
+`Library.resolveName(_:)` is the one caller on screen: each visible grid and
+filmstrip cell, off the main thread, a cancelled cell writing nothing
+(Features, Opening a source); an export (`Library.exportItems(for:)`) and a
+Save to Photos await it for their photo, so an output is never named by an
+asset identifier. So a Recents of thousands opens with no name read and
+`SidecarStore.loadAll` lists the flat sidecar directory once instead of
+checking a file per photo. Thumbnails come from Photos' own cache:
 the live client asks `PHImageManager` synchronously (480 px aspect-fit,
 version unadjusted, high quality, fast resize, iCloud allowed) from inside
 `Thumbnails`' detached decode, and a request cancelled while it waits is
@@ -468,7 +484,8 @@ URL forms (`SidecarStore.url(for:)` of a file URL, and the rest) are
   `Sidecar.currentVersion` (`SidecarError.unsupportedVersion`): a file a
   newer build wrote reads as unreadable rather than losing the fields this
   build does not know. `loadAll(for:)` returns the non-default recipes, the
-  non-empty marks and the list of unreadable photos. `Library` shows those
+  non-empty marks and the list of unreadable photos; under the flat naming
+  it lists the directory once and reads only the ids with a file there. `Library` shows those
   as neutral, reports the first in `sidecarError`, and leaves the file alone
   until the user edits that photo.
 - An unreadable file is never overwritten. Before the first write or

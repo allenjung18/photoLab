@@ -213,11 +213,11 @@ final class PhotoInfoStore {
         self.reader = reader
     }
 
-    /// What is known before any read: the name and, for an asset, the
-    /// listing's capture date.
+    /// What is known before any read: the name (none while the photo is
+    /// unnamed) and, for an asset, the listing's capture date.
     static func listing(_ photo: Photo) -> PhotoInfo {
         var info = PhotoInfo()
-        info.fileName = photo.name
+        info.fileName = photo.isNamed ? photo.name : nil
         info.folder = photo.fileURL?.deletingLastPathComponent()
         info.captureDate = photo.captureDate
         return info
@@ -246,7 +246,7 @@ final class PhotoInfoStore {
             captureDates.remember(info.captureDate, for: photo.id)
             info.captureDate = captureDates.date(for: photo)
         case .asset:
-            info.fileName = photo.name
+            info.fileName = photo.isNamed ? photo.name : nil
             info.folder = nil
             info.captureDate = photo.captureDate
         }
@@ -269,10 +269,19 @@ struct InfoSection: View {
         let file: URL?
     }
 
-    var body: some View {
-        let info = loaded.flatMap { $0.id == photo.id ? $0.info : nil }
+    /// The loaded info, else the store's, else the listing's; an asset's
+    /// File row is always the photo's current name, which may land after
+    /// its header was read (`Library.resolveName`).
+    private var shown: PhotoInfo {
+        var info = loaded.flatMap { $0.id == photo.id ? $0.info : nil }
             ?? library.photoInfo.cached(photo.id)
             ?? PhotoInfoStore.listing(photo)
+        if case .asset = photo.id { info.fileName = photo.isNamed ? photo.name : nil }
+        return info
+    }
+
+    var body: some View {
+        let info = shown
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
             ForEach(info.rows(edited: library.isEdited(photo.id))) { row in
                 GridRow {

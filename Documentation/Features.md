@@ -65,9 +65,17 @@ bundle, never to a bare binary.
   through `Library.open(_:)`: before access is allowed `photos()` throws
   `PhotosError.notAuthorized` and the open is refused like a missing path
   (`openError`). The grid then shows the album in its sort (oldest capture
-  first until another is picked, see Grid, Sort), named
-  by the originals' file names; the thumbnails come from Photos
-  (`Thumbnails.source`, Architecture 1).
+  first until another is picked, see Grid, Sort): every cell at once from
+  the listing (identifiers and capture dates only, `PhotoKitClient.assets(in:)`),
+  each photo unnamed (`Photo.isNamed` false, an empty `Photo.caption`) until
+  its cell is on screen. A grid or filmstrip cell's `.task(id:)` calls
+  `Library.resolveName(_:)`, which reads the original's file name
+  (`PhotosSource.name(for:)`) off the main thread and writes it into
+  `Library.photos`; SwiftUI cancels the task when the cell scrolls away, the
+  cancellation reaches the read, and a read that lands for a cancelled cell
+  (or for a source opened since) writes nothing. The thumbnails come from
+  Photos through the same per-cell, cancellable path (`Thumbnails.source`,
+  Architecture 1).
 - **Open Recent and reopening where you left off** (`Recents.swift`). The
   last 10 sources, folders and Photos albums alike, are kept most recent
   first and deduped under `recentSources` in the library's `UserDefaults`
@@ -143,7 +151,13 @@ selected. Selecting a photo scrolls it into view.
   (Finder's `localizedStandardCompare`), then by id; a photo with no capture
   date sorts after every dated one in either direction. Name compares
   `Photo.name` (the file name), so a folder's subfolders interleave rather
-  than group. A change re-sorts at once and moves only the order: the
+  than group. An unnamed photo (a Photos asset no cell has named yet) sorts
+  after every named one in either direction, unnamed ones by id, and loses a
+  name tie-break to a named one. A sort by Name never runs over unnamed
+  photos: `Library.resort()` keeps the current order and starts
+  `Library.nameEveryPhoto()`, one detached pass naming every unnamed photo
+  (cancelled by the next `open`), which writes the names in one change and
+  sorts once (`Library.sortNow()`). A change re-sorts at once and moves only the order: the
   anchor, the selection and the loupe stay. Under Rating a rating change
   re-sorts (`setRating`), under Edited a photo gaining or losing its edit
   does (`Library.apply`, so undo too). The capture date is
@@ -472,7 +486,8 @@ redo, Reset, the render time and any sidecar error.
   date is the sort's (`CaptureDates.date(properties:url:)`, and a date the
   sort already has wins; the store hands its own to
   `CaptureDates.remember`, so a later Capture Date sort reads nothing). A
-  Photos asset shows the listing's name and `creationDate` at once, then the
+  Photos asset shows its name (no File row while it is unnamed; the row
+  follows `Photo.name` when the name lands) and `creationDate` at once, then the
   header fields of the original the loupe fetched, with no Folder row (that
   copy is the originals cache). Writes nothing.
 - **Histogram and clipping.** `HistogramView` (`HistogramView.swift`) at the

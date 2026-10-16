@@ -29,7 +29,10 @@ Assistant › Create a Certificate, type Code Signing, e.g. "PhotoLab Dev")
 and build with `PHOTOLAB_SIGN_IDENTITY="PhotoLab Dev" scripts/bundle.sh
 --open`. PhotoLab reads the originals (the RAW of a RAW+JPEG pair) and
 shows them unadjusted: an edit made in Photos is not shown. An iCloud-only
-original is downloaded the first time its photo opens in the loupe.
+original is downloaded the first time its photo opens in the loupe. A large
+album (a Recents of thousands) opens at once: every cell is there from the
+start, and each photo's name and thumbnail load as its cell scrolls into
+view, so a caption stays blank until then.
 
 **Save to Photos** (File menu, or the loupe's toolbar button, for an edited
 photo of a Photos album) writes the edit into Photos itself: Photos shows
@@ -91,7 +94,8 @@ above the grid) orders the grid by Capture Date, Name, Rating or Edited, Ascendi
 Descending; the filmstrip and `←` `→` follow it, ties go by name, a photo with no
 capture date goes last, and the choice is remembered once for folders and once for
 Photos albums (a folder opens by name, an album oldest capture first until you pick
-another). A file's capture date is its EXIF DateTimeOriginal, else the file's date. After an export, **Details…** lists every photo that failed or was
+another). Sorting a Photos album by Name first reads every photo's name in the
+background; the album keeps its order until the names are in, then sorts once. A file's capture date is its EXIF DateTimeOriginal, else the file's date. After an export, **Details…** lists every photo that failed or was
 skipped. Render timings stay out of the panel and the tooltips unless you run
 `defaults write <bundle id> showTimings -bool YES`.
 

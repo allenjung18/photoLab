@@ -41,17 +41,39 @@ enum PhotoID: Hashable, Codable, Sendable {
 /// the capture date when the listing carries one (a Photos asset's
 /// `creationDate`; nil for a file, whose date `CaptureDates` reads on
 /// demand).
+///
+/// A listing may leave a photo unnamed (a Photos album: reading an asset's
+/// original file name is a resource read per asset, so it is asked per
+/// visible cell instead, `Library.resolveName(_:)`). Such a photo has
+/// `isNamed` false and `name` the id's own name until the source names it.
 struct Photo: Identifiable, Hashable, Sendable {
     let id: PhotoID
-    let name: String
+    /// The source's name for the photo; `id.defaultName` while `isNamed` is false.
+    private(set) var name: String
+    /// False while the source has not named the photo yet.
+    private(set) var isNamed: Bool
     let fileURL: URL?
     let captureDate: Date?
 
-    init(id: PhotoID, name: String, captureDate: Date? = nil) {
+    /// `name` nil: the listing did not name the photo (`isNamed` false).
+    init(id: PhotoID, name: String?, captureDate: Date? = nil) {
         self.id = id
-        self.name = name
+        self.name = name ?? id.defaultName
+        self.isNamed = name != nil
         self.fileURL = id.fileURL
         self.captureDate = captureDate
+    }
+
+    /// What a cell's caption and tooltip show: the name, or nothing while
+    /// the photo is unnamed (never the asset identifier).
+    var caption: String { isNamed ? name : "" }
+
+    /// The photo with the name its source resolved.
+    func named(_ name: String) -> Photo {
+        var p = self
+        p.name = name
+        p.isNamed = true
+        return p
     }
 
     /// A photo in a folder: identity, name and file are all the URL.
@@ -80,6 +102,16 @@ protocol PhotoSource: Sendable {
     /// The file holding the photo's original pixels, for the one decode
     /// path (`Renderer.previewMaster`, `Renderer.fullResolution`).
     func originalFile(for id: PhotoID) async throws -> URL
+    /// The name of a photo `photos()` listed unnamed (`Photo.isNamed`
+    /// false), or nil. Synchronous: `Library.resolveName(_:)` calls it off
+    /// the main thread, one visible cell at a time, and it may check
+    /// `Task.isCancelled` first.
+    func name(for id: PhotoID) -> String?
+}
+
+extension PhotoSource {
+    /// A source whose listing names every photo is never asked.
+    func name(for id: PhotoID) -> String? { nil }
 }
 
 /// A folder of photos: `Library.scan` lists it, `SidecarStore(folder:)`

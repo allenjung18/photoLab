@@ -92,6 +92,10 @@ final class Library {
     }
     /// Capture dates read for the `.captureDate` sort, once per photo.
     let captureDates: CaptureDates
+    /// Bumped by every `open`: a name read for an earlier source is dropped.
+    @ObservationIgnored private var openGeneration = 0
+    /// The running `nameEveryPhoto` pass, if any.
+    @ObservationIgnored private(set) var namingAll: Task<Void, Never>?
     /// The Info section's header reads, once per photo (`PhotoInfoStore`).
     let photoInfo: PhotoInfoStore
     /// The anchor of the selection: the photo the loupe shows, the one a
@@ -317,6 +321,9 @@ final class Library {
         openError = nil
         restoringViewState = true
         defer { restoringViewState = false }
+        openGeneration += 1
+        namingAll?.cancel()
+        namingAll = nil
         self.source = source
         Thumbnails.shared.source = source
         selection = nil
@@ -345,9 +352,61 @@ final class Library {
     }
 
     /// The photo's display name as its source gave it (the file name for a
-    /// folder); the id's own name for a photo not in the listing.
+    /// folder); the id's own name for a photo not in the listing or not
+    /// named yet (`resolveName(_:)`).
     func name(for id: Photo.ID) -> String {
         photos.first { $0.id == id }?.name ?? id.defaultName
+    }
+
+    /// Names one photo the listing left unnamed (a Photos asset): the
+    /// source's `name(for:)` runs off the main thread and the name is
+    /// written into `photos`. Asked by each visible grid and filmstrip
+    /// cell from its `.task`, which SwiftUI cancels when the cell scrolls
+    /// away: the cancellation reaches the read, and a read that finishes
+    /// for a cancelled cell (or for a source opened since) writes nothing.
+    /// A named photo, or one not listed, asks nothing. Also awaited before
+    /// an export or a Save to Photos names its output.
+    func resolveName(_ id: Photo.ID) async {
+        guard let source, photos.contains(where: { $0.id == id && !$0.isNamed }) else { return }
+        let generation = openGeneration
+        let read = Task.detached(priority: .utility) { source.name(for: id) }
+        let name = await withTaskCancellationHandler { await read.value } onCancel: { read.cancel() }
+        guard !Task.isCancelled, generation == openGeneration, let name else { return }
+        setNames([id: name])
+    }
+
+    /// The sort by name's pass (`resort`): every unnamed photo named in one
+    /// detached loop, written in one change, then sorted. Started once per
+    /// source; a new `open` cancels it and drops what it read.
+    func nameEveryPhoto() {
+        guard namingAll == nil, let source else { return }
+        let ids = photos.filter { !$0.isNamed }.map(\.id)
+        let generation = openGeneration
+        namingAll = Task { [weak self] in
+            let read = Task.detached(priority: .userInitiated) { () -> [Photo.ID: String] in
+                var out: [Photo.ID: String] = [:]
+                for id in ids {
+                    if Task.isCancelled { break }
+                    if let name = source.name(for: id) { out[id] = name }
+                }
+                return out
+            }
+            let names = await withTaskCancellationHandler { await read.value } onCancel: { read.cancel() }
+            guard let self, !Task.isCancelled, generation == self.openGeneration else { return }
+            self.namingAll = nil
+            self.setNames(names)
+            if self.sort.key == .name { self.sortNow() }
+        }
+    }
+
+    /// Writes resolved names into `photos` in one change; the order stays.
+    private func setNames(_ names: [Photo.ID: String]) {
+        guard !names.isEmpty else { return }
+        var updated = photos
+        for i in updated.indices where !updated[i].isNamed {
+            if let name = names[updated[i].id] { updated[i] = updated[i].named(name) }
+        }
+        photos = updated
     }
 
     /// The file holding the photo's original pixels, from the open source
@@ -626,6 +685,7 @@ final class Library {
         closeOpenEdit()
         let recipe = recipe(for: id)
         photosSave = .saving(id)
+        await resolveName(id)
         do {
             try await source.saveEdit(recipe, for: id, name: name(for: id))
             photosSave = .saved(id)
@@ -711,7 +771,10 @@ final class Library {
             // A Photos original's cached copy is named by its id: the output
             // takes the photo's own name instead. Folder photos keep theirs.
             var own: String?
-            if case .asset = id { own = name(for: id) }
+            if case .asset = id {
+                await resolveName(id)
+                own = name(for: id)
+            }
             resolved.append((try await originalFile(for: id), recipe(for: id), own))
         }
         let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))

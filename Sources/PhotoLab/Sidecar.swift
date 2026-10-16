@@ -168,12 +168,20 @@ struct SidecarStore: Sendable {
     /// Every readable sidecar among `ids`: the non-default recipes and
     /// the non-empty marks, each keyed by photo id, plus the photos whose
     /// sidecar exists but could not be read.
+    /// Under the flat naming the directory is listed once and only the ids
+    /// with a file there are read, so a Photos Recents of thousands costs
+    /// one listing, not a file check per photo.
     func loadAll(for ids: [PhotoID]) -> (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks], unreadable: [PhotoID]) {
         guard FileManager.default.fileExists(atPath: directory.path) else { return ([:], [:], []) }
         var recipes: [PhotoID: Recipe] = [:]
         var marks: [PhotoID: Marks] = [:]
         var unreadable: [PhotoID] = []
-        for id in ids {
+        var candidates = ids
+        if naming == .flat, let present = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
+            let files = Set(present)
+            candidates = ids.filter { files.contains(relativeName(for: $0) + "." + Self.fileExtension) }
+        }
+        for id in candidates {
             do {
                 guard let doc = try read(for: id) else { continue }
                 if !doc.recipe.isDefault { recipes[id] = doc.recipe }

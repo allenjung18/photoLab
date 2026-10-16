@@ -185,6 +185,8 @@ struct GridView: View {
                                           marks: library.marks(for: photo.id),
                                           recipe: library.recipe(for: photo.id))
                                 .id(photo.id)
+                                // Only a cell on screen names its photo; scrolling away cancels it.
+                                .task(id: photo.id) { if !photo.isNamed { await library.resolveName(photo.id) } }
                                 .contextMenu { PhotoContextMenu(photo: photo) }
                                 .onTapGesture(count: 2) {
                                     library.selection = photo.id
@@ -514,7 +516,7 @@ struct ThumbnailCell: View {
                 } else if failed {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
-                        .help("Can't open \(photo.name)")
+                        .help("Can't open \(photo.caption)")
                 } else {
                     ProgressView().controlSize(.small)
                 }
@@ -561,14 +563,14 @@ struct ThumbnailCell: View {
                 }
             }
             .opacity(marks.flag == .reject ? 0.55 : 1)
-            Text(photo.name)
+            Text(photo.caption)
                 .font(.caption)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(selected ? .primary : .secondary)
         }
         .contentShape(Rectangle())
-        .help(photo.name)
+        .help(photo.caption)
         .task(id: Thumbnails.Key(photo.id, recipe: recipe)) {
             // The entry for this photo and recipe when it is there; else the
             // plain thumbnail first (or whatever the cell already shows, the
