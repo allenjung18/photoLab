@@ -496,4 +496,21 @@ final class MasksPanelTests: XCTestCase {
                                                     recipe: item.recipe, sourceExtent: master.extent))
         XCTAssertGreaterThan(redness(tinted, frame.width / 2, 0), 50, "the same frame tinted is red")
     }
+
+    // MARK: Fits the panel
+
+    /// The Masks section never asks for more width than the panel's content
+    /// column (`AdjustmentsPanel.contentWidth`). A row wider than that widens
+    /// the whole panel's stack, which the panel then clips on both sides, so
+    /// every section loses its margins (2026-10-16: seven add buttons in one row).
+    func testTheMasksSectionFitsThePanelColumn() throws {
+        let (lib, _, ids) = try openTwo()
+        let photo = try XCTUnwrap(lib.photos.first { $0.id == ids[0] })
+        let host = NSHostingController(rootView: MasksSection(photo: photo).environment(lib))
+        // Offered the column, the section takes no more than it (text wraps;
+        // a row of fixed controls cannot, and comes back wider).
+        let width = host.sizeThatFits(in: CGSize(width: AdjustmentsPanel.contentWidth, height: 10_000)).width
+        XCTAssertLessThanOrEqual(width, AdjustmentsPanel.contentWidth,
+                                 "Masks asks for \(width) pt; the panel column is \(AdjustmentsPanel.contentWidth) pt")
+    }
 }

@@ -316,47 +316,49 @@ struct MasksSection: View {
         return "\(text) (\(shift)\(AppCommand.label(for: key)))"
     }
 
+    /// Two rows that share the panel's column (`AdjustmentsPanel.contentWidth`):
+    /// the masks you draw, then the masks found for you. Icons only, each button
+    /// as wide as its row allows; the title is the accessibility label and the
+    /// tooltip says the rest. One row of seven asked for 555 pt of a 248 pt
+    /// column and pushed every section of the panel against its edges.
     private var addRow: some View {
-        HStack(spacing: 6) {
-            placementToggle(.linear, .newLinearMask, "A new linear gradient: drag on the photo from full effect to none")
-            placementToggle(.radial, .newRadialMask, "A new radial gradient: drag on the photo from its centre to its edge")
-            Toggle(isOn: Binding(get: { library.maskBrushArmed },
-                                 set: { if $0 != library.maskBrushArmed { AppCommand.command(.brushMask).perform(context) } })) {
-                Label("Brush", systemImage: MaskKind.brush.systemImage)
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                placementToggle(.linear, .newLinearMask, "A new linear gradient: drag on the photo from full effect to none")
+                placementToggle(.radial, .newRadialMask, "A new radial gradient: drag on the photo from its centre to its edge")
+                Toggle(isOn: Binding(get: { library.maskBrushArmed },
+                                     set: { if $0 != library.maskBrushArmed { AppCommand.command(.brushMask).perform(context) } })) {
+                    fill(Label("Brush", systemImage: MaskKind.brush.systemImage))
+                }
+                .toggleStyle(.button)
+                .disabled(!AppCommand.command(.brushMask).isEnabled(context))
+                .help(help(.brushMask, "Paint the selected brush or automatic mask, or a new brush mask"))
             }
-            .toggleStyle(.button)
-            .disabled(!AppCommand.command(.brushMask).isEnabled(context))
-            .help(help(.brushMask, "Paint the selected brush or automatic mask, or a new brush mask"))
-            Button {
-                AppCommand.command(.selectSubject).perform(context)
-            } label: {
-                Label("Subject", systemImage: MaskKind.subject.systemImage)
+            HStack(spacing: 6) {
+                findButton(.selectSubject, Label("Subject", systemImage: MaskKind.subject.systemImage),
+                           "Select Subject: find the photo's subject on this Mac (Apple Vision) and mask it")
+                findButton(.selectPerson, Label("Person", systemImage: MaskKind.person.systemImage),
+                           "Select Person: find every person in the photo on this Mac (Apple Vision) and mask them")
+                findButton(.selectFaces, Label("Faces", systemImage: "face.smiling"),
+                           "Select Faces: one radial mask per face found on this Mac (Apple Vision)")
+                findButton(.selectSky, Label("Sky", systemImage: MaskKind.sky.systemImage),
+                           "Select Sky (guess): mask the sky by its colour and its place above the horizon, on this Mac; refine it with the brush")
             }
-            .disabled(!AppCommand.command(.selectSubject).isEnabled(context))
-            .help("Select Subject: find the photo's subject on this Mac (Apple Vision) and mask it")
-            Button {
-                AppCommand.command(.selectPerson).perform(context)
-            } label: {
-                Label("Person", systemImage: MaskKind.person.systemImage)
-            }
-            .disabled(!AppCommand.command(.selectPerson).isEnabled(context))
-            .help("Select Person: find every person in the photo on this Mac (Apple Vision) and mask them")
-            Button {
-                AppCommand.command(.selectFaces).perform(context)
-            } label: {
-                Label("Faces", systemImage: "face.smiling")
-            }
-            .disabled(!AppCommand.command(.selectFaces).isEnabled(context))
-            .help("Select Faces: one radial mask per face found on this Mac (Apple Vision)")
-            Button {
-                AppCommand.command(.selectSky).perform(context)
-            } label: {
-                Label("Sky", systemImage: MaskKind.sky.systemImage)
-            }
-            .disabled(!AppCommand.command(.selectSky).isEnabled(context))
-            .help("Select Sky (guess): mask the sky by its colour and its place above the horizon, on this Mac; refine it with the brush")
         }
+        .labelStyle(.iconOnly)
         .controlSize(.small)
+    }
+
+    /// A button label that takes its share of the row.
+    private func fill(_ label: some View) -> some View {
+        label.frame(maxWidth: .infinity)
+    }
+
+    /// Select Subject / Person / Faces / Sky: one detection on this Mac.
+    private func findButton(_ name: AppCommand.Name, _ label: Label<Text, Image>, _ text: String) -> some View {
+        Button { AppCommand.command(name).perform(context) } label: { fill(label) }
+            .disabled(!AppCommand.command(name).isEnabled(context))
+            .help(text)
     }
 
     /// New Linear / New Radial: armed while the next drag on the photo will
@@ -364,7 +366,7 @@ struct MasksSection: View {
     private func placementToggle(_ kind: MaskKind, _ name: AppCommand.Name, _ text: String) -> some View {
         Toggle(isOn: Binding(get: { library.maskPlacement == kind },
                              set: { if $0 != (library.maskPlacement == kind) { AppCommand.command(name).perform(context) } })) {
-            Label(kind.title, systemImage: kind.systemImage)
+            fill(Label(kind.title, systemImage: kind.systemImage))
         }
         .toggleStyle(.button)
         .disabled(!AppCommand.command(name).isEnabled(context))

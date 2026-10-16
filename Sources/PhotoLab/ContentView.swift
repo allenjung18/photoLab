@@ -1054,7 +1054,7 @@ struct LoupeView: View {
             }
             Divider()
             AdjustmentsPanel(photo: photo, file: resolvedFile, fetch: fetch, preview: preview)
-                .frame(width: 280)
+                .frame(width: AdjustmentsPanel.width)
                 .clipped()
                 // A photo file dropped on the panel is the Match Look reference.
                 .dropDestination(for: URL.self) { urls, _ in
@@ -1632,6 +1632,14 @@ extension EnvironmentValues {
 }
 
 struct AdjustmentsPanel: View {
+    /// The panel's width beside the photo, and the inset its scrolling
+    /// content keeps from each edge.
+    static let width: CGFloat = 280
+    static let inset: CGFloat = 16
+    /// What a section may use: a section asking for more widens the stack and
+    /// the panel clips it on both sides (MasksPanelTests' fit test).
+    static var contentWidth: CGFloat { width - 2 * inset }
+
     @Environment(Library.self) private var library
     let photo: Photo
     /// The photo's original file; nil until the source has it.
@@ -1719,7 +1727,7 @@ struct AdjustmentsPanel: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(Self.inset)
             }
             Divider()
             VStack(spacing: 8) {

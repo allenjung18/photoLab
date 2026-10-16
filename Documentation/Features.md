@@ -862,7 +862,10 @@ in the library (the rendered JPEG and PhotoLab's adjustment data).
 
 ## Adjustments panel
 
-`AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the histogram, the
+`AdjustmentsPanel(photo:preview:)` (`ContentView.swift`), `AdjustmentsPanel.width`
+(280 pt) beside the photo with its content inset `AdjustmentsPanel.inset` (16 pt)
+from each edge; a section must fit the 248 pt between (`contentWidth`), or the
+panel clips the whole stack on both sides: the histogram, the
 Info section (closed by default), the History section (closed by default),
 the Presets strip, the Masks section, one `DisclosureGroup` per `AdjustmentKind.Section` in
 declaration order (Basic open by default), each with a dot when any of its
@@ -926,7 +929,11 @@ redo, Reset, the render time and any sidecar error.
   recipe).
 - **Masks** (`MasksPanel.swift`). `MasksSection(photo:)` is a
   `DisclosureGroup` after the Presets strip (open, with a dot while the
-  photo has a mask). **Linear**, **Radial**, **Brush**, **Subject**, **Person**, **Faces** and **Sky** run the Photo
+  photo has a mask). Its buttons are icons in two rows that share the
+  panel's column (`AdjustmentsPanel.contentWidth`, 248 pt): the masks you
+  draw (Linear, Radial, Brush), then the ones found for you (Subject,
+  Person, Faces, Sky); each title is the button's accessibility label and
+  tooltip. **Linear**, **Radial**, **Brush**, **Subject**, **Person**, **Faces** and **Sky** run the Photo
   menu's commands (**M**, **⇧M**, **K**; Select Subject, Select Person, Select Faces and Select Sky (guess) with no key). **Linear** and **Radial** are
   toggles: they arm placement (`Library.maskPlacement`, checked in the
   menu; the same key again, `Esc`, crop mode, compare, the eyedropper, the
