@@ -277,6 +277,18 @@ not only the pass.
   with `Region.rect(in:)`; a photo that fits the view stays at fit; a pan
   moves the window by the drag times the display scale and stops at the
   edge. Shown to bite by removing the clamp (7 failures in 2 tests).
+- `GradeWheelMathTests.swift` — the color-grading wheels:
+  `GradeWheelMath` maps 100 pucks over the disc to a point and back within
+  0.5° and 0.5 saturation; a point past the rim is saturation 100 at its
+  own angle and is drawn on the rim; the centre is saturation 0 and keeps
+  the caller's hue; red is at 3 o'clock and the hue runs counter-clockwise
+  (90° at 12 o'clock, green up-left, blue down-left), the direction
+  `ColorCubes.tintDirection` tints; setting and resetting a puck touch
+  only that range's hue and saturation. A `GradeWheelDrag` moves the
+  puck live through `setRecipe` and is ONE undo step and ONE sidecar
+  write at mouse-up (the crop-handle drag's pattern); the double-click
+  reset is one step, and none on a range already neutral. Shown to bite
+  by dropping the rim clamp (3 failures in 1 test).
 - `CropMathTests.swift` — crop mode's arithmetic (`CropMath`): a handle
   dragged in view points maps to the same normalised crop at display scale
   1 and 2 (the fit rect is in points) and the handle lands under the
@@ -618,7 +630,8 @@ sources, and a temp folder of synthetic photos per state (12 JPEGs, a PNG,
 a junk `.JPG` and a junk sidecar where a state needs them). One production
 seams exist for it, each with the app's behavior as the default:
 `PanelStart` (an environment value, unset in the app) opens the adjustments
-panel with chosen sections expanded; `hasBundle` (an environment value
+panel with chosen sections expanded (and Color Grading's Hue & Saturation
+disclosure, `gradingExact`; state 09g); `hasBundle` (an environment value
 defaulting to `PhotosAccess.hasBundle`) lets the Welcome view, the toolbar
 and the Export sheet be hosted with or without an app bundle; and
 `PhotosAlbumSheet(access:)` takes a fake Photos access. The Sync, Export and

@@ -205,7 +205,14 @@ album is open (the last 100 steps per photo) and is not saved.
   and highlights, plus **Balance**, which moves the line between shadows and
   highlights (positive gives the highlights more of the picture). A tint
   colours a grey and keeps its brightness; a hue with saturation 0 does
-  nothing. Applied after HSL and before local adjustments (masks).
+  nothing. Applied after HSL and before local adjustments (masks). Three
+  wheels, Shadows, Midtones and Highlights, set a range's hue and
+  saturation together: drag the puck (or anywhere on the disc), and the
+  angle is the hue (red at the right, running counter-clockwise through
+  yellow, green and blue) and the distance from the centre the saturation;
+  the drag is one undo step, and a double-click on a wheel resets that
+  range's hue and saturation. The luminance and Balance sliders sit under
+  the wheels; **Hue & Saturation** opens the six exact sliders.
 - **Detail** — clarity (local contrast), sharpening, grain.
 - **Effects** — vignette (negative darkens the corners).
 - **Crop & Rotate** — rotate (degrees, positive is clockwise; the frame is

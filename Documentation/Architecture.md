@@ -911,7 +911,12 @@ crop aspect (`Library.setCropAspect(_:frame:for:)`) and the straighten
 line (`Library.straighten(from:to:for:)`) are single `setRecipe` calls,
 one step each, like a menu command; so is the white-balance eyedropper
 (`Library.applyWhiteBalance(_:for:)`), which sets temperature and tint
-together, so one undo takes both back. Its solve
+together, so one undo takes both back. A color-grading wheel drag
+(`GradeWheelDrag`, `GradeWheel.swift`) is a slider drag with two values:
+its first move calls `beginEdit`, every move sets the range's hue and
+saturation through `setRecipe` (from `GradeWheelMath.puck(at:side:hueAtCentre:)`,
+pure, clamped at the rim), and mouse-up calls `endEdit`; the wheel's
+double-click (`GradeWheelDrag.reset`) is one `setRecipe`. Its solve
 (`WhiteBalance.neutralising`, `WhiteBalance.swift`) adds no adjustment
 kind and no renderer: it renders the sampled colour as a 1×1
 `CIImage(color:)` through `Renderer.apply` at candidate slider values

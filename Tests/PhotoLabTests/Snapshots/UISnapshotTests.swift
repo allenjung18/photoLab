@@ -144,7 +144,7 @@ final class UISnapshotTests: XCTestCase {
         if group != "main" { await shootSheetStates(h) }
         try h.writeIndex(notes: Self.notes, file: group == "all" ? "index.txt" : "index-\(group).txt")
         XCTAssertEqual(h.failures, [], "states that failed to write")
-        if group == "all" { XCTAssertEqual(h.written.count, 36, "every state of the catalogue was taken") }
+        if group == "all" { XCTAssertEqual(h.written.count, 37, "every state of the catalogue was taken") }
         // Every state in both modes, none flat.
         for s in h.written {
             for mode in SnapshotHarness.Mode.allCases {
@@ -255,6 +255,22 @@ final class UISnapshotTests: XCTestCase {
             var s = try await self.scene { lib, _, _ in try self.loupe(lib) }
             s.needsCanvas = true
             s.panelStart = PanelStart(sections: Set(AdjustmentKind.Section.allCases), hslChannel: .saturation)
+            return s
+        }
+        await h.shoot(shot("09g", "loupe-grading", "Color Grading open: the three wheels with their pucks off centre, the luminance and balance sliders, Hue & Saturation open",
+                           model: "as 08 with PanelStart(grading only, gradingExact); shadows hue 220 sat 40 (lower left), midtones hue 100 sat 20, highlights hue 40 sat 70 (upper right), shadow luminance -15, balance +20",
+                           caveat: materialNote + "; the panel is scrolled to its top, so the grading section shows under the histogram and the closed sections", size: CGSize(width: 1280, height: 1000))) {
+            var s = try await self.scene { lib, _, _ in
+                try self.loupe(lib) { r in
+                    r.set(.exposure, to: 0.3)
+                    r.set(.gradeShadowHue, to: 220); r.set(.gradeShadowSat, to: 40); r.set(.gradeShadowLum, to: -15)
+                    r.set(.gradeMidtoneHue, to: 100); r.set(.gradeMidtoneSat, to: 20)
+                    r.set(.gradeHighlightHue, to: 40); r.set(.gradeHighlightSat, to: 70)
+                    r.set(.gradeBalance, to: 20)
+                }
+            }
+            s.needsCanvas = true
+            s.panelStart = PanelStart(sections: [.grading], gradingExact: true)
             return s
         }
         await h.shoot(shot("10", "loupe-clipping", "exposure +3 with the clipping overlay: red highlights, lit histogram triangles",

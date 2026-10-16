@@ -1297,6 +1297,8 @@ struct CropOverlay: View {
 struct PanelStart: Equatable {
     var sections: Set<AdjustmentKind.Section>
     var hslChannel: AdjustmentKind.HSLChannel = .hue
+    /// Color Grading's Hue & Saturation disclosure open.
+    var gradingExact = false
 }
 
 private struct PanelStartKey: EnvironmentKey {
@@ -1321,6 +1323,7 @@ struct AdjustmentsPanel: View {
     @State private var expanded: Set<AdjustmentKind.Section> = [.basic]
     @State private var presetsExpanded = true
     @State private var hslChannel: AdjustmentKind.HSLChannel = .hue
+    @State private var gradingExact = false
     @Environment(\.panelStart) private var panelStart
 
     private var recipe: Binding<Recipe> {
@@ -1371,6 +1374,8 @@ struct AdjustmentsPanel: View {
                                     ForEach(AdjustmentKind.HSLBand.allCases, id: \.self) { band in
                                         row(.hsl(hslChannel, band))
                                     }
+                                } else if section == .grading {
+                                    gradingSection
                                 } else {
                                     if section == .geometry {
                                         cropButton
@@ -1447,6 +1452,7 @@ struct AdjustmentsPanel: View {
             if let start = panelStart {
                 expanded = start.sections
                 hslChannel = start.hslChannel
+                gradingExact = start.gradingExact
             }
         }
     }
@@ -1547,6 +1553,31 @@ struct AdjustmentsPanel: View {
         }
         .controlSize(.small)
         .disabled(frame == .zero)
+    }
+
+    /// Color Grading: the three wheels (`GradeWheel`, Shadows, Midtones,
+    /// Highlights) side by side, then the luminance and balance sliders,
+    /// then the six hue and saturation rows under a disclosure for exact
+    /// values. A wheel drag and a slider drag go through the same
+    /// `beginEdit` … `setRecipe` … `endEdit`.
+    @ViewBuilder private var gradingSection: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ForEach(AdjustmentKind.GradeRange.allCases, id: \.self) { range in
+                GradeWheel(range: range, photo: photo.id)
+            }
+        }
+        ForEach(AdjustmentKind.Section.grading.kinds.filter { $0.grade.map { $0.0 == .luminance } ?? true }) { kind in
+            row(kind)
+        }
+        DisclosureGroup("Hue & Saturation", isExpanded: $gradingExact) {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(AdjustmentKind.Section.grading.kinds.filter { $0.grade.map { $0.0 != .luminance } ?? false }) { kind in
+                    row(kind)
+                }
+            }
+            .padding(.top, 8)
+        }
+        .font(.callout)
     }
 
     private func row(_ kind: AdjustmentKind) -> some View {

@@ -714,11 +714,25 @@ redo, Reset, the render time and any sidecar error.
   picker (hue, saturation, luminance), then one row per
   `AdjustmentKind.HSLBand` for that channel, the kind looked up with
   `AdjustmentKind.hsl(_:_:)`, so eight rows stand in for twenty-four.
-  Color Grading (`AdjustmentKind.Section.grading`, between HSL and Detail)
-  is plain slider rows for now: hue (`format` in degrees, 0…360),
-  saturation (0…100) and luminance for Shadow, Midtone and Highlight
-  (`AdjustmentKind.GradeRange`), then Balance; the Sync sheet lists the
-  ten as checkboxes under Color Grading.
+  Color Grading (`AdjustmentKind.Section.grading`, between HSL and Detail,
+  `AdjustmentsPanel.gradingSection`) opens on three `GradeWheel`s side by
+  side, one per `AdjustmentKind.GradeRange` (captioned Shadows, Midtones,
+  Highlights), then the three luminance rows and Balance, then a **Hue &
+  Saturation** disclosure (closed by default) with the six hue (`format`
+  in degrees, 0…360) and saturation (0…100) rows for exact values. A
+  wheel is a hue disc (an `AngularGradient` listed from 360° down so the
+  hue runs counter-clockwise, white toward the centre) with a puck at the
+  range's hue (angle, red at 3 o'clock) and saturation (radius), placed
+  by `GradeWheelMath.point(for:side:)`. Dragging on it is a
+  `GradeWheelDrag`: the first move calls `Library.beginEdit`, every move
+  maps the pointer through `GradeWheelMath.puck(at:side:hueAtCentre:)`
+  (clamped to 100 at the rim) and sets the range's hue and saturation
+  through `Library.setRecipe`, mouse-up calls `Library.endEdit`, so a
+  drag is one undo step and one sidecar write. A double-click is
+  `GradeWheelDrag.reset` (`GradeWheelMath.resetting`: the range's hue and
+  saturation to 0, its luminance kept), one step. A wheel whose hue or
+  saturation is unchecked is dimmed and takes no drag. The Sync sheet
+  lists the ten kinds as checkboxes under Color Grading.
 - **Footer.** Undo and redo call `Library.undo()` and `Library.redo()`,
   enabled by `Library.canUndo` / `Library.canRedo`. **Reset** is
   `Library.resetRecipe(for:)` (one undo step; the sidecar is removed unless
