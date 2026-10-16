@@ -1075,7 +1075,11 @@ structure is listed under `XMPPreset.plainLabel` of its key, so nothing that
 may change a photo goes unlisted; `XMPPreset.metadataKeys` describe the file
 and are skipped. Neutral settings are not listed. The recipe starts from `Recipe.neutral`, so it
 carries no geometry, lens kind or mask, and `Preset(name:from:)` takes it as
-any other (`XMPPresetTests`). No screen reads it yet.
+any other (`XMPPresetTests`). `XMPImportModel` (`XMPImportSheet.swift`) reads it for
+the Import Lightroom Preset sheet: it parses on init, shows a parse error instead of
+throwing, and writes only through `PresetLibrary.save(_:as:)`; the moved sliders come
+from `RecipeDiff.moved(from:to:)` (`Presets.swift`), a pure diff against a recipe that the
+look-match sheet reuses (`XMPImportTests`).
 
 ### `ExportOptions`
 

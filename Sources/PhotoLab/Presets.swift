@@ -293,6 +293,9 @@ final class PresetLibrary {
     var error: String?
     /// Set by the Presets menu; the panel shows its Save sheet on it.
     var saveRequested = false
+    /// The Lightroom presets picked and not yet saved or cancelled, one sheet
+    /// each; the first is shown (`XMPImportSheet`).
+    var xmpImports: [XMPImportModel] = []
 
     let store: PresetStore
 
@@ -353,6 +356,21 @@ final class PresetLibrary {
         } catch {
             self.error = error.localizedDescription
             return nil
+        }
+    }
+}
+
+/// What one recipe changes against another, as a list for a sheet to show.
+/// Pure. Reused by the Lightroom import sheet (`XMPImportModel`) and the
+/// look-match sheet.
+enum RecipeDiff {
+    /// Every kind whose applied value (`Recipe.effective`, neutral when
+    /// disabled) in `to` differs from `from`, in `AdjustmentKind.allCases`
+    /// order, with `to`'s value. Masks are not listed.
+    static func moved(from: Recipe, to: Recipe) -> [(AdjustmentKind, Double)] {
+        AdjustmentKind.allCases.compactMap { kind in
+            let value = to.effective(kind)
+            return value == from.effective(kind) ? nil : (kind, value)
         }
     }
 }

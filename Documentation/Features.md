@@ -1235,6 +1235,17 @@ last preset error.
   as unreadable and still counts as stored (`PresetStore.exists`); a save
   under its name moves it to a `.unreadable-<stamp>` backup
   (`UnreadableBackup`) and never writes over it.
+- **Import Lightroom Preset…** (`AppCommand.Name.importLightroomPreset`, Presets
+  placement section 1, no key; also in the `…` menu) calls
+  `PresetLibrary.chooseLightroomPresets`: an `NSOpenPanel` for `.xmp`, several at
+  once, each file queued as an `XMPImportModel` in `PresetLibrary.xmpImports`;
+  `ContentView` shows the first as an `XMPImportSheet`. The sheet lists the name
+  (`PresetStore.validated`; a taken one asks Replace / Keep Both, and `keepBoth()`
+  takes the first free "name 2", "name 3"), `XMPImportModel.moved` (the sliders
+  `RecipeDiff.moved(from:to:)` finds against `Recipe.neutral`, titled "Moves N
+  sliders"), `XMPImport.approximated` and `clamped`, and `unsupportedLabels`
+  ("No equivalent in PhotoLab"). Save calls `PresetLibrary.save(_:as:)`; Cancel
+  and a parse error (shown in the sheet, with Close) write nothing.
 - **The Presets menu** (`PhotoLabApp.swift`): **Save Preset…** (loupe only),
   then every preset by name; a choice applies it to `Library.batchTargets`
   through `Library.apply(_:mask:to:)`, so in the grid it is a batch and in

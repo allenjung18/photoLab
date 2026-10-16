@@ -102,7 +102,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(AppCommand.items(in: .undoRedo).map(\.name), [.undo, .redo, .undoTrash, .undoRename])
         XCTAssertEqual(AppCommand.items(in: .pasteboard).map(\.name),
                        [.copySettings, .pasteSettings, .syncSettings, .selectAll, .search])
-        XCTAssertEqual(AppCommand.items(in: .presets).map(\.name), [.savePreset])
+        XCTAssertEqual(AppCommand.items(in: .presets).map(\.name), [.savePreset, .importLightroomPreset])
     }
 
     func testABareKeyIsNamedInItsMenuTitleAndAModifiedOneIsNot() {

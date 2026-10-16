@@ -344,6 +344,15 @@ install starts with six looks (Neutral, Warm Film, Cool Matte, High-Contrast
 B&W, Faded, Punchy); delete or change them freely, and the strip's `…` menu
 has Restore Starter Presets and Show Presets Folder in Finder.
 
+**Importing from Lightroom.** Presets › Import Lightroom Preset… (also in the
+strip's `…` menu; no key) opens a panel for `.xmp` files, several at once. Each
+file gets a sheet: the name (the file's own preset name, editable; if it is
+taken the sheet asks Replace or Keep Both, which saves as "name 2"), the
+sliders it moves with their values, the settings carried approximately or
+clamped, and a "No equivalent in PhotoLab" list of what does not carry over
+(Dehaze, Texture, masks, profiles and so on). Save writes one preset to the
+presets folder; Cancel writes nothing. PhotoLab only reads the file you pick.
+
 ## Batch
 
 Select several photos in the grid (`⇧`-click a range, `⌘`-click to add or

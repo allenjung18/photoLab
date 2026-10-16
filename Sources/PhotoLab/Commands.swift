@@ -40,7 +40,7 @@ struct AppCommand: Identifiable {
         case openFolder, openPhotos, deleteCollection, importCard, export, saveToPhotos
         case undo, redo, undoTrash, undoRename
         case copySettings, pasteSettings, syncSettings, selectAll, search
-        case savePreset
+        case savePreset, importLightroomPreset
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
@@ -239,6 +239,11 @@ struct AppCommand: Identifiable {
                    placement: .presets,
                    isEnabled: { c in c.library.loupe && c.library.selection != nil },
                    perform: { $0.presets?.saveRequested = true }),
+        // Presets › Import Lightroom Preset…: pick .xmp files, one sheet each.
+        AppCommand(name: .importLightroomPreset, title: "Import Lightroom Preset…", key: nil,
+                   placement: .presets, section: 1,
+                   isEnabled: { $0.presets != nil },
+                   perform: { $0.presets?.chooseLightroomPresets() }),
 
         // View: Lightroom's G / E and Z, the before/after keys, the clipping
         // warning, and the arrows that move the selection.

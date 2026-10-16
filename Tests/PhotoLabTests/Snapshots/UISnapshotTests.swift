@@ -144,7 +144,7 @@ final class UISnapshotTests: XCTestCase {
         if group != "main" { await shootSheetStates(h) }
         try h.writeIndex(notes: Self.notes, file: group == "all" ? "index.txt" : "index-\(group).txt")
         XCTAssertEqual(h.failures, [], "states that failed to write")
-        if group == "all" { XCTAssertEqual(h.written.count, 38, "every state of the catalogue was taken") }
+        if group == "all" { XCTAssertEqual(h.written.count, 39, "every state of the catalogue was taken") }
         // Every state in both modes, none flat.
         for s in h.written {
             for mode in SnapshotHarness.Mode.allCases {
@@ -423,6 +423,28 @@ final class UISnapshotTests: XCTestCase {
                            caveat: "materials may render flat; if the error is an alert, it is a window-level sheet and may not draw offscreen (look in the PNG)")) {
             var s = try await self.scene(unreadablePreset: true) { lib, _, _ in try self.loupe(lib) }
             s.needsCanvas = true
+            return s
+        }
+        await h.shoot(shot("21", "xmp-import-sheet", "the Import Lightroom Preset sheet: Warm Fade.xmp moves 8 sliders (a point curve included), one approximated setting, Dehaze and Masks have no equivalent",
+                           model: "XMPImportModel over a hand-written XMP (Exposure, Contrast, Vibrance, a point curve, Dehaze, a mask group) on a PresetLibrary in a temp folder; nothing is saved",
+                           caveat: sheetNote, size: fit)) {
+            let base = FileManager.default.temporaryDirectory.appendingPathComponent("photolab-snap-xmp-\(UUID().uuidString)", isDirectory: true)
+            let presets = PresetLibrary(store: PresetStore(directory: base.appendingPathComponent("presets")))
+            let xmp = """
+                <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+                  crs:PresetName="Warm Fade" crs:Exposure2012="+0.50" crs:Contrast2012="-20" crs:Vibrance="+10"
+                  crs:Saturation="-12" crs:Dehaze="+20">
+                <crs:ToneCurvePV2012><rdf:Seq><rdf:li>0, 12</rdf:li><rdf:li>128, 140</rdf:li><rdf:li>255, 255</rdf:li></rdf:Seq></crs:ToneCurvePV2012>
+                <crs:MaskGroupBasedCorrections><rdf:Seq><rdf:li crs:What="Correction"/></rdf:Seq></crs:MaskGroupBasedCorrections>
+                </rdf:Description></rdf:RDF></x:xmpmeta>
+                """
+            let model = XMPImportModel(fileName: "Warm Fade.xmp", library: presets) { Data(xmp.utf8) }
+            var s = SnapshotHarness.Scene(presets: presets,
+                                          exports: ExportQueue(remember: false, photos: FakePhotosWriter(),
+                                                               stagingDirectory: base.appendingPathComponent("staging")))
+            s.view = AnyView(XMPImportSheet(model: model))
+            s.cleanup = { try? FileManager.default.removeItem(at: base) }
             return s
         }
     }

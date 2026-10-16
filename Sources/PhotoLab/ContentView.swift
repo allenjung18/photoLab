@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(Library.self) private var library
     @Environment(ExportQueue.self) private var exports
+    @Environment(PresetLibrary.self) private var presets
     /// Optional: a view built without the importer (the snapshot harness)
     /// has no import sheet.
     @Environment(Importer.self) private var imports: Importer?
@@ -121,6 +122,9 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { imports?.sheetShown ?? false },
                                     set: { if !$0 { imports?.dismiss() } })) {
             if let imports { ImportSheet().environment(imports) }
+        }
+        .sheet(item: Binding(get: { presets.xmpImports.first }, set: { if $0 == nil { presets.xmpImports.first?.cancel() } })) { model in
+            XMPImportSheet(model: model)
         }
     }
 

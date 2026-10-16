@@ -142,6 +142,7 @@ struct PresetStrip: View {
                     .help("Save the current look as a preset (⇧⌘P)")
                 Spacer()
                 Menu {
+                    Button("Import Lightroom Preset…") { presetLibrary.chooseLightroomPresets() }
                     Button("Restore Starter Presets") { presetLibrary.restoreStarters() }
                     Button("Show Presets Folder in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([presetLibrary.store.directory])

@@ -317,6 +317,14 @@ not only the pass.
   one from the matched recipe, give the same values with a kind outside
   the twelve kept; `base`, `applying` and `mask` cover exactly the twelve;
   and the timed whole solve.
+- `XMPImportTests.swift` — `XMPImportModel` and `RecipeDiff.moved` over a
+  `PresetStore` in a temp folder: Save writes exactly one preset file whose recipe
+  equals the parse, the moved list equals `RecipeDiff` and titles "Moves 3
+  sliders", a taken name asks and writes nothing until Replace, Keep Both picks
+  "name 2" then "name 3", Cancel writes nothing and finishes once, a parse error
+  and an unreadable file are shown not thrown, an invalid name cannot save, queued
+  files show one sheet at a time, `unsupportedLabels` lists Dehaze. Mutant: that
+  list returning `[]` fails the labels test by name.
 - `XMPPresetTests.swift` — `XMPPreset.parse` on hand-written `.xmp` text
   saved to a temp directory: the attribute and element forms of one
   preset give one recipe (Sharpness rescaled, the file's stem as the name),
