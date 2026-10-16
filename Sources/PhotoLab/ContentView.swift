@@ -1198,6 +1198,7 @@ struct AdjustmentsPanel: View {
                                         cropButton
                                         aspectRow
                                     }
+                                    if section == .basic { autoButton }
                                     ForEach(section.kinds) { kind in row(kind) }
                                 }
                             }
@@ -1269,6 +1270,24 @@ struct AdjustmentsPanel: View {
                 hslChannel = start.hslChannel
             }
         }
+    }
+
+    /// Auto, at the head of Basic: the same command as Photo › Auto Tone
+    /// and its key, on this photo.
+    private var autoButton: some View {
+        let command = AppCommand.command(.autoTone)
+        let context = CommandContext(library: library, targetIDs: [photo.id], subjectID: photo.id)
+        return HStack(spacing: 6) {
+            Button {
+                command.perform(context)
+            } label: {
+                Label("Auto", systemImage: "wand.and.stars")
+            }
+            .disabled(!command.isEnabled(context) || file == nil)
+            .help("Set exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (⌘U)")
+            if library.autoToning { ProgressView().controlSize(.mini) }
+        }
+        .controlSize(.small)
     }
 
     /// Crop mode on and off, beside the crop sliders: the same command as

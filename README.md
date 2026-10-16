@@ -73,6 +73,7 @@ in Xcode works too.
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
 | `⌘A` | Select All Photos (grid only) |
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
+| `⌘U` | Auto Tone: exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
 | `⇧⌘R` | Reset Photo (back to the original) |
 | `⇧⌘P` | Save Preset… (in the loupe) |
 | `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
@@ -85,7 +86,7 @@ Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, Reset Photo). A single-letter key is written after its menu item's
+ratings, Crop, Auto Tone, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
@@ -154,6 +155,12 @@ the lot. `⌘Z` / `⇧⌘Z` undo and redo (a slider drag is one step), Reset or
 the last frame.
 
 - **Basic** — exposure (EV), contrast, highlights, shadows, whites, blacks.
+  **Auto** (or `⌘U`, Photo › Auto Tone) sets all six from the photo's
+  histogram, measured with those six at zero, so pressing it again changes
+  nothing; it is one undo step and keeps every other edit. A dark photo is
+  brightened, a blown sky pulled in by highlights and whites rather than by
+  darkening the whole frame. A RAW is read from its decoded master, never
+  from the camera preview the loupe shows first.
 - **Color** — temperature, tint, vibrance, saturation.
 - **Tone Curve** — five points (blacks, shadows, midtones, highlights,
   whites), each moved up or down.

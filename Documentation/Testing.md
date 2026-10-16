@@ -316,6 +316,19 @@ not only the pass.
   reads and writes nothing. Shown to bite by four mutants (no reopen guard,
   the grid ignoring the size, a renamed `showFilmstrip` key, the Settings
   sort never applied live), one or more failures each.
+- `AutoToneTests.swift` — Auto (`AutoTone`, `Library.autoTone`) on
+  synthetic grays: a dark frame gets more than +0.5 EV and its median
+  comes at least half way to `AutoTone.midTarget`; a frame with a third of
+  it at 255 gets negative whites and highlights, no brighter exposure, and
+  no clipped pixel left; a well-exposed one moves by at most 0.15 EV and 10
+  on every other slider; Auto on its own result sets the same values (with
+  white balance and a crop riding along, kept); `AutoTone.base` zeroes only
+  the six. Through a `Library`: one photo is one undo step and its sidecar
+  holds the result, a second Auto changes nothing; three selected photos
+  are one batch (one sidecar each, one `⌘Z` takes all three back); the
+  command is Photo › Auto Tone on `⌘U`, disabled with nothing to tone.
+  Shown to bite by three mutants (the base keeping the six: 12 failures;
+  the exposure sign flipped: 5; a batch tag per photo: 2).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows

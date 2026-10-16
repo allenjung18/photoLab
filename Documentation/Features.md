@@ -539,6 +539,8 @@ redo, Reset, the render time and any sidecar error.
   sidecar write.
 - **Sections.** `AdjustmentKind.Section` (`Adjustments.swift`) gives each
   kind its section (`section`) and each section its `title` and `kinds`.
+  Basic opens with **Auto** (the **Auto Tone** command, `⌘U`, on this
+  photo; a small spinner while `Library.autoToning`; see Auto below).
   Crop & Rotate opens with **Crop on Photo** / **Done Cropping**, which
   runs the **Crop** command (see Loupe, Crop mode), then the **Aspect**
   menu, its swap button and the **Straighten** toggle (see Loupe, Aspect
@@ -557,6 +559,24 @@ redo, Reset, the render time and any sidecar error.
   `PreviewModel.imageIsFirstFrame`). `Library.sidecarError`, when set, is the last
   sidecar write or read that failed (a read-only folder, an unreadable
   file).
+
+- **Auto** (`AutoTone.swift`, `Library.autoTone(_:)`). For each photo its
+  original (`Library.originalFile(for:)`) is decoded off the main thread at
+  `PreviewModel.masterPixelSize` (`Renderer.previewMaster`, the loupe's own
+  master decode: a camera RAW is read from its decoded master, never from
+  the embedded first frame the loupe shows while that decodes; Auto waits
+  for its own decode). The recipe with the six Basic kinds at neutral
+  (`AutoTone.base`) is rendered over it at `AutoTone.analysisPixelSize`
+  through `Renderer.render` and counted by `Histogram.compute`, and
+  `AutoTone.values(from:)`, a pure function of that `Histogram`, gives
+  exposure, contrast, highlights, shadows, whites and blacks. Because the
+  measured frame never carries the six, a second Auto reads the same
+  histogram and sets the same values (`Library.sync` then skips the photo).
+  The values go on through `Library.sync(_:mask:)` with `AutoTone.mask`:
+  one batch tag for every photo given, so one `⌘Z` takes the lot back, and
+  one sidecar write per photo changed. The command (`AppCommand.Name.autoTone`)
+  acts on `CommandContext.targets`, so in the grid it is every selected
+  photo, each with its own values; it is disabled while `Library.autoToning`.
 
 Writes: the photo's sidecar, through `setRecipe`, once per change and once
 per drag; the default recipe removes it.
@@ -772,7 +792,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.sort.ascending`), enabled while a source is open.
   - **Photo**: **Pick** **P**, **Reject** **X**, **Unflag** **U**, **No
     Rating** **0** to **5 Stars** **5**, then **Crop** **R**
-    (`Library.cropMode`, loupe only) and **Reset Photo** **⇧⌘R**
+    (`Library.cropMode`, loupe only), **Auto Tone** **⌘U**
+    (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
+    Auto) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's

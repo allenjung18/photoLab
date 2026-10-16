@@ -205,6 +205,8 @@ final class Library {
     private(set) var unreadableSidecars: Set<Photo.ID> = []
     /// The last Save to Photos: running, done, or why it failed.
     private(set) var photosSave = PhotosSaveState.idle
+    /// True while `autoTone` reads its photos (Auto is disabled meanwhile).
+    private(set) var autoToning = false
 
     private var store: SidecarStore?
     private var history: [Photo.ID: EditHistory] = [:]
@@ -700,10 +702,17 @@ final class Library {
     /// how many photos changed.
     @discardableResult
     func sync(_ source: Recipe, mask: SyncMask, to ids: [Photo.ID]) -> Int {
+        sync(ids.map { (id: $0, source: source) }, mask: mask)
+    }
+
+    /// `sync` with a source per photo (Auto's six values, each photo its
+    /// own): the same batch, one tag for the lot, the same skips.
+    @discardableResult
+    func sync(_ sources: [(id: Photo.ID, source: Recipe)], mask: SyncMask) -> Int {
         let batch = UUID()
         let listed = Set(photos.map(\.id))
         var changed = 0
-        for id in ids where listed.contains(id) {
+        for (id, source) in sources where listed.contains(id) {
             let current = recipe(for: id)
             let next = current.syncing(mask, from: source)
             guard next != current.normalized else { continue }
@@ -711,6 +720,43 @@ final class Library {
             changed += 1
         }
         return changed
+    }
+
+    /// Auto (`AutoTone`): exposure, contrast, highlights, shadows, whites
+    /// and blacks set from each photo's histogram, applied through `sync`
+    /// with one batch tag: one undo step for the lot (one photo or the
+    /// grid's selection) and one sidecar write per photo changed. Running it
+    /// again changes nothing. Returns how many photos changed.
+    ///
+    /// Each photo's histogram is read from its decoded master
+    /// (`Renderer.previewMaster` at `PreviewModel.masterPixelSize`, the
+    /// loupe's own decode), never from a camera RAW's embedded first frame:
+    /// that preview is the camera's rendering, and Auto on it would not
+    /// match the photo once the master replaced it. The decode runs off the
+    /// main thread, so a RAW still on its first frame simply takes the
+    /// master's time. A photo whose original cannot be read is skipped; a
+    /// source opened meanwhile drops the lot (`sync` skips photos it does
+    /// not list).
+    @discardableResult
+    func autoTone(_ ids: [Photo.ID]) async -> Int {
+        guard !autoToning, !ids.isEmpty else { return 0 }
+        autoToning = true
+        defer { autoToning = false }
+        var sources: [(id: Photo.ID, source: Recipe)] = []
+        for id in ids {
+            guard let url = try? await originalFile(for: id) else { continue }
+            let recipe = recipe(for: id)
+            let values = await Task.detached(priority: .userInitiated) { () -> [AdjustmentKind: Double]? in
+                guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
+                else { return nil }
+                return AutoTone.values(for: master, recipe: recipe)
+            }.value
+            guard let values else { continue }
+            sources.append((id, AutoTone.applying(values, to: .neutral)))
+        }
+        // A drag left open would fold Auto into its step.
+        closeOpenEdit()
+        return sync(sources, mask: AutoTone.mask)
     }
 
     /// Applies a preset to many photos as one batch: the preset's look (the

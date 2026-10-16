@@ -251,6 +251,25 @@ in the same hop. `HistogramView` (`HistogramView.swift`) draws it at the top
 of the adjustments panel; its triangles are buttons on
 `Library.showClipping`, the flag `J` toggles.
 
+Auto (`AutoTone.swift`) is the one other reader of a `Histogram`, and it
+measures its own frame, not the panel's: the photo's recipe with the six
+Basic kinds at neutral (`AutoTone.base`), rendered through
+`Renderer.render` at `AutoTone.analysisPixelSize` over the photo's decoded
+master and counted by `Histogram.compute`. `AutoTone.values(from:)` is a
+pure function of that histogram. It solves for targets in the 8-bit frame
+through a model of the chain (`AutoTone.Model`: exposure a gain on linear
+values, contrast a scale of linear values about 0.5, the tone stage
+`ColorCubes.toneLUT` itself), not through rules of thumb: exposure moves the
+luma median toward `AutoTone.midTarget` (half way when darkening, never
+pushing the brightest channel's 99.5th percentile past
+`AutoTone.whiteCeiling` nor darkening a top already there), contrast
+(within `AutoTone.contrastRange`) takes the interquartile spread toward
+`AutoTone.spreadTarget`, whites and blacks put the end points into
+`AutoTone.whiteWindow` and `AutoTone.blackWindow`, and highlights and
+shadows answer the mass above `AutoTone.upperZone` and below
+`AutoTone.lowerZone`. The measured frame never carries the six, so Auto
+read twice reads the same histogram and sets the same values.
+
 ### The preset strip
 
 `PresetThumbnails.render(master:presets:base:pixelSize:renderer:)`
@@ -719,6 +738,14 @@ onto the other selected photos) and Paste Settings (`requestPaste`, the
 recipe `copySettings(from:)` remembered) both put up a `SyncRequest`, which
 the `SyncSheet` turns into one `sync` call with the mask the user ticked;
 `batchTargets` is the list a batch acts on, in sort order.
+
+`Library.sync(_:mask:)` is the same call with a source per photo, and
+`sync(_:mask:to:)` is it with one source for all. Auto
+(`Library.autoTone(_:)`) is its one other caller: each photo's six values
+(`AutoTone`, see 1, The histogram) become that photo's source, applied with
+`AutoTone.mask` under one batch tag, so Auto on the grid's selection is one
+undo step and one sidecar write per photo changed, and a photo Auto would
+not change is skipped.
 
 ## 4. Export pipeline
 

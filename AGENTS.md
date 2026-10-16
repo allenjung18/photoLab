@@ -50,7 +50,8 @@ to run it, the timing tests, adding an adjustment).
 - **No second batch path.** `SyncMask` + `Recipe.syncing(_:from:)` through
   `Library.sync(_:mask:to:)` is the one batch primitive (one shared batch
   tag, so undo takes the batch back); applying a preset to many photos is
-  the same call. (Architecture 3, Batch.)
+  the same call, and so is Auto on many photos (`Library.sync(_:mask:)`, a
+  source per photo under the one tag). (Architecture 3, Batch.)
 - **Injected directories.** `PresetStore(directory:)`,
   `SidecarStore(folder:)`, `Library(rememberFolder:)`, `ExportQueue`'s
   `Worker`, `remember:`, `photos:` (the `PhotosWriter`) and
@@ -89,7 +90,10 @@ to run it, the timing tests, adding an adjustment).
   below `Histogram.shadowLevel` (1), and `ClippingOverlay.compose(over:context:)`
   paints exactly those pixels (red, blue) over the finished frame, so the
   two triangles and the J overlay count the same pixels. Change the rule in
-  both or neither. (Architecture 1, The histogram and the clipping overlay.)
+  both or neither. Auto (`AutoTone`) is the one other `Histogram` reader and
+  renders its own frame on purpose: the recipe with the six Basic kinds at
+  neutral, so a second Auto reads the same input. (Architecture 1, The
+  histogram and the clipping overlay.)
 - **Cube builds allocate nothing.** The tone and HSL lookups are built in
   `ColorCubes.swift` on a reusable workspace; a debug build pays for every
   fresh array in that hot path. (Architecture 1, The chain.)

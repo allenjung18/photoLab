@@ -40,7 +40,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, resetPhoto
+        case crop, autoTone, resetPhoto
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
@@ -237,6 +237,14 @@ struct AppCommand: Identifiable {
                    isOn: { c in c.library.loupe && c.library.cropMode },
                    isEnabled: { c in c.library.loupe && c.library.selection != nil },
                    perform: { $0.library.cropMode.toggle() }),
+        // Auto: the Basic tone from each photo's histogram (`AutoTone`), on
+        // the batch targets as one undo step (Lightroom's Auto Tone key).
+        AppCommand(name: .autoTone, title: "Auto Tone", key: "u", placement: .photo, section: 2,
+                   isEnabled: { c in !c.targets.isEmpty && !c.library.autoToning },
+                   perform: { c in
+                       let lib = c.library, ids = c.targets
+                       Task { await lib.autoTone(ids) }
+                   }),
         AppCommand(name: .resetPhoto, title: "Reset Photo", key: "r", modifiers: [.command, .shift],
                    placement: .photo, section: 2,
                    isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },
