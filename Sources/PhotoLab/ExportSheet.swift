@@ -103,7 +103,9 @@ struct ExportSheet: View {
                 Section("File") {
                     HStack {
                         Text("Name")
-                        TextField("suffix, e.g. -edit", text: $options.suffix)
+                        TextField("Suffix", text: $options.suffix, prompt: Text("e.g. -edit"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
                             .frame(width: 140)
                         Text(namePreview)
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -144,7 +146,9 @@ struct ExportSheet: View {
                     case .photos:
                         HStack {
                             Text("Album")
-                            TextField("none", text: $albumText)
+                            TextField("Album", text: $albumText, prompt: Text("none: the library only"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
                                 .frame(width: 180)
                             Text(albumText.isEmpty ? "(the library only)" : "(created if missing)")
                                 .font(.caption).foregroundStyle(.secondary)

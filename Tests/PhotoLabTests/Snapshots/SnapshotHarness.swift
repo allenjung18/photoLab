@@ -115,6 +115,10 @@ final class SnapshotHarness {
             .environment(\.hasBundle, scene.hasBundle ?? PhotosAccess.hasBundle)
         let host = NSHostingController(rootView: root)
         host.sceneBridgingOptions = .all
+        // The window keeps the size the shot asks for; a hosting controller
+        // would otherwise shrink it to the content's ideal size (an empty
+        // folder came out about 220 pt wide).
+        if shot.size != Self.fitting { host.sizingOptions = [] }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: shot.size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)

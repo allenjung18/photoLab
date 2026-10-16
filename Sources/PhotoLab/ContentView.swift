@@ -165,10 +165,12 @@ struct GridView: View {
                     Text("No photos in this folder")
                         .foregroundStyle(.secondary)
                         .padding(40)
+                        .frame(maxWidth: .infinity)
                 } else if library.visiblePhotos.isEmpty {
                     Text("No photos match the filter")
                         .foregroundStyle(.secondary)
                         .padding(40)
+                        .frame(maxWidth: .infinity)
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(library.visiblePhotos) { photo in
@@ -587,6 +589,7 @@ struct LoupeView: View {
             Divider()
             AdjustmentsPanel(photo: photo, file: resolvedFile, preview: preview)
                 .frame(width: 280)
+                .clipped()
         }
         .task(id: photo.id) {
             guard photo.fileURL == nil else { fetch = .none; return }
@@ -674,6 +677,9 @@ private struct PreviewCanvas: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
+            // The canvas is black in both appearances, so its text and
+            // spinners resolve their colours as in dark mode.
+            .environment(\.colorScheme, .dark)
             .overlay(alignment: .topTrailing) { zoomBadge }
             .onAppear { viewSize = geo.size }
             .onChange(of: geo.size) { _, size in viewSize = size }
@@ -947,20 +953,25 @@ struct AdjustmentsPanel: View {
                 .padding(16)
             }
             Divider()
-            HStack(spacing: 6) {
-                BeforeButton(isPressed: $library.showBefore)
-                    .fixedSize()
-                Spacer(minLength: 4)
-                FlagStarControl(targets: [photo.id])
-                Button { library.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                    .disabled(!library.canUndo)
-                    .help("Undo (⌘Z)")
-                Button { library.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                    .disabled(!library.canRedo)
-                    .help("Redo (⇧⌘Z)")
-                Button("Reset") { library.resetRecipe(for: photo.id) }
-                    .disabled(recipe.wrappedValue.isDefault)
-                    .help("Back to the original; removes the sidecar (⇧⌘R)")
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    FlagStarControl(targets: [photo.id])
+                    Spacer(minLength: 4)
+                }
+                HStack(spacing: 6) {
+                    BeforeButton(isPressed: $library.showBefore)
+                        .fixedSize()
+                    Spacer(minLength: 4)
+                    Button { library.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                        .disabled(!library.canUndo)
+                        .help("Undo (⌘Z)")
+                    Button { library.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                        .disabled(!library.canRedo)
+                        .help("Redo (⇧⌘Z)")
+                    Button("Reset") { library.resetRecipe(for: photo.id) }
+                        .disabled(recipe.wrappedValue.isDefault)
+                        .help("Back to the original; removes the sidecar (⇧⌘R)")
+                }
             }
             .controlSize(.small)
             .padding(.horizontal, 16).padding(.vertical, 10)
