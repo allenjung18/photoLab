@@ -87,9 +87,10 @@ struct Photo: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Where a `Library`'s photos come from: a folder today, a Photos album
-/// next. The library lists `photos()` once at `open`, keeps every edit in
-/// `sidecars`, and asks the source for pixels: a grid thumbnail
+/// Where a `Library`'s photos come from: a folder (`FolderSource`), a
+/// Photos album (`PhotosSource`) or a saved collection (`CollectionSource`).
+/// The library lists `photos()` once at `open`, keeps every edit in
+/// `sidecars(for:)`, and asks the source for pixels: a grid thumbnail
 /// (`thumbnail(for:maxPixelSize:)`, synchronous, called off the main thread
 /// by `Thumbnails`) and the one original file the loupe master and the
 /// export decode (`originalFile(for:)`, which a source may have to fetch
@@ -101,6 +102,14 @@ protocol PhotoSource: Sendable {
     func photos() throws -> [Photo]
     /// The store this source's edits persist to.
     var sidecars: SidecarStore { get }
+    /// The store one photo's edit persists to: `sidecars` for a folder and
+    /// an album; a collection member's own root (`CollectionSource`), so
+    /// the edit is the file that member's folder reads. `Library.persist`
+    /// writes through it.
+    func sidecars(for id: PhotoID) -> SidecarStore
+    /// Every listed photo's sidecar, read at `open` (`sidecars.loadAll` for
+    /// one store; a collection reads each root's store for its members).
+    func loadSidecars(for ids: [PhotoID]) -> SidecarStore.Loaded
     /// A downsampled image of the unadjusted original, or nil when it
     /// cannot be produced.
     func thumbnail(for id: PhotoID, maxPixelSize: Int) -> NSImage?
@@ -117,6 +126,11 @@ protocol PhotoSource: Sendable {
 extension PhotoSource {
     /// A source whose listing names every photo is never asked.
     func name(for id: PhotoID) -> String? { nil }
+
+    /// One store for every photo.
+    func sidecars(for id: PhotoID) -> SidecarStore { sidecars }
+
+    func loadSidecars(for ids: [PhotoID]) -> SidecarStore.Loaded { sidecars.loadAll(for: ids) }
 }
 
 /// A folder of photos: `Library.scan` lists it, `SidecarStore(folder:)`

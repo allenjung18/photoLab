@@ -160,6 +160,24 @@ not only the pass.
   (modified keys stay on, and they all come back); Search Photos is ⌘F and
   leaves the loupe. Shown to bite by ORing the terms (5 failures in 3 tests)
   and by dropping the bare-key guard in `AppCommand.offWhileTyping`.
+- `CollectionsTests.swift` — collections across two temporary folders:
+  `CollectionStore` round-trips a collection in a temporary directory
+  (sorted by name, an undecodable file and a newer version left out, an
+  empty name refused, `remove` deleting only the file); members added from
+  two folders open as one `CollectionSource`, each once and keeping the
+  folder it came from; an edit, flag and keyword made in the collection is
+  written under each member's own `.photolab/` and read back by opening
+  that folder, and a flag set in the folder shows in the collection; a
+  member whose file is gone is counted (`Library.missingMembers`) and kept
+  in the collection; Remove from Collection drops the photo and the
+  anchor and leaves the file and its sidecar; Delete Collection… asks
+  first and then deletes only the collection, back to the Welcome view;
+  an Open Recent entry and `restoreLastSource` reopen the collection with
+  its view state, and a deleted one is forgotten and refused; New
+  Collection… asks for a name over the targets, and Add to Collection is
+  off over a source of assets and in a library without a store. Shown to
+  bite by routing every member to the first member's store in
+  `CollectionSource.sidecars(for:)` (4 failures in 1 test).
 - `PresetTests.swift` — the starter set is distinct looks without geometry,
   saving drops geometry and applying keeps the photo's own, a preset round
   trips through a fresh `PresetStore`, file names are sanitised and names
@@ -555,7 +573,9 @@ not only the pass.
   test reads them); the View and Photo menus list every bare key but Return
   and Esc, whose names a menu title spells out ("Pick (P)"); no placement
   adds a `CommandMenu` of a menu SwiftUI supplies (one View menu), and every
-  `CommandMenu(` in the sources takes its title from the table; Return
+  `CommandMenu(` in the sources takes its title from the table (a submenu
+  placement, `sort` or `collection`, sits in a menu that is added or
+  supplied); Return
   (Open in Loupe) is disabled with no photo, so the Welcome view's Open
   Folder… holds it; and each
   command's `perform` on a library over a temporary folder does what its
@@ -757,6 +777,9 @@ place the app writes is injected:
   so its `.photolab/` sidecars are the test's own. A source without a
   folder gets `SidecarStore(directory:naming:)` with a temporary directory
   (the fake source in `SourceTests`).
+- `CollectionStore(directory:)` and `Library(collections:)`: a temporary
+  directory, never `CollectionStore.app`; a library made without one has
+  no collections at all.
 - `Library(rememberFolder: false)`: the opened source and every choice stay
   out of UserDefaults (its `AppSettings` is not `persistent`);
   `Library(rememberFolder:defaults:)` and `AppSettings(defaults:)` take a

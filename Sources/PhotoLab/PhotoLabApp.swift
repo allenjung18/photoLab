@@ -15,7 +15,7 @@ struct PhotoLabApp: App {
 
     init() {
         let settings = AppSettings()
-        _library = State(initialValue: Library(settings: settings))
+        _library = State(initialValue: Library(settings: settings, collections: .app))
         _exports = State(initialValue: ExportQueue(settings: settings))
         // Running from `swift run` has no bundle; make the process a real
         // foreground app so the window and menu bar appear.
@@ -48,8 +48,11 @@ struct PhotoLabApp: App {
             // Every item and key comes from `AppCommand.all` (Commands.swift);
             // the bare keys are bound on `HiddenShortcuts` and only named here.
             CommandGroup(replacing: .newItem) {
-                CommandItems(placement: .newItem, context: context)
+                CommandItems(placement: .newItem, context: context, sections: 0..<1)
+                OpenCollectionMenu().environment(library)
                 OpenRecentMenu().environment(library)
+                Divider()
+                CommandItems(placement: .newItem, context: context, sections: 1..<Int.max)
             }
             CommandGroup(replacing: .importExport) { CommandItems(placement: .importExport, context: context) }
             CommandGroup(replacing: .undoRedo) { CommandItems(placement: .undoRedo, context: context) }
@@ -67,7 +70,12 @@ struct PhotoLabApp: App {
                 ShowFilterMenu().environment(library)
                 Menu("Sort By") { CommandItems(placement: .sort, context: context) }
             }
-            CommandMenu(AppCommand.Placement.photo.menuTitle!) { CommandItems(placement: .photo, context: context) }
+            CommandMenu(AppCommand.Placement.photo.menuTitle!) {
+                CommandItems(placement: .photo, context: context, sections: 0..<4)
+                Divider()
+                AddToCollectionMenu(context: context).environment(library)
+                CommandItems(placement: .photo, context: context, sections: 4..<Int.max)
+            }
             // Presets: save the selected photo's look, or apply one by name to
             // the selection (every selected photo in the grid, one undo step).
             CommandMenu(AppCommand.Placement.presets.menuTitle!) {

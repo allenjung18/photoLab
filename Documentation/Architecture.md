@@ -421,7 +421,10 @@ the sidecar error) read `Library.name(for:)`, never the id.
 Where photos come from is a `PhotoSource`: `title` (the window title),
 `photos()` (in any order: `Library` sorts them by `Library.sort`, a
 `PhotoSort`, Features: Grid, Sort), `sidecars` (the `SidecarStore` its edits
-persist to), `thumbnail(for:maxPixelSize:)` (a downsample of the
+persist to), `sidecars(for:)` (the store ONE photo's edit persists to,
+which `Library.persist` writes through; `sidecars` unless the source
+overrides it) and `loadSidecars(for:)` (every listed photo's sidecar, read
+by `Library.open`; `sidecars.loadAll` unless overridden), `thumbnail(for:maxPixelSize:)` (a downsample of the
 unadjusted original, synchronous, run off the main thread by `Thumbnails`)
 and `originalFile(for:)` (the one file the loupe master and the export
 decode; async, since a source may have to fetch it). `FolderSource` is the
@@ -430,8 +433,13 @@ under `.photolab/`, `ImageLoading.downsampled` makes the thumbnails, and a
 photo's original is its own file. `Library.open(_:)` takes a source, or a
 URL that it wraps in a `FolderSource` (a folder, or a file whose folder
 opens with that photo in the loupe), and `Library.open(album:access:)` an
-album wrapped in a `PhotosSource`; `Library.source` is the open one and
-`Library.folder` its folder when it is a `FolderSource`. A source whose
+album wrapped in a `PhotosSource`, and `Library.open(collection:)` a saved
+collection wrapped in a `CollectionSource` (`Collections.swift`): its
+members across folders, each routed by `sidecars(for:)` to
+`SidecarStore(folder: member.root)` and read per root by `loadSidecars(for:)`,
+so an edit made in a collection is the sidecar its folder reads (Features:
+Collections). `Library.source` is the open one and `Library.folder` its
+folder when it is a `FolderSource`. A source whose
 `photos()` throws is refused like a missing path: the open source stays and
 `openError` says why.
 
@@ -840,8 +848,8 @@ menu's title ("None", the name, or "<name> (edited)").
 `AppSettings` (`Settings.swift`) is every value kept between launches, over
 one injected `UserDefaults`: the Settings window's `gridThumbnailSize`,
 `previewQuality` and `reopenLastSource`, the per-kind sort (`sort(for:)`,
-`setSort(_:for:)`), `showFilmstrip`, `showInfo` and `showHistory`, `lastSource`,
-`recents`, and the export sheet's `exportFolder`, `exportOptions`,
+`setSort(_:for:)`), `showFilmstrip`, `showInfo` and `showHistory`, `lastSource`
+(a folder, an album or a collection, `LastSource`), `recents`, and the export sheet's `exportFolder`, `exportOptions`,
 `exportAlbum`, `exportTarget` and `exportPreset` (the last picked export
 preset's name). The keys (`AppSettings.Key`) are the
 strings earlier builds wrote, so nothing saved is lost. It is

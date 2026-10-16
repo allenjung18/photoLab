@@ -35,23 +35,25 @@ struct CommandContext {
 @MainActor
 struct AppCommand: Identifiable {
     enum Name: String, CaseIterable {
-        case openFolder, openPhotos, export, saveToPhotos
+        case openFolder, openPhotos, deleteCollection, export, saveToPhotos
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
         case grid, loupe, map, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, resetPhoto, keywords
+        case crop, whiteBalance, autoTone, resetPhoto, keywords, removeFromCollection
+        case newCollection
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
 
     /// The `CommandGroup` or `CommandMenu` an item sits in; `sort` is the
-    /// View › Sort By submenu and the grid bar's Sort menu; `keysOnly` has no
-    /// menu item (Escape, Return).
+    /// View › Sort By submenu and the grid bar's Sort menu; `collection` is
+    /// the Photo › Add to Collection submenu (`AddToCollectionMenu`), after
+    /// the saved collections; `keysOnly` has no menu item (Escape, Return).
     enum Placement: CaseIterable {
-        case newItem, importExport, undoRedo, pasteboard, presets, view, sort, photo, keysOnly
+        case newItem, importExport, undoRedo, pasteboard, presets, view, sort, photo, collection, keysOnly
 
         /// The menu bar menu that lists the placement's items; nil for
         /// `keysOnly`.
@@ -60,7 +62,7 @@ struct AppCommand: Identifiable {
             case .newItem, .importExport: "File"
             case .undoRedo, .pasteboard: "Edit"
             case .view, .sort: "View"
-            case .photo: "Photo"
+            case .photo, .collection: "Photo"
             case .presets: "Presets"
             case .keysOnly: nil
             }
@@ -71,6 +73,10 @@ struct AppCommand: Identifiable {
         /// into a `CommandGroup` of that menu, since a `CommandMenu` of a
         /// supplied menu's name is a second menu of that name beside it.
         var addsMenu: Bool { self == .photo || self == .presets }
+
+        /// A submenu inside its `menuTitle` menu (built by a view there),
+        /// never a menu of its own.
+        var isSubmenu: Bool { self == .sort || self == .collection }
 
         /// The menus SwiftUI supplies to a `WindowGroup` app with a toolbar
         /// (besides the app menu): never the title of a `CommandMenu`.
@@ -148,6 +154,15 @@ struct AppCommand: Identifiable {
                    perform: { $0.library.chooseFolder() }),
         AppCommand(name: .openPhotos, title: "Open Photos Library…", key: "o", modifiers: [.command, .shift],
                    placement: .newItem, perform: { $0.library.choosePhotosAlbum() }),
+        // File › Open Collection (`OpenCollectionMenu`) and Open Recent sit
+        // between these: section 1 is drawn after them. Deletes the open
+        // collection's file only, after a confirm.
+        AppCommand(name: .deleteCollection, title: "Delete Collection…", key: nil, placement: .newItem,
+                   section: 1,
+                   isEnabled: { $0.library.openCollection != nil },
+                   perform: { c in
+                       if let open = c.library.openCollection { c.library.requestDeleteCollection(open) }
+                   }),
         // Export the selection (one photo in the loupe, the multi-selection
         // in the grid): the options sheet, then the queue.
         AppCommand(name: .export, title: "Export…", key: "e", modifiers: [.command, .shift],
@@ -298,6 +313,22 @@ struct AppCommand: Identifiable {
                    },
                    isEnabled: { !$0.targets.isEmpty },
                    perform: { $0.library.requestKeywords(for: $0.targets) }),
+        // Photo › Add to Collection (`AddToCollectionMenu`) is drawn before
+        // this section. Removes the targets from the open collection: the
+        // files and their sidecars stay where they are.
+        AppCommand(name: .removeFromCollection, title: "Remove from Collection", key: nil,
+                   placement: .photo, section: 4,
+                   dynamicTitle: { c in
+                       let n = c.targets.count
+                       return n > 1 ? "Remove \(n) Photos from Collection" : "Remove from Collection"
+                   },
+                   isEnabled: { c in c.library.openCollection != nil && !c.targets.isEmpty },
+                   perform: { $0.library.removeFromCollection($0.targets) }),
+        // Inside Photo › Add to Collection, after the saved collections: the
+        // name sheet, then a new collection holding the targets.
+        AppCommand(name: .newCollection, title: "New Collection…", key: nil, placement: .collection,
+                   isEnabled: { c in c.library.canAddToCollection && !c.targets.isEmpty },
+                   perform: { $0.library.requestNewCollection(for: $0.targets) }),
 
         // Sort By: the key (one checked), then the direction. No keys.
         sort(.captureDate, name: .sortCaptureDate),
@@ -368,13 +399,14 @@ struct AppCommand: Identifiable {
 }
 
 /// The menu items of one placement, in table order, a divider between
-/// sections.
+/// sections; `sections` draws only those (a submenu view goes between).
 struct CommandItems: View {
     let placement: AppCommand.Placement
     let context: CommandContext
+    var sections: Range<Int> = 0..<Int.max
 
     var body: some View {
-        let items = AppCommand.items(in: placement)
+        let items = AppCommand.items(in: placement).filter { sections.contains($0.section) }
         ForEach(Array(items.enumerated()), id: \.element.id) { i, command in
             if i > 0, items[i - 1].section != command.section { Divider() }
             CommandMenuItem(command: command, context: context)

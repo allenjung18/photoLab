@@ -20,10 +20,12 @@ grid; under a filter or a search (`Library.isNarrowed`) both count the photos sh
 
 ## Welcome
 
-`WelcomeView` (`ContentView.swift`): an icon, "Open a folder of photos, or
-a Photos album, to begin", the last open error in red if there is one,
-**Open Folder…** (also **Return**: the hidden loupe key is disabled with
-no photo, see Menus and shortcuts) and **Open Photos Library…**. Under a
+`WelcomeView` (`ContentView.swift`): an icon, "Open a folder of photos, a
+Photos album or a collection to begin", the last open error in red if there
+is one, **Open Folder…** (also **Return**: the hidden loupe key is disabled
+with no photo, see Menus and shortcuts) and **Open Photos Library…**, then
+the saved collections (`CollectionList`, see Collections) and the recent
+sources (`RecentList`). Under a
 bare `swift run` the Photos button is disabled and a line says to run
 `scripts/bundle.sh --open` and use `build/PhotoLab.app`
 (`PhotosAccess.hasBundle`): the system grants Photos access to an app
@@ -78,13 +80,15 @@ bundle, never to a bare binary.
   Photos through the same per-cell, cancellable path (`Thumbnails.source`,
   Architecture 1).
 - **Open Recent and reopening where you left off** (`Recents.swift`). The
-  last 10 sources, folders and Photos albums alike, are kept most recent
+  last 10 sources, folders, Photos albums and collections alike
+  (`RecentSource.Kind`), are kept most recent
   first and deduped under `recentSources` in the library's `AppSettings`
   (`AppSettings.recents`: `RecentSource`, JSON, beside `lastSourceKind`;
   never a test's real defaults). **File › Open Recent** (`OpenRecentMenu`) and a Recent list on
   the Welcome view (`RecentList`) show them, with **Clear Menu**;
   `Library.recentSources` drops (and forgets) a folder that no longer
-  exists and hides an album Photos no longer lists, or every album while
+  exists or a collection no longer saved (`CollectionStore.load`), and
+  hides an album Photos no longer lists, or every album while
   Photos access is not already allowed (it never prompts). Each entry also
   carries the source's `SourceViewState`: the anchor photo, grid or loupe,
   and the filter, saved as they change (`Library.saveViewState`) and
@@ -96,8 +100,9 @@ bundle, never to a bare binary.
   SwiftUI's own restoration, untouched here.
 - **The remembered last source.** `Library.open` stores it as
   `AppSettings.lastSource` (`LastSource`): the kind under `lastSourceKind`
-  (`folder` or `photos`) with the folder's path under `lastFolder` or the
-  album's identifier under `lastPhotosAlbum` (`AppSettings.Key`), when the
+  (`folder`, `photos` or `collection`) with the folder's path under
+  `lastFolder`, the album's identifier under `lastPhotosAlbum` or the
+  collection's id under `lastCollection` (`AppSettings.Key`), when the
   library was made with `rememberFolder` on (its `AppSettings` is
   `persistent`), which the app's is and a test's
   (`Library(rememberFolder: false)`, or one given its own `defaults`) is
@@ -105,8 +110,9 @@ bundle, never to a bare binary.
   argument, else calls `Library.restoreLastSource`, which does nothing while
   Settings › Reopen the last folder or album is off
   (`AppSettings.reopenLastSource`, on by default) and otherwise opens the
-  stored folder if it still exists, or the stored album if Photos access is
-  already allowed (never a prompt at launch) and the album is still there;
+  stored folder if it still exists, the stored collection if it is still
+  saved, or the stored album if Photos access is already allowed (never a
+  prompt at launch) and the album is still there;
   this runs once per process (`launched`), so a window re-created from the
   Dock does not reopen the argument and wipe the selection.
 
@@ -347,6 +353,67 @@ version (`Sidecar.version(for:)` reads the recipe alone). The file is kept
 while the photo has a keyword, whatever its recipe and marks, and
 `SidecarStore.save(_:for:name:now:)` (recipe only) keeps the keywords the
 file held. `SidecarStore.loadAll(for:)` returns them on open.
+
+## Collections
+
+A collection (`PhotoCollection`, `Collections.swift`) is a saved set of
+folder photos from any number of folders: an `id`, a `name`, `created` and
+`members`, each a `PhotoCollection.Member`, the photo's file (the id
+`Library.scan` gave it) and its `root`, the folder whose `.photolab/` holds
+its sidecar (the open `FolderSource`'s folder when it was added).
+`CollectionStore` keeps one `<id>.json` per collection, written atomically,
+in an injected directory: the app's is `CollectionStore.app`,
+`~/Library/Application Support/PhotoLab/Collections/`, passed as
+`Library(collections:)` by `PhotoLabApp`; a library made without one
+(`Library.collectionStore` nil) offers no collection command. A file this
+build cannot decode (damaged, or a `version` above
+`PhotoCollection.currentVersion`) is left out of `CollectionStore.loadAll`
+and never written over by a load.
+
+- **Add to Collection** (Photo menu, `AddToCollectionMenu`): each saved
+  collection (`Library.savedCollections`, re-read when
+  `Library.collectionsRevision` changes) adds the batch targets
+  (`Library.addToCollection(_:ids:)`, each photo once), then **New
+  Collection…** (`AppCommand` `newCollection`, the `collection` placement)
+  raises `Library.newCollectionRequest`, whose sheet (`NewCollectionSheet`)
+  asks for a name and calls `Library.createCollection(named:adding:)`; an
+  empty name is refused (`CollectionError.emptyName`, shown from
+  `Library.collectionError`). The submenu is enabled while
+  `Library.canAddToCollection`: a folder or a collection is open. A Photos
+  album's assets cannot be added this round. `Library.collectionMembers(for:)`
+  makes each member with the open folder as its root, or keeps a member's
+  own root when adding from one collection to another.
+- **Opening one** (File › Open Collection, `OpenCollectionMenu`; the
+  Welcome view's `CollectionList`; Open Recent; the launch reopen):
+  `Library.open(collection:)` opens a `CollectionSource` through
+  `Library.open(_:)` and remembers it (`LastSource.collection`, a
+  `RecentSource` of kind `collection`). `CollectionSource.photos()` lists
+  the members whose file exists; the others (`CollectionSource.missing`)
+  are counted in `Library.missingMembers` and the window's subtitle ("2
+  missing"), never removed from the collection. Thumbnails and originals
+  are read as a folder's are. A collection sorts like a folder
+  (`Library.sortKind` is `folder`).
+- **Edits go to each member's own folder.** `CollectionSource.sidecars(for:)`
+  is `SidecarStore(folder: member.root)`, and `Library.persist` writes every
+  photo through `PhotoSource.sidecars(for:)`; at open,
+  `CollectionSource.loadSidecars(for:)` reads each root's store for its own
+  members. So an edit, flag, rating or keyword made in a collection is the
+  very sidecar its folder reads, and one made in the folder shows in the
+  collection.
+- **Remove from Collection** (Photo menu, enabled while a collection is
+  open and something is targeted) is `Library.removeFromCollection(_:)`:
+  the members leave the collection's file and the grid
+  (`Library.replaceCollection`, which also drops them from the selection
+  and every map); no photo or sidecar is touched.
+- **Delete Collection…** (File menu, the open collection; or the context
+  menu of a Welcome list entry) raises `Library.deleteCollectionRequest`;
+  the window's alert confirms, then `Library.deleteCollection(_:)` removes
+  only `<id>.json` (`CollectionStore.remove`), forgets its Open Recent entry
+  (`Library.forgetRecent`) and, when it is the open source, returns to the
+  Welcome view (`Library.closeSource`).
+
+Writes: `<id>.json` under the collections directory; a member's edit goes
+to its own folder's `.photolab/` as any folder edit does.
 
 ## Batch bar
 
@@ -1001,8 +1068,11 @@ key is typed anywhere else; the README's Keys table is the user's list.
   and View are the menus SwiftUI supplies (`Placement.suppliedMenus`), so
   their items are a `CommandGroup` there and the menu bar has one of each:
   - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) and **Open
-    Photos Library…** **⇧⌘O** (`Library.choosePhotosAlbum`) replace
-    `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
+    Photos Library…** **⇧⌘O** (`Library.choosePhotosAlbum`), then **Open
+    Collection** (`OpenCollectionMenu`) and **Open Recent**
+    (`OpenRecentMenu`), then **Delete Collection…** (section 1 of
+    `.newItem`, drawn after the two submenus through `CommandItems`'
+    `sections`) replace `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
     `batchTargets`, disabled with nothing targeted or a run going) and
     **Save to Photos** (`Library.saveToPhotos()`, enabled by
     `Library.canSaveToPhotos`) replace `.importExport`.
@@ -1034,7 +1104,12 @@ key is typed anywhere else; the README's Keys table is the user's list.
     Auto) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited); then
     **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch
-    targets, see Keywords).
+    targets, see Keywords); then **Add to Collection**, a submenu
+    (`AddToCollectionMenu`: the saved collections, then the `collection`
+    placement's **New Collection…**), and **Remove from Collection**
+    (`Library.removeFromCollection(_:)`), see Collections. A submenu
+    placement (`Placement.isSubmenu`: `sort`, `collection`) sits inside a
+    menu the app adds or SwiftUI supplies.
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
   background, so they work whatever has focus in the window. **G** leaves the loupe and the map; **E** and **Return** enter it

@@ -56,7 +56,8 @@ enum PhotosSaveState: Equatable {
 }
 
 /// The library is one `PhotoSource` (a folder through `FolderSource`, a
-/// Photos album through `PhotosSource`). Originals are never written to:
+/// Photos album through `PhotosSource`, a saved collection through
+/// `CollectionSource`). Originals are never written to:
 /// every edit is a recipe, held in memory for the open source and
 /// persisted as a sidecar (`SidecarStore`, the source's) the moment it
 /// changes.
@@ -286,6 +287,21 @@ final class Library {
     private(set) var photosSave = PhotosSaveState.idle
     /// True while `autoTone` reads its photos (Auto is disabled meanwhile).
     private(set) var autoToning = false
+    /// Where collections are saved (`CollectionStore`); nil keeps every
+    /// collection command off (a library made without one).
+    let collectionStore: CollectionStore?
+    /// Bumped whenever a collection is saved or deleted, so a menu or the
+    /// Welcome list reading `savedCollections()` redraws.
+    var collectionsRevision = 0
+    /// The New Collection… name sheet the window should show.
+    var newCollectionRequest: NewCollectionRequest?
+    /// The Delete Collection… confirm the window should show.
+    var deleteCollectionRequest: PhotoCollection?
+    /// The last collection save or delete that failed.
+    var collectionError: String?
+    /// How many members of the open collection are missing on disk
+    /// (`CollectionSource.missing`): counted in the subtitle, never dropped.
+    private(set) var missingMembers = 0
 
     private var store: SidecarStore?
     private var history: [Photo.ID: EditHistory] = [:]
@@ -311,9 +327,11 @@ final class Library {
     /// `rememberFolder: false` makes it read and write nothing (tests).
     init(rememberFolder: Bool = true, defaults: UserDefaults = .standard,
          settings: AppSettings? = nil,
-         captureDates: CaptureDates = CaptureDates()) {
+         captureDates: CaptureDates = CaptureDates(),
+         collections: CollectionStore? = nil) {
         self.settings = settings ?? AppSettings(defaults: defaults, persistent: rememberFolder)
         self.captureDates = captureDates
+        self.collectionStore = collections
         self.photoInfo = PhotoInfoStore(captureDates: captureDates)
     }
 
@@ -402,6 +420,7 @@ final class Library {
         openEdit = nil
         syncRequest = nil
         keywordsRequest = nil
+        newCollectionRequest = nil
         history = [:]
         sidecarError = nil
         whiteBalanceNote = nil
@@ -410,9 +429,9 @@ final class Library {
         searchText = ""
         sort = storedSort(for: sortKind)
         photos = listed
-        let store = source.sidecars
-        self.store = store
-        let loaded = store.loadAll(for: photos.map(\.id))
+        store = source.sidecars
+        missingMembers = (source as? CollectionSource)?.missing.count ?? 0
+        let loaded = source.loadSidecars(for: photos.map(\.id))
         recipes = loaded.recipes
         marks = loaded.marks
         keywords = loaded.keywords
@@ -422,6 +441,61 @@ final class Library {
         }
         resort()
         restoreViewState()
+    }
+
+    /// Back to the Welcome view: no source, no photos, nothing selected
+    /// (the open collection was deleted).
+    func closeSource() {
+        restoringViewState = true
+        defer { restoringViewState = false }
+        openGeneration += 1
+        namingAll?.cancel()
+        namingAll = nil
+        selection = nil
+        showMap = false
+        locations.reset()
+        loupe = false
+        compare = false
+        openEdit = nil
+        syncRequest = nil
+        keywordsRequest = nil
+        newCollectionRequest = nil
+        history = [:]
+        recipes = [:]
+        marks = [:]
+        keywords = [:]
+        unreadableSidecars = []
+        missingMembers = 0
+        sidecarError = nil
+        photos = []
+        store = nil
+        source = nil
+        Thumbnails.shared.source = nil
+    }
+
+    /// The open collection changed on disk (members added or removed): the
+    /// source becomes the new one, and a removed member leaves the grid,
+    /// the selection and every map. Nothing is re-listed or re-read, so the
+    /// view stays where it is; a photo added from elsewhere shows on the
+    /// next open.
+    func replaceCollection(_ collection: PhotoCollection) {
+        guard source is CollectionSource else { return }
+        let next = CollectionSource(collection)
+        source = next
+        Thumbnails.shared.source = next
+        let kept = Set(collection.members.map(\.id))
+        let gone = Set(photos.map(\.id)).subtracting(kept)
+        guard !gone.isEmpty else { return }
+        photos.removeAll { gone.contains($0.id) }
+        for id in gone {
+            recipes.removeValue(forKey: id)
+            marks.removeValue(forKey: id)
+            keywords.removeValue(forKey: id)
+            history.removeValue(forKey: id)
+            unreadableSidecars.remove(id)
+        }
+        if let edit = openEdit, gone.contains(edit.id) { openEdit = nil }
+        reconcileSelection()
     }
 
     /// The photo's display name as its source gave it (the file name for a
@@ -504,6 +578,9 @@ final class Library {
         case .folder(let path)?:
             guard FileManager.default.fileExists(atPath: path) else { return }
             open(URL(fileURLWithPath: path))
+        case .collection(let id)?:
+            guard let uuid = UUID(uuidString: id), let c = collectionStore?.load(uuid) else { return }
+            open(collection: c)
         case nil:
             return
         }
@@ -1246,7 +1323,8 @@ final class Library {
     /// reset keeps the flag and the keywords, and a flag or a keyword keeps a
     /// default recipe's file.
     private func persist(_ id: Photo.ID) {
-        guard let store else { return }
+        guard let source else { return }
+        let store = source.sidecars(for: id)
         do {
             try store.save(recipe(for: id), marks: marks(for: id), keywords: keywords(for: id),
                            for: id, name: name(for: id))

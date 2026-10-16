@@ -10,10 +10,11 @@ struct SourceViewState: Codable, Equatable, Sendable {
     var filter: String
 }
 
-/// One entry of Open Recent: a folder (`id` is its path) or a Photos album
-/// (`id` is its identifier), with the view state it was left in.
+/// One entry of Open Recent: a folder (`id` is its path), a Photos album
+/// (`id` is its identifier) or a collection (`id` is its
+/// `PhotoCollection.id`), with the view state it was left in.
 struct RecentSource: Codable, Identifiable, Equatable, Sendable {
-    enum Kind: String, Codable, Sendable { case folder, photos }
+    enum Kind: String, Codable, Sendable { case folder, photos, collection }
     var kind: Kind
     var id: String
     var title: String
@@ -29,8 +30,19 @@ struct RecentSource: Codable, Identifiable, Equatable, Sendable {
         self.state = state
     }
 
-    /// Unique across the two kinds.
+    /// Unique across the kinds.
     var key: String { kind.rawValue + ":" + id }
+}
+
+extension RecentSource.Kind {
+    /// The SF Symbol a list shows beside an entry of this kind.
+    var symbol: String {
+        switch self {
+        case .folder: return "folder"
+        case .photos: return "photo.on.rectangle"
+        case .collection: return "rectangle.stack"
+        }
+    }
 }
 
 extension PhotoFilter {
@@ -69,24 +81,42 @@ extension Library {
         if let photos = source as? PhotosSource {
             return RecentSource(kind: .photos, id: photos.album.id, title: "").key
         }
+        if let collection = openCollection {
+            return RecentSource(kind: .collection, id: collection.id.uuidString, title: "").key
+        }
         return nil
     }
 
     /// The recent sources a menu or the Welcome view lists: a folder that no
     /// longer exists is dropped (and forgotten), and so is an album Photos no
-    /// longer lists. Photos entries are kept out of the list, never
-    /// prompted for, while access is not already allowed.
+    /// longer lists and a collection no longer saved. Photos entries are
+    /// kept out of the list, never prompted for, while access is not
+    /// already allowed.
     func recentSources(access: PhotosAccess = .live) -> [RecentSource] {
         _ = recentsRevision
         var list = storedRecents()
-        let kept = list.filter { $0.kind != .folder || FileManager.default.fileExists(atPath: $0.id) }
+        let kept = list.filter { entry in
+            switch entry.kind {
+            case .folder: return FileManager.default.fileExists(atPath: entry.id)
+            case .collection:
+                return UUID(uuidString: entry.id).flatMap { collectionStore?.load($0) } != nil
+            case .photos: return true
+            }
+        }
         if kept.count != list.count { list = kept; store(list) }
         var albums: Set<String>?
         if list.contains(where: { $0.kind == .photos }) {
             albums = access.client.authorizationStatus().canRead
                 ? Set(access.client.albums().map(\.id)) : []
         }
-        return list.filter { $0.kind == .folder || albums?.contains($0.id) == true }
+        return list.filter { $0.kind != .photos || albums?.contains($0.id) == true }
+    }
+
+    /// Drops one entry (a deleted collection's) from the list.
+    func forgetRecent(_ key: String) {
+        let list = storedRecents()
+        let kept = list.filter { $0.key != key }
+        if kept.count != list.count { store(kept) }
     }
 
     /// Moves (or adds) the source to the top, keeping any state it has.
@@ -118,6 +148,12 @@ extension Library {
                 return
             }
             open(album: album, access: access)
+        case .collection:
+            guard let id = UUID(uuidString: entry.id) else {
+                openError = "\(entry.title) is no longer saved"
+                return
+            }
+            openCollection(id, title: entry.title)
         }
     }
 
@@ -183,7 +219,7 @@ struct RecentList: View {
                     Button {
                         library.openRecent(entry)
                     } label: {
-                        Label(entry.title, systemImage: entry.kind == .folder ? "folder" : "photo.on.rectangle")
+                        Label(entry.title, systemImage: entry.kind.symbol)
                     }
                     .buttonStyle(.link)
                 }

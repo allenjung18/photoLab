@@ -90,10 +90,11 @@ final class CommandsTests: XCTestCase {
         let view = AppCommand.items(in: .view).map(\.name)
         XCTAssertEqual(view, [.grid, .loupe, .map, .zoom, .compare, .showOriginal, .clipping, .filmstrip, .info, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords])
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords, .removeFromCollection])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
-        XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos])
+        XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos, .deleteCollection])
+        XCTAssertEqual(AppCommand.items(in: .collection).map(\.name), [.newCollection])
         XCTAssertEqual(AppCommand.items(in: .importExport).map(\.name), [.export, .saveToPhotos])
         XCTAssertEqual(AppCommand.items(in: .undoRedo).map(\.name), [.undo, .redo])
         XCTAssertEqual(AppCommand.items(in: .pasteboard).map(\.name),
@@ -130,6 +131,10 @@ final class CommandsTests: XCTestCase {
             if placement.addsMenu {
                 XCTAssertFalse(AppCommand.Placement.suppliedMenus.contains(title),
                                "\(placement) adds a second \(title) menu")
+            } else if placement.isSubmenu {
+                let added = AppCommand.Placement.allCases.filter(\.addsMenu).compactMap(\.menuTitle)
+                XCTAssertTrue(AppCommand.Placement.suppliedMenus.contains(title) || added.contains(title),
+                              "\(placement) is a submenu of \(title), which nothing adds or supplies")
             } else {
                 XCTAssertTrue(AppCommand.Placement.suppliedMenus.contains(title),
                               "\(placement) sits in \(title), which nothing supplies")

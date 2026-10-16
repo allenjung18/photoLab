@@ -53,7 +53,8 @@ to run it, the timing tests, adding an adjustment).
   the same call, and so is Auto on many photos (`Library.sync(_:mask:)`, a
   source per photo under the one tag). (Architecture 3, Batch.)
 - **Injected directories.** `PresetStore(directory:)`,
-  `SidecarStore(folder:)`, `Library(rememberFolder:)`, `ExportQueue`'s
+  `SidecarStore(folder:)`, `CollectionStore(directory:)` (through
+  `Library(collections:)`), `Library(rememberFolder:)`, `ExportQueue`'s
   `Worker`, `remember:`, `photos:` (the `PhotosWriter`) and
   `stagingDirectory:`, `Thumbnails`' decoder and renderer, `PhotosAccess` (the
   `PhotoKitClient`, the sidecar and originals directories). Every test
@@ -73,6 +74,11 @@ to run it, the timing tests, adding an adjustment).
   the cached original through `Exporter.write`, never from the input's own
   image). (Architecture 2, PhotosSource and adjustment data; 4,
   PhotosWriter.)
+- **A collection member's edit lives in its own folder.** `Library.persist`
+  writes through `PhotoSource.sidecars(for:)` and `open` reads through
+  `loadSidecars(for:)`; `CollectionSource` routes each member to
+  `SidecarStore(folder: member.root)`. Never write a photo's sidecar
+  through `source.sidecars` directly. (Features, Collections.)
 - **Photo ids are the URLs `Library.scan` returns** (symlinks resolved:
   `/var/...` comes back as `/private/var/...`). Key recipes by those ids,
   never by a URL you built yourself. (Features, Grid.)

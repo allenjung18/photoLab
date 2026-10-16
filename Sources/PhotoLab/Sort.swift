@@ -197,9 +197,11 @@ final class CaptureDates {
 /// `sort.photos`); the Settings window's two sort pickers are the same
 /// choice (`defaultSort(for:)`, `setDefaultSort(_:for:)`).
 extension Library {
-    /// `folder` for a `FolderSource`, `photos` for any other (a library of
-    /// assets).
-    var sortKind: RecentSource.Kind { source is FolderSource ? .folder : .photos }
+    /// `folder` for a `FolderSource` or a collection (folder photos),
+    /// `photos` for any other (a library of assets).
+    var sortKind: RecentSource.Kind {
+        source is FolderSource || source is CollectionSource ? .folder : .photos
+    }
 
     /// The sort a source of `kind` opens in: the remembered choice, else the
     /// kind's default.

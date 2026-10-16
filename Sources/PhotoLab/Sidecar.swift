@@ -203,8 +203,7 @@ struct SidecarStore: Sendable {
     /// Under the flat naming the directory is listed once and only the ids
     /// with a file there are read, so a Photos Recents of thousands costs
     /// one listing, not a file check per photo.
-    func loadAll(for ids: [PhotoID]) -> (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks],
-                                         keywords: [PhotoID: [String]], unreadable: [PhotoID]) {
+    func loadAll(for ids: [PhotoID]) -> Loaded {
         guard FileManager.default.fileExists(atPath: directory.path) else { return ([:], [:], [:], []) }
         var recipes: [PhotoID: Recipe] = [:]
         var marks: [PhotoID: Marks] = [:]
@@ -228,6 +227,11 @@ struct SidecarStore: Sendable {
         }
         return (recipes, marks, keywords, unreadable)
     }
+
+    /// What `loadAll` reads: the non-default recipes, the non-empty marks
+    /// and keyword lists, and the ids whose sidecar could not be read.
+    typealias Loaded = (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks],
+                        keywords: [PhotoID: [String]], unreadable: [PhotoID])
 
     /// The file name (without the extension) for an id under `naming`.
     func relativeName(for id: PhotoID) -> String {

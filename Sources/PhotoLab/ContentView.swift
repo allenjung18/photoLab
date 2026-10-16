@@ -77,6 +77,22 @@ struct ContentView: View {
         .sheet(isPresented: $library.photosSheet) {
             PhotosAlbumSheet()
         }
+        .sheet(item: $library.newCollectionRequest) { request in
+            NewCollectionSheet(request: request)
+        }
+        .alert("Delete the collection “\(library.deleteCollectionRequest?.name ?? "")”?",
+               isPresented: deleteCollectionBinding, presenting: library.deleteCollectionRequest) { c in
+            Button("Delete", role: .destructive) { library.deleteCollection(c.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Only the collection is deleted. Its photos and their edits stay in their folders.")
+        }
+    }
+
+    /// The Delete Collection… confirm is up while a request is pending.
+    private var deleteCollectionBinding: Binding<Bool> {
+        Binding(get: { library.deleteCollectionRequest != nil },
+                set: { if !$0 { library.deleteCollectionRequest = nil } })
     }
 
     /// The toolbar picker's three segments.
@@ -130,6 +146,7 @@ struct ContentView: View {
         var s = !library.isNarrowed ? "\(total) photos" : "\(shown) of \(total) shown"
         let n = library.selectedIDs.count
         if n > 1 { s += " · \(n) selected" }
+        if library.missingMembers > 0 { s += " · \(library.missingMembers) missing" }
         return s
     }
 }
@@ -143,7 +160,7 @@ struct WelcomeView: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 64))
                 .foregroundStyle(.secondary)
-            Text("Open a folder of photos, or a Photos album, to begin")
+            Text("Open a folder of photos, a Photos album or a collection to begin")
                 .font(.title2)
             if let error = library.openError {
                 Text(error)
@@ -158,6 +175,7 @@ struct WelcomeView: View {
                 Button("Open Photos Library…") { library.choosePhotosAlbum() }
                     .disabled(!hasBundle)
             }
+            CollectionList()
             RecentList()
             if !hasBundle {
                 // Photos access is granted to an app bundle, never to a bare

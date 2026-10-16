@@ -85,12 +85,13 @@ in Xcode works too.
 | `⌘,` | Settings… (thumbnail size, preview quality, reopen at launch, sort) |
 
 Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
-PhotoLab › Settings…): File (open,
-Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
+PhotoLab › Settings…): File (open, Open Collection, Open Recent, Delete
+Collection…, Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…). A single-letter key is written after its menu item's
+ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…, Add
+to Collection, Remove from Collection). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
@@ -165,6 +166,21 @@ footer says how many of the shown photos have a location. The map tiles
 come from Apple over the network (no account or key); offline the pins
 draw on a blank grid. The map is not remembered: a folder or album always
 opens on the grid or the loupe.
+
+**Collections** are saved sets of photos from any number of folders.
+**Photo › Add to Collection** puts the selected photos of the open folder
+into a collection you pick, or into a new one (**New Collection…** asks for
+its name); **File › Open Collection**, the Welcome screen's **Collections**
+list and Open Recent open one like a folder, and reopen at launch like the
+last folder. An edit, flag, rating or keyword made in a collection is
+written to the photo's own folder, so opening that folder shows it, and the
+other way round. A photo whose file has moved or gone is left out of the
+grid and counted in the window's subtitle ("2 missing"), never dropped from
+the collection. **Photo › Remove from Collection** (while one is open) takes
+the selected photos out of it, and **File › Delete Collection…** (after a
+confirm; or right-click it on the Welcome screen) deletes the collection;
+neither touches a photo or its edit. Photos album photos cannot be added
+yet. Collections have no keys.
 
 ## Adjustments
 
@@ -339,6 +355,10 @@ Everything the app writes, and nothing else:
   which an older PhotoLab (another Mac not yet updated) treats as
   unreadable rather than opening it without them; an edit without any is
   saved as format 1, exactly as before.
+- **Collections** — `~/Library/Application Support/PhotoLab/Collections/<id>.json`,
+  one per collection: its name, when it was made, and each member's file
+  path and the folder whose `.photolab/` holds its edit. Nothing is written
+  there until you make one; deleting a collection deletes only its file.
 - **Presets** — `~/Library/Application Support/PhotoLab/presets/<name>.json`,
   one per preset; the six starter looks are written there when that folder
   does not exist yet.
@@ -362,8 +382,9 @@ Everything the app writes, and nothing else:
   is lost.
 - **Preferences** — in the app's UserDefaults: the Settings window's
   thumbnail size, preview quality and reopen-at-launch choice, the last
-  opened source (a folder's path, or a Photos album's identifier) and Open
-  Recent's list, the sort (once for folders, once for Photos albums),
+  opened source (a folder's path, a Photos album's identifier, or a
+  collection's id) and Open Recent's list, the sort (once for folders and
+  collections, once for Photos albums),
   whether the filmstrip and the Info and History sections are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,

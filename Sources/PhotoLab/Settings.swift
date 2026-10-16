@@ -40,6 +40,8 @@ enum LastSource: Equatable, Sendable {
     case folder(path: String)
     /// A Photos album by its identifier (`lastPhotosAlbum`).
     case photos(albumID: String)
+    /// A saved collection by its id (`lastCollection`, `PhotoCollection.id`).
+    case collection(id: String)
 }
 
 /// Every value PhotoLab keeps between launches, over one injected
@@ -68,6 +70,7 @@ final class AppSettings {
         static let lastFolder = "lastFolder"
         static let lastSourceKind = "lastSourceKind"
         static let lastPhotosAlbum = "lastPhotosAlbum"
+        static let lastCollection = "lastCollection"
         static let recentSources = "recentSources"
         static let exportFolder = "exportFolder"
         static let exportOptions = "exportOptions"
@@ -159,13 +162,19 @@ final class AppSettings {
     // MARK: Last source and Open Recent
 
     /// The last source opened: `lastSourceKind` `photos` names the album in
-    /// `lastPhotosAlbum` (nil when it is missing); anything else is the
-    /// folder in `lastFolder`.
+    /// `lastPhotosAlbum` (nil when it is missing), `collection` the
+    /// collection in `lastCollection`; anything else is the folder in
+    /// `lastFolder`.
     var lastSource: LastSource? {
         get {
             guard persistent else { return nil }
-            if defaults.string(forKey: Key.lastSourceKind) == "photos" {
+            switch defaults.string(forKey: Key.lastSourceKind) {
+            case "photos":
                 return defaults.string(forKey: Key.lastPhotosAlbum).map { .photos(albumID: $0) }
+            case "collection":
+                return defaults.string(forKey: Key.lastCollection).map { .collection(id: $0) }
+            default:
+                break
             }
             return defaults.string(forKey: Key.lastFolder).map { .folder(path: $0) }
         }
@@ -178,6 +187,9 @@ final class AppSettings {
             case .photos(let id)?:
                 defaults.set(id, forKey: Key.lastPhotosAlbum)
                 defaults.set("photos", forKey: Key.lastSourceKind)
+            case .collection(let id)?:
+                defaults.set(id, forKey: Key.lastCollection)
+                defaults.set("collection", forKey: Key.lastSourceKind)
             case nil:
                 defaults.removeObject(forKey: Key.lastSourceKind)
             }
