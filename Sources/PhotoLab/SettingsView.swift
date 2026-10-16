@@ -2,7 +2,7 @@ import SwiftUI
 
 /// PhotoLab › Settings… (⌘,): the grid's thumbnail size, the loupe's
 /// preview quality, the launch reopen and the sort each kind of source opens
-/// in. Every control edits the library's `AppSettings` (the sort through
+/// in, and the learned style (its sample count, Forget Style). Every control edits the library's `AppSettings` (the sort through
 /// `Library.setDefaultSort(_:for:)`, so the open source re-sorts when it is
 /// of that kind); a change applies at once and is remembered.
 struct SettingsView: View {
@@ -40,6 +40,23 @@ struct SettingsView: View {
                 Toggle("Reopen the last folder or album", isOn: $settings.reopenLastSource)
             }
             Section {
+                LabeledContent("Learned from") {
+                    HStack {
+                        Text(styleSummary)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Button("Forget Style") { library.forgetStyle() }
+                            .disabled(!library.canForgetStyle)
+                    }
+                }
+            } header: {
+                Text("Style")
+            } footer: {
+                Text(library.styleError ?? "Photo › Learn Style from Selected Photos… compares your Basic and white-balance values with Auto's. It stays on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 sortRow("Folders", kind: .folder)
                 sortRow("Photos albums", kind: .photos)
             } header: {
@@ -53,6 +70,12 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The sample count of the learned style (`StyleProfile.sampleCount`).
+    private var styleSummary: String {
+        let n = library.styleProfile?.sampleCount ?? 0
+        return n == 0 ? "No photos" : "\(n) photo\(n == 1 ? "" : "s")"
     }
 
     private func sortRow(_ title: String, kind: RecentSource.Kind) -> some View {

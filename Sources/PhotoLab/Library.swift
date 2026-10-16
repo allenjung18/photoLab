@@ -409,6 +409,12 @@ final class Library {
     /// The last Auto batch's outcome worth saying: photos skipped, or that
     /// it was cancelled and applied nothing; nil when it needs no word.
     private(set) var autoNote: String?
+    /// What the running job is called in its bar: "Auto", or "Learning
+    /// style" (`learnStyle`).
+    private(set) var autoLabel = "Auto"
+    /// False when `autoNote` reports a result rather than a problem (Learn
+    /// Style's "Learned from n photos").
+    private(set) var autoNoteWarns = true
     /// Set by `cancelAuto()`; read as each photo's result arrives.
     @ObservationIgnored private var autoCancelled = false
     /// Reads one photo for Auto: (original, its recipe, white balance
@@ -424,6 +430,15 @@ final class Library {
     }
     /// Most photos Auto reads at once: 4, or half the processors if fewer.
     static var autoConcurrency: Int { min(4, max(1, ProcessInfo.processInfo.activeProcessorCount / 2)) }
+    /// Where the learned style is kept (`StyleStore`); nil keeps it in
+    /// memory only (a library made with `rememberFolder: false` and no store).
+    let styleStore: StyleStore?
+    /// The learned style, nil when none is saved (or it could not be read).
+    private(set) var styleProfile: StyleProfile?
+    /// Why the style file could not be read or written; nil when it could.
+    private(set) var styleError: String?
+    /// The Learn Style confirm the window should show.
+    var learnStyleRequest: LearnStyleRequest?
     /// Where collections are saved (`CollectionStore`); nil keeps every
     /// collection command off (a library made without one).
     let collectionStore: CollectionStore?
@@ -495,12 +510,15 @@ final class Library {
          settings: AppSettings? = nil,
          captureDates: CaptureDates = CaptureDates(),
          collections: CollectionStore? = nil,
+         style: StyleStore? = nil,
          trasher: (any FileTrasher)? = nil) {
         self.settings = settings ?? AppSettings(defaults: defaults, persistent: rememberFolder)
+        self.styleStore = style ?? (rememberFolder ? StyleStore() : nil)
         self.trasher = trasher
         self.captureDates = captureDates
         self.collectionStore = collections
         self.photoInfo = PhotoInfoStore(captureDates: captureDates)
+        loadStyle()
     }
 
     func chooseFolder() {
@@ -1625,51 +1643,70 @@ final class Library {
     /// and tint, measured the same way.
     @discardableResult
     func autoTone(_ ids: [Photo.ID], mask: SyncMask = AutoTone.mask) async -> Int {
-        guard !autoToning, !ids.isEmpty else { return 0 }
+        let whiteBalanceOnly = mask == AutoTone.whiteBalanceMask
+        let measure = autoMeasure
+        guard let run = await runAutoJob(ids, label: "Auto", measure: { url, recipe in
+            measure(url, recipe, whiteBalanceOnly)
+        }) else { return 0 }
+        if run.cancelled {
+            autoNote = "Auto cancelled: nothing changed (one batch, all or nothing)"
+            return 0
+        }
+        if run.unreadable > 0 { autoNote = "Auto: \(run.unreadable) photo\(run.unreadable == 1 ? "" : "s") skipped" }
+        // The photo's own recipe underneath: a white balance Auto could
+        // not read stays as it is. In the order given, whatever finished first.
+        let sources = ids.compactMap { id in
+            run.results[id].map { (id, AutoTone.applying($0, to: recipe(for: id))) }
+        }
+        // A drag left open would fold Auto into its step.
+        closeOpenEdit()
+        return sync(sources, mask: mask)
+    }
+
+    /// The Auto job behind `autoTone` and `learnStyle`: `measure` over each
+    /// photo's original and recipe (as they are when the job starts), off
+    /// the main thread, at most `autoConcurrency` at a time in a task group,
+    /// results keyed by `Photo.ID`. `autoToning` is true and `autoProgress`
+    /// counts the reads meanwhile (the bar says "`label` n of N");
+    /// `cancelAuto()` ends it with `cancelled` set. A photo whose original
+    /// cannot be read, or that `measure` returns nil for, counts in
+    /// `unreadable`. Nil when a job is already running or `ids` is empty.
+    private func runAutoJob<T: Sendable>(_ ids: [Photo.ID], label: String,
+                                         measure: @escaping @Sendable (URL, Recipe) -> T?) async
+        -> (results: [Photo.ID: T], unreadable: Int, cancelled: Bool)? {
+        guard !autoToning, !ids.isEmpty else { return nil }
         autoToning = true
         autoCancelled = false
         autoNote = nil
+        autoNoteWarns = true
+        autoLabel = label
         autoProgress = (0, ids.count)
         defer { autoToning = false; autoLastRun = autoProgress; autoProgress = (0, 0) }
-        let whiteBalanceOnly = mask == AutoTone.whiteBalanceMask
-        let measure = autoMeasure
         let cap = Self.autoConcurrency
-        var measured: [Photo.ID: [AdjustmentKind: Double]] = [:]
-        var skipped = 0
+        var results: [Photo.ID: T] = [:]
+        var unreadable = 0
         let recipes = Dictionary(ids.map { ($0, recipe(for: $0)) }, uniquingKeysWith: { a, _ in a })
-        await withTaskGroup(of: (Photo.ID, [AdjustmentKind: Double]?).self) { group in
+        await withTaskGroup(of: (Photo.ID, T?).self) { group in
             var next = 0
             func start(_ id: Photo.ID) {
                 let recipe = recipes[id] ?? .neutral
                 group.addTask { [weak self] in
                     guard let self, let url = try? await self.originalFile(for: id) else { return (id, nil) }
-                    let values = await Task.detached(priority: .userInitiated) {
-                        measure(url, recipe, whiteBalanceOnly)
+                    let value = await Task.detached(priority: .userInitiated) {
+                        measure(url, recipe)
                     }.value
-                    return (id, values)
+                    return (id, value)
                 }
             }
             while next < min(cap, ids.count) { start(ids[next]); next += 1 }
-            for await (id, values) in group {
+            for await (id, value) in group {
                 autoProgress = (autoProgress.done + 1, ids.count)
-                if let values { measured[id] = values } else { skipped += 1 }
+                if let value { results[id] = value } else { unreadable += 1 }
                 if autoCancelled { group.cancelAll(); continue }
                 if next < ids.count { start(ids[next]); next += 1 }
             }
         }
-        if autoCancelled {
-            autoNote = "Auto cancelled: nothing changed (one batch, all or nothing)"
-            return 0
-        }
-        if skipped > 0 { autoNote = "Auto: \(skipped) photo\(skipped == 1 ? "" : "s") skipped" }
-        // The photo's own recipe underneath: a white balance Auto could
-        // not read stays as it is. In the order given, whatever finished first.
-        let sources = ids.compactMap { id in
-            measured[id].map { (id, AutoTone.applying($0, to: recipe(for: id))) }
-        }
-        // A drag left open would fold Auto into its step.
-        closeOpenEdit()
-        return sync(sources, mask: mask)
+        return (results, unreadable, autoCancelled)
     }
 
     /// Match Look (`LookMatch`): the global tone and colour of `reference`
@@ -1863,6 +1900,101 @@ final class Library {
 
     /// Clears the Auto status line.
     func dismissAutoNote() { autoNote = nil }
+
+    // MARK: Style (Auto in my style, the learning half)
+
+    /// Reads one photo for Learn Style: (original, recipe) to its bucket and
+    /// Auto's values with its Basic and white-balance kinds at neutral
+    /// (`StyleSample.measure`), from the same decode Auto reads; nil when it
+    /// cannot be read. Runs off the main thread; a test may replace it.
+    @ObservationIgnored var styleMeasure: @Sendable (URL, Recipe) -> (bucket: StyleBucket, auto: [AdjustmentKind: Double])? = { url, recipe in
+        guard let master = Renderer.previewMaster(url, maxPixelSize: PreviewModel.masterPixelSize)
+        else { return nil }
+        return StyleSample.measure(master: master, recipe: recipe)
+    }
+
+    /// Learns the style from `ids` (Photo › Learn Style from Selected
+    /// Photos…): one `StyleSample` per photo through `runAutoJob` (Auto's
+    /// concurrency, progress and cancel), `StyleProfile.learn(from:)` over
+    /// them (`replace`) or over the current samples with them laid on top
+    /// (`StyleProfile.merging`), saved by `styleStore`. A photo whose own
+    /// values are all neutral or equal Auto's (`StyleSample.skip`), or that
+    /// cannot be read, is skipped and counted. `autoNote` says "Learned
+    /// from n photos (m skipped)". A cancel, or a run that yields no sample,
+    /// leaves the saved style as it was. Returns the samples taken.
+    @discardableResult
+    func learnStyle(from ids: [Photo.ID], replace: Bool) async -> Int {
+        let measure = styleMeasure
+        guard let run = await runAutoJob(ids, label: "Learning style", measure: { url, recipe in
+            measure(url, recipe).map { (bucket: $0.bucket, auto: $0.auto, recipe: recipe) }
+        }) else { return 0 }
+        if run.cancelled {
+            autoNote = "Learn Style cancelled: nothing changed"
+            return 0
+        }
+        var samples: [StyleSample] = []
+        var skipped = run.unreadable
+        for id in ids {
+            guard let m = run.results[id] else { continue }
+            let own = Dictionary(uniqueKeysWithValues: AutoTone.kinds.map { ($0, m.recipe.effective($0)) })
+            let sample = StyleSample(photo: id, bucket: m.bucket, auto: m.auto, own: own)
+            if sample.skip != nil { skipped += 1 } else { samples.append(sample) }
+        }
+        let note = "Learned from \(samples.count) photo\(samples.count == 1 ? "" : "s") (\(skipped) skipped)"
+        guard !samples.isEmpty else {
+            autoNote = note
+            return 0
+        }
+        let all = replace ? samples : StyleProfile.merging(samples, into: styleProfile?.samples ?? [])
+        let profile = StyleProfile.learn(from: all)
+        do {
+            try styleStore?.save(profile)
+            styleProfile = profile
+            styleError = nil
+            autoNote = note
+            autoNoteWarns = false
+        } catch {
+            styleError = error.localizedDescription
+            autoNote = "Learn Style could not save: \(error.localizedDescription)"
+        }
+        return samples.count
+    }
+
+    /// Asks the window for the Learn Style confirm over `ids` (Replace /
+    /// Add to current samples).
+    func requestLearnStyle(_ ids: [Photo.ID]) {
+        guard !ids.isEmpty, !autoToning else { return }
+        learnStyleRequest = LearnStyleRequest(ids: ids, currentSamples: styleProfile?.sampleCount ?? 0)
+    }
+
+    /// Forget Style is offered while there is a profile or a file (an
+    /// unreadable one included).
+    var canForgetStyle: Bool { styleProfile != nil || (styleStore?.exists ?? false) }
+
+    /// Settings › Forget Style: deletes `style.json` and the profile.
+    func forgetStyle() {
+        do {
+            try styleStore?.remove()
+            styleProfile = nil
+            styleError = nil
+        } catch {
+            styleError = error.localizedDescription
+        }
+    }
+
+    /// Re-reads `style.json` (at launch): a file that cannot be read leaves
+    /// no profile and `styleError` set, and stays on disk until a save
+    /// moves it aside.
+    func loadStyle() {
+        guard let styleStore else { styleProfile = nil; return }
+        do {
+            styleProfile = try styleStore.load()
+            styleError = nil
+        } catch {
+            styleProfile = nil
+            styleError = error.localizedDescription
+        }
+    }
 
     /// Applies a preset to many photos as one batch: the preset's look (the
     /// kinds in `mask`, never geometry, which a preset does not carry) over

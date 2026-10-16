@@ -44,7 +44,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, myEdits, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, autoWhiteBalance, matchLook, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
+        case crop, whiteBalance, autoTone, autoWhiteBalance, matchLook, learnStyle, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
         case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject, selectPerson, selectFaces, selectSky
         case trashRejects
@@ -350,6 +350,12 @@ struct AppCommand: Identifiable {
         AppCommand(name: .matchLook, title: "Match Look…", key: nil, placement: .photo, section: 2,
                    isEnabled: { c in !c.targets.isEmpty && !c.library.autoToning && c.library.matchLookRequest == nil },
                    perform: { c in c.library.requestMatchLook(for: c.targets) }),
+        // Learn Style: the user's values over Auto's on the batch targets
+        // (`Library.learnStyle`), after a Replace / Add confirm. No key.
+        AppCommand(name: .learnStyle, title: "Learn Style from Selected Photos…", key: nil,
+                   placement: .photo, section: 2,
+                   isEnabled: { c in !c.targets.isEmpty && !c.library.autoToning },
+                   perform: { c in c.library.requestLearnStyle(c.targets) }),
         AppCommand(name: .resetPhoto, title: "Reset Photo", key: "r", modifiers: [.command, .shift],
                    placement: .photo, section: 2,
                    isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },

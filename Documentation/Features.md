@@ -1196,6 +1196,32 @@ redo, Reset, the render time and any sidecar error.
   applies nothing, one batch, all or nothing, and `Library.autoNote` says so;
   a photo whose original cannot be read is skipped and counted there ("Auto:
   2 photos skipped"). The one `sync` at the end is still the only apply.
+- **Learn Style** (`AutoStyle.swift`, `Library.learnStyle(from:replace:)`),
+  the learning half of Auto in my style, on the Mac only. **Photo › Learn
+  Style from Selected Photos…** (`AppCommand.Name.learnStyle`, no key, on
+  `CommandContext.targets`, disabled while `Library.autoToning`) asks first
+  (`Library.requestLearnStyle`, a `LearnStyleRequest` alert in
+  `ContentView`): **Replace** the saved style, or **Add to Current Samples**
+  (offered when it holds any; `StyleProfile.merging` keeps one sample per
+  photo, the newest). The photos are read by the same job as Auto
+  (`Library.runAutoJob`: `Library.autoConcurrency` at once, "Learning style
+  n of N" in `AutoBar`, Cancel or `Esc` learns nothing), each through
+  `Library.styleMeasure`: the master Auto reads, measured with the photo's
+  Basic and white-balance kinds at neutral (`StyleSample.neutralBase`) for
+  its bucket (`ImageStats.of(master:recipe:)`'s luma median, by
+  `StyleBucket.of(lumaMedian:)`: below `ImageStats.shadowCeiling` dark,
+  above `ImageStats.highlightFloor` bright, else mid) and for Auto's values
+  (`AutoTone.values(for:recipe:)`). A `StyleSample` keeps those and the
+  photo's own values (`Recipe.effective`) over `AutoTone.kinds`; one whose
+  own values are all neutral or equal Auto's (`StyleSample.skip`), or whose
+  original cannot be read, is skipped and counted. `StyleProfile.learn(from:)`,
+  a pure function, gives per bucket and per kind the median of (own − Auto)
+  (`StyleProfile.median`), and the same over every sample (`overall`), which
+  a bucket with fewer than `StyleProfile.minimumBucketSamples` (3) uses
+  (`StyleProfile.correction(for:)`). `Library.autoNote` says "Learned from n
+  photos (m skipped)"; a run with no sample keeps the saved style.
+  `StyleStore` writes `style.json` (see Settings). Nothing applies the
+  correction yet.
 
 Writes: the photo's sidecar, through `setRecipe`, once per change and once
 per drag; the default recipe removes it.
@@ -1503,6 +1529,19 @@ remembered.
   kind and the remembered one for the other; `Library.setDefaultSort(_:for:)`
   sets `Library.sort` (a re-sort at once) when the open source is of that
   kind, and only remembers it otherwise (`AppSettings.setSort(_:for:)`).
+- **Style › Learned from**: the learned style's photo count
+  (`StyleProfile.sampleCount` of `Library.styleProfile`) and **Forget Style**
+  (`Library.forgetStyle()`, enabled by `Library.canForgetStyle`: a profile,
+  or a file that could not be read), which deletes the file. The footer
+  shows `Library.styleError` when the file could not be read or written.
+  The file is not an `AppSettings` value: `StyleStore`,
+  `~/Library/Application Support/PhotoLab/style.json`
+  (`StyleStore.defaultDirectory`, injected so tests use a temp directory;
+  a `Library(rememberFolder: false)` without one keeps the style in memory),
+  read at launch (`Library.loadStyle()`), written atomically, and on
+  `PresetStore`'s rules: a file this build cannot decode, or whose
+  `version` is newer than `StyleProfile.currentVersion` (`StyleError`), is
+  moved aside by `UnreadableBackup` before a save, never overwritten.
 
 `AppSettings` (`Settings.swift`) is the one store for everything kept
 between launches: these four, the filmstrip and Info toggles, the last
@@ -1589,7 +1628,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
     button beside White Balance in Color), **Match Look…**
     (`AppCommand.Name.matchLook`, no key: `Library.requestMatchLook(for:)` opens
     `MatchLookSheet`; a file dropped on the loupe's panel opens it with that
-    reference chosen) and **Reset Photo** **⇧⌘R**
+    reference chosen), **Learn Style from Selected
+    Photos…** (`Library.requestLearnStyle`, see Adjustments panel, Learn
+    Style) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited), **Create
     Virtual Copy** **⌘'** and **Remove Virtual Copy…** (see Virtual copies); then
     **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch

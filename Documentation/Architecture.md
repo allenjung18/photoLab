@@ -489,7 +489,9 @@ the saturation and chroma differences), zero to itself and symmetric.
 `ImageStats.of(master:recipe:)` renders the recipe as it stands through
 `Renderer.shared` at `AutoTone.analysisPixelSize`, as
 `AutoTone.histogram(of:recipe:)` does without its neutral base, and
-measures that frame. It has no UI and touches no `Library` state.
+measures that frame. Learn Style reads it (see `Library.runAutoJob`) for a
+photo's brightness bucket, on the frame with the Basic and white-balance
+kinds at neutral.
 
 `LookMatch` (`LookMatch.swift`) is the first reader: the solver that finds
 the global values making a photo measure like a target `ImageStats`. Its
@@ -521,7 +523,14 @@ values on a recipe. A whole solve takes about two seconds at 512 px
 `Library.autoTone` reads its photos in a task group of at most
 `Library.autoConcurrency`, each through `Library.autoMeasure` (off the main
 thread; a test replaces it), results keyed by `Photo.ID` and applied by one
-`sync` after the last; `Library.cancelAuto()` drops them all.
+`sync` after the last; `Library.cancelAuto()` drops them all. That job is
+`Library.runAutoJob`, generic over what each read returns, and Learn Style
+(`Library.learnStyle(from:replace:)`, `AutoStyle.swift`) is its second
+user: each read through `Library.styleMeasure` gives a `StyleSample`'s
+`StyleBucket` and Auto's values for the photo at neutral, the photo's own
+values are taken from its recipe as the job started, and
+`StyleProfile.learn(from:)` (pure) turns the samples into per-bucket
+medians of own − Auto with an all-photo fallback, saved by `StyleStore`.
 
 ### The preset strip
 

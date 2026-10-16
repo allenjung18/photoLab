@@ -118,6 +118,20 @@ struct ContentView: View {
         } message: { request in
             Text(request.message)
         }
+        .alert(library.learnStyleRequest?.title ?? "", isPresented: learnStyleBinding,
+               presenting: library.learnStyleRequest) { request in
+            Button(request.currentSamples == 0 ? "Learn" : "Replace") {
+                Task { await library.learnStyle(from: request.ids, replace: true) }
+            }
+            if request.currentSamples > 0 {
+                Button("Add to Current Samples") {
+                    Task { await library.learnStyle(from: request.ids, replace: false) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            Text(request.message)
+        }
         .alert(library.removeCopyRequest?.title ?? "", isPresented: removeCopyBinding,
                presenting: library.removeCopyRequest) { request in
             Button("Remove", role: .destructive) { library.removeVirtualCopy(request.id) }
@@ -132,6 +146,12 @@ struct ContentView: View {
         .sheet(item: Binding(get: { presets.xmpImports.first }, set: { if $0 == nil { presets.xmpImports.first?.cancel() } })) { model in
             XMPImportSheet(model: model)
         }
+    }
+
+    /// The Learn Style confirm is up while a request is pending.
+    private var learnStyleBinding: Binding<Bool> {
+        Binding(get: { library.learnStyleRequest != nil },
+                set: { if !$0 { library.learnStyleRequest = nil } })
     }
 
     /// The Delete Collection… confirm is up while a request is pending.
@@ -736,13 +756,17 @@ private struct AutoBar: View {
             if library.autoToning {
                 ProgressView(value: Double(library.autoProgress.done), total: Double(max(1, library.autoProgress.total)))
                     .frame(width: 160)
-                Text("Auto \(library.autoProgress.done) of \(library.autoProgress.total)")
+                Text("\(library.autoLabel) \(library.autoProgress.done) of \(library.autoProgress.total)")
                     .font(.callout.monospacedDigit())
                 Spacer()
                 Button("Cancel") { library.cancelAuto() }
                     .help("Stop and apply nothing (Esc)")
             } else if let note = library.autoNote {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                if library.autoNoteWarns {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                } else {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary)
+                }
                 Text(note).font(.callout).lineLimit(2)
                 Spacer()
                 Button("Done") { library.dismissAutoNote() }

@@ -471,6 +471,17 @@ not only the pass.
   leaves every sidecar absent; two missing originals are skipped and counted;
   an injected `autoMeasure` never sees more than `Library.autoConcurrency` in
   flight; Esc (the Back command) cancels and the command is disabled meanwhile.
+- `AutoStyleTests.swift` — Learn Style (`StyleProfile`, `StyleSample`,
+  `StyleStore`, `Library.learnStyle`): `learn(from:)` on hand-built samples
+  gives the median per bucket (an outlier ignored) and the all-photo median
+  for a bucket under three samples; eight synthetic photos in a temp folder,
+  six edited +0.5 EV and +10 temperature over Auto, one left at Auto and one
+  never edited, learn exactly those corrections with "Learned from 6 photos
+  (2 skipped)"; Add keeps one sample per photo; a run with nothing to learn
+  or a cancel keeps the saved style; the store (a temp directory only)
+  round-trips, moves a damaged or version-2 file aside with its bytes, and
+  Forget Style deletes it. Mutants (mean for median; no bucket split) fail
+  the medians test.
 - `AutoToneTests.swift` — Auto (`AutoTone`, `Library.autoTone`) on
   synthetic grays: a dark frame gets more than +0.5 EV and its median
   comes at least half way to `AutoTone.midTarget`; a frame with a third of

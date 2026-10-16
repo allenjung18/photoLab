@@ -91,13 +91,14 @@ in Xcode works too.
 | `⇧⌘U` | Auto White Balance: temperature and tint only (or **Auto** beside White Balance in Color) |
 | — | My Edits… (View menu, no key): a read-only sheet over the open folder or album — your habits first (per slider, how many photos use it and the median value, most used first), then every edited photo (each virtual copy its own row) with its thumbnail and its enabled, non-neutral sliders by panel section and "n masks"; click a row to open that photo in the loupe. A switched-off slider is not shown or counted; nothing is written |
 | — | Match Look… (Photo menu, no key; or drop an image file on the loupe's panel): pick one reference photo and the batch targets get its tone and colour (exposure, contrast, whites, blacks, temperature, tint, saturation, vibrance and the shadow and highlight grade) as ordinary slider values, each photo solved for its own, one undo step for the lot; the sheet shows the reference's thumbnail and lists the sliders moved. The reference is only read: never copied, imported or changed. An unreadable file changes nothing |
+| — | Learn Style from Selected Photos… (Photo menu, no key): compares each selected photo's Basic and white-balance values with what Auto gives it, and keeps the median difference per brightness (dark, mid, bright) in `~/Library/Application Support/PhotoLab/style.json`, on this Mac only. **Replace** the learned style or **Add to Current Samples**; photos left at Auto or never edited there are skipped, and the bar says "Learned from n photos (m skipped)". Settings shows how many photos it holds and **Forget Style** |
 | `⇧⌘R` | Reset Photo (back to the original) |
 | `⌘'` | Create Virtual Copy: a second edit of the selected photo (grid or loupe), starting from its current one, listed right after it with a small number badge and captioned "<name> Copy 2"; **Photo › Remove Virtual Copy…** (also in a cell's right-click menu) deletes a copy's edit after a confirm and is not undoable. A copy is flagged, rated, synced, batch-edited and exported like any photo; its export is named `<name>-copy2.jpg` so it never lands on its master's; Save to Photos is off on a copy (Photos keeps one edit per photo) |
 | `⇧⌘P` | Save Preset… (in the loupe) |
 | `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
 | `⇧⌘I` | Import from Card… (a card's photos, or any folder's, copied into `~/Pictures/PhotoLab` by capture date) |
 | `⇧⌘E` | Export… (the grid's selection, or the loupe's photo) |
-| `⌘,` | Settings… (thumbnail size, preview quality, reopen at launch, sort) |
+| `⌘,` | Settings… (thumbnail size, preview quality, reopen at launch, sort, the learned style) |
 
 Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
 PhotoLab › Settings…): File (open, Open Collection, Open Recent, Delete
@@ -105,7 +106,7 @@ Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Red
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, My Edits…, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Match Look…, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
+ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Match Look…, Learn Style from Selected Photos…, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
 to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Select Sky (guess), Move Rejected Photos to Trash…). Select Subject, Select Person, Select Faces, Select Sky (guess), Match Look… and My Edits… have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
@@ -487,6 +488,12 @@ Everything the app writes, and nothing else:
   this version cannot read is listed in the Preset menu as unreadable and
   kept as `<name>.json.unreadable-<stamp>` before a preset of that name is
   saved, never deleted.
+- **Learned style** — `~/Library/Application Support/PhotoLab/style.json`,
+  written by Learn Style from Selected Photos… (the photos it learned from,
+  each one's Auto values and yours, and the corrections); nothing is written
+  until you learn one, and Forget Style deletes it. A file this version
+  cannot read is kept as `style.json.unreadable-<stamp>` before a new style
+  is saved, never overwritten.
 - **Photos sidecars** — `~/Library/Application Support/PhotoLab/photos-sidecars/<asset-id>.json`,
   one per edited, flagged, rated or keyworded photo of a Photos album (the asset's
   identifier with its slashes as underscores), with the same rules as a
