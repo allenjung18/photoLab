@@ -73,6 +73,8 @@ final class AppSettings {
         static let exportOptions = "exportOptions"
         static let exportPhotosAlbum = "exportPhotosAlbum"
         static let exportTarget = "exportTarget"
+        /// The export sheet's last picked preset name (`ExportPresetStore`).
+        static let exportPreset = "exportPreset"
         /// Developer only (`DeveloperInfo.showTimings`), never in the window.
         static let showTimings = "showTimings"
     }
@@ -214,6 +216,12 @@ final class AppSettings {
     var exportTarget: String? {
         get { persistent ? defaults.string(forKey: Key.exportTarget) : nil }
         set { if persistent { defaults.set(newValue, forKey: Key.exportTarget) } }
+    }
+    /// The name of the export preset last picked or saved in the export
+    /// sheet; nil when none (or after it was deleted).
+    var exportPreset: String? {
+        get { persistent ? defaults.string(forKey: Key.exportPreset) : nil }
+        set { if persistent { defaults.set(newValue, forKey: Key.exportPreset) } }
     }
     var exportOptions: ExportOptions? {
         get {

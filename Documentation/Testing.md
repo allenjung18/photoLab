@@ -430,6 +430,27 @@ not only the pass.
   `PhotosSource.saveOptions.watermark` is nil; a folder export through
   `Exporter.export` writes the mark into the JPEG. Shown to bite by
   ignoring the position (always bottom right; 7 failures in 2 tests).
+- `ExportPresetTests.swift` — export presets (`ExportPreset`,
+  `ExportPresetStore`, `ExportPresetLibrary`, `ExportForm`), every store in a
+  temporary directory: a preset round-trips through a fresh store with
+  every option and its watermark (and a preset without one), the file
+  holding no destination; names are trimmed and their `/` and `:` become
+  `-` in the file name, an empty or hidden name is refused and a different
+  name on the same file is refused without replacing it; a damaged file
+  and a too-new `version` are listed as unreadable, a save of the damaged
+  name moves its bytes to the `UnreadableBackup` path first and the
+  too-new file is left untouched; delete removes only that file (another
+  preset, a damaged `.json` and a non-JSON file stay); the default folder
+  is `export-presets` beside the develop `presets`, and every export-preset
+  operation leaves a seeded develop folder byte-for-byte as it was (no
+  built-in export presets, nothing seeded); a pick sets
+  `ExportForm.resolved` equal to the preset's options, switching a
+  watermark off or replacing another one; a changed option, watermark
+  field or size control shows "<name> (edited)" and changing it back
+  clears it; a saved form picks back to the same options; and
+  `AppSettings.exportPreset` round-trips, clears, and a quiet store writes
+  nothing. Shown to bite by keeping the previous watermark across a pick
+  (8 failures in 3 tests).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows
@@ -647,6 +668,8 @@ place the app writes is injected:
 
 - `PresetStore(directory:)`: every test's store points at a temporary
   directory, never `PresetStore.defaultDirectory`.
+- `ExportPresetStore(directory:)`: likewise, never
+  `ExportPresetStore.defaultDirectory`.
 - `SidecarStore(folder:)` and `Library.open`: the photo folder is a
   temporary directory the test makes and fills with small synthetic images,
   so its `.photolab/` sidecars are the test's own. A source without a

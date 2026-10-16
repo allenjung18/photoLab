@@ -13,6 +13,10 @@ import SwiftUI
 final class UISnapshotTests: XCTestCase {
     private static let wide = CGSize(width: 1280, height: 800)
     private static let floor = CGSize(width: 900, height: 600)
+    /// The export sheets read an empty, never-created folder, not the
+    /// user's export presets: the Preset menu reads "None".
+    private static let noExportPresets = ExportPresetStore(directory: FileManager.default.temporaryDirectory
+        .appendingPathComponent("photolab-snapshots-no-export-presets-\(UUID().uuidString)", isDirectory: true))
 
     // MARK: Scenes
 
@@ -344,7 +348,8 @@ final class UISnapshotTests: XCTestCase {
                            model: "ExportSheet with 4 items, destination folder, the folder set; hasBundle true", caveat: sheetNote, size: fit)) {
             try await self.sheetScene { lib, exports, items in
                 AnyView(ExportSheet(request: .init(items: items), options: exports.options,
-                                    folder: URL(fileURLWithPath: "/Volumes/Archive/Lake trip exports", isDirectory: true), album: nil, toPhotos: false))
+                                    folder: URL(fileURLWithPath: "/Volumes/Archive/Lake trip exports", isDirectory: true), album: nil, toPhotos: false,
+                                    presetStore: Self.noExportPresets))
             }
         }
         let photosVariants: [(String, String, PhotosAuthorization, Bool, String)] = [
@@ -356,7 +361,8 @@ final class UISnapshotTests: XCTestCase {
         for (number, name, status, bundle, model) in photosVariants {
             await h.shoot(shot(number, name, "Export to Photos, 4 photos", model: model, caveat: sheetNote, size: fit)) {
                 var s = try await self.sheetScene(status: status) { lib, exports, items in
-                    AnyView(ExportSheet(request: .init(items: items), options: exports.options, folder: nil, album: ExportTarget.defaultAlbum, toPhotos: true))
+                    AnyView(ExportSheet(request: .init(items: items), options: exports.options, folder: nil, album: ExportTarget.defaultAlbum, toPhotos: true,
+                                        presetStore: Self.noExportPresets))
                 }
                 s.hasBundle = bundle
                 return s

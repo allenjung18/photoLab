@@ -358,7 +358,7 @@ there.
 ## 2. Data model
 
 All of it is in `Adjustments.swift`, `Masks.swift`, `Sidecar.swift`, `Presets.swift`,
-`Export.swift`, `Watermark.swift`, `PhotoSource.swift` and `Photos.swift`.
+`Export.swift`, `Watermark.swift`, `ExportPresets.swift`, `PhotoSource.swift` and `Photos.swift`.
 
 ### `PhotoID`, `Photo` and `PhotoSource`
 
@@ -743,6 +743,37 @@ options between runs, and in UserDefaults across launches through its
 `AppSettings` when that is `persistent` (the app passes its own; a test's
 `ExportQueue(remember: false)` gets one that keeps nothing).
 
+### `ExportPreset` and `ExportPresetStore`
+
+An `ExportPreset` (`ExportPresets.swift`) is a named `ExportOptions`:
+`version` (`ExportPreset.currentVersion`), `name`, `options` — every
+field above, the watermark included. The destination (`ExportTarget`) is
+not in it. `ExportPresetStore` is one JSON file per preset,
+`<directory>/<name>.json`, injected (`ExportPresetStore(directory:)`,
+default `ExportPresetStore.defaultDirectory`, the `export-presets` folder
+beside `PresetStore.defaultDirectory`'s `presets`, never inside it). It
+follows `PresetStore`'s rules without changing that file: names through
+`PresetStore.validated`, `/` and `:` as `-` in `url(for:)`, an atomic
+`save(_:now:)` that replaces the same name and refuses a different name on
+the same file (`ExportPresetError.fileNameCollision`), `decode` refusing a
+`version` above `ExportPreset.currentVersion`
+(`ExportPresetError.unsupportedVersion`), `save` over an undecodable file
+moving it aside with `UnreadableBackup.moveAside` first, and `loadAll()`
+returning the readable presets sorted by name plus the `.json` files it
+could not decode, left alone. `remove(_:)` deletes the one file. Nothing is
+seeded: there are no built-in export presets. `ExportPresetLibrary` is the
+store read into memory for the export sheet, re-read after every change,
+with the last error.
+
+`ExportForm` is the export sheet's fields as one value: `options`, the
+Size controls (`sizeMode`, `longSide`, `percent`), the Watermark section
+(`watermarkOn`, `watermark`) and `picked`, the preset last picked or
+saved. `resolved` folds them into the `ExportOptions` a run uses;
+`pick(_:)` rebuilds every field from the preset's options (so the
+previous watermark never survives a pick); `isEdited` compares `resolved`
+with the picked preset's own resolved options, and `presetLabel` is the
+menu's title ("None", the name, or "<name> (edited)").
+
 ### `AppSettings`
 
 `AppSettings` (`Settings.swift`) is every value kept between launches, over
@@ -750,7 +781,8 @@ one injected `UserDefaults`: the Settings window's `gridThumbnailSize`,
 `previewQuality` and `reopenLastSource`, the per-kind sort (`sort(for:)`,
 `setSort(_:for:)`), `showFilmstrip`, `showInfo` and `showHistory`, `lastSource`,
 `recents`, and the export sheet's `exportFolder`, `exportOptions`,
-`exportAlbum` and `exportTarget`. The keys (`AppSettings.Key`) are the
+`exportAlbum`, `exportTarget` and `exportPreset` (the last picked export
+preset's name). The keys (`AppSettings.Key`) are the
 strings earlier builds wrote, so nothing saved is lost. It is
 `@Observable`: the grid, the loupe canvas and the Settings window read it
 and redraw when it changes. With `persistent: false` it reads nothing and
@@ -1018,6 +1050,9 @@ Adjustment data).
                       or <App Support>/PhotoLab/photos-sidecars/<safe-id>.json
                                                         default and unmarked = deleted)
         PresetStore   <presets dir>/<name>.json        (reads feed Preset.apply)
+
+        ExportPresetStore  <export-presets dir>/<name>.json  (ExportOptions only;
+                           a pick fills ExportForm, never a recipe)
 ```
 
 Sidecars, presets and batches reach a photo's recipe only through

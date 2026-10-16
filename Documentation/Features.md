@@ -755,7 +755,9 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   the last options, folder, album and target kind. Ignored while a run is
   going.
 - **The sheet.** `ExportSheet` (`ExportSheet.swift`) edits one
-  `ExportOptions`: **Format** (`ExportOptions.Format`: JPEG, HEIC, TIFF)
+  `ExportOptions` through its `ExportForm` (`ExportPresets.swift`: the
+  options plus the Size and Watermark controls, folded by
+  `ExportForm.resolved`): **Format** (`ExportOptions.Format`: JPEG, HEIC, TIFF)
   with a quality slider for the lossy two; **Size** as edited, an exact
   long side or a percentage (`OutputSize.longSide`, `OutputSize.percent`,
   nil for as edited; never upscaled); **File**: a name suffix with a live
@@ -765,8 +767,8 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   text, a position (`Watermark.Position`: the four corners or the centre),
   size (`Watermark.size`, the text height as a share of the output's short
   side, `Watermark.sizeRange`) and opacity (`Watermark.opacityRange`)
-  sliders; off or blank text gives `ExportOptions.watermark` nil (the
-  sheet's `resolved`), so the fields typed while it is off are not kept
+  sliders; off or blank text gives `ExportOptions.watermark` nil
+  (`ExportForm.resolved`), so the fields typed while it is off are not kept
   after the sheet closes; **Export to**: **Folder** or
   **Photos library** (`ExportTarget`; Photos disabled under a bare binary,
   which has no bundle for TCC). For a folder, **Choose…** is
@@ -781,6 +783,26 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   (also **Return**) is enabled once a folder is chosen, or for Photos once
   reading is allowed; it calls `ExportQueue.keep(target:options:)` and then
   `ExportQueue.start(_:to:options:)`.
+- **Export presets.** A **Preset** row at the top of the sheet: a menu
+  titled `ExportForm.presetLabel` ("None", the picked preset's name, or
+  "<name> (edited)" once `ExportForm.isEdited`, the resolved options
+  differing from the preset's). It lists every `ExportPreset` read by
+  `ExportPresetLibrary` from `ExportPresetStore` (a check on the picked
+  one) and every unreadable file as "<file> (unreadable)", disabled, with
+  the library's error line under the row. A pick is `ExportForm.pick(_:)`:
+  every field is replaced from the preset's `options`, the watermark
+  section included (switched off when the preset has none); the
+  destination, album and folder are not touched. **Save Current as
+  Preset…** prompts for a name (the picked one offered) and saves
+  `ExportForm.resolved` through `ExportPresetLibrary.save(_:as:)`; when
+  `ExportPresetLibrary.exists(_:)` finds a file of that name a dialog asks
+  before replacing it. **Delete Preset** (enabled while the picked preset
+  is in the list) asks, then `ExportPresetLibrary.delete(_:)` removes that
+  one file; the fields stay. A pick or a save sets
+  `AppSettings.exportPreset`, a delete of that name clears it, and the next
+  sheet shows the remembered name over the last run's options
+  (`restorePick`, fields unchanged, so "(edited)" when they differ). No
+  built-in presets are seeded.
 - **The run.** `ExportQueue.start` hands each item to `Exporter.export`
   (`Batch.swift`) one at a time off the main thread: the full-resolution
   decode, the one render chain with the resize and then the watermark
@@ -810,10 +832,20 @@ Writes: the output files in the chosen folder, through `Exporter.export`;
 and, because `PhotoLabApp` makes its queue over the app's `AppSettings`
 (`ExportQueue(settings:)`), the last folder, options, target kind and album
 in `UserDefaults` under `exportFolder`, `exportOptions`, `exportTarget` and
-`exportPhotosAlbum` (`AppSettings.exportFolder` and its neighbours),
-read back at launch so the next sheet opens the same way. A Photos run
+`exportPhotosAlbum` (`AppSettings.exportFolder` and its neighbours), and
+the last picked export preset's name under `exportPreset`
+(`AppSettings.exportPreset`), read back at launch so the next sheet opens the same way. A Photos run
 writes new assets into the library (and the album) and nothing else.
 A queue made without `remember:` (every test) keeps them in memory only.
+A preset save writes `<name>.json` into
+`ExportPresetStore.defaultDirectory`
+(`~/Library/Application Support/PhotoLab/export-presets/`, beside the
+develop presets' `presets/`, never inside it), on `PresetStore`'s rules:
+`PresetStore.validated` names, `/` and `:` as `-` in the file name, an
+atomic write, a different name on the same file refused
+(`ExportPresetError.fileNameCollision`), and a file that does not decode
+(or whose `version` is above `ExportPreset.currentVersion`) moved aside by
+`UnreadableBackup.moveAside` first; a delete removes that one file.
 
 ## Settings
 

@@ -280,7 +280,13 @@ selection back to the anchor:
   the sheet's **Allow Access to Photos…** is the only place it is asked. A bar at the
   bottom of the window shows the count done, the file in flight and Cancel,
   which stops after that file; what is written stays, a skipped file is
-  counted.
+  counted. The sheet's **Preset** menu keeps named sets of those options:
+  picking one fills every field, the watermark included (but never the
+  destination, which stays the sheet's own choice); **Save Current as
+  Preset…** names the current fields (an existing name asks before it is
+  replaced); **Delete Preset** removes the picked one. The last pick is
+  remembered, and once a field changes the menu reads "<name> (edited)".
+  There are no built-in export presets.
 
 Copy Settings (`⇧⌘C`) remembers one photo's settings; Paste Settings…
 (`⇧⌘V`) opens the same sheet onto whatever is selected, so a look can be
@@ -305,6 +311,12 @@ Everything the app writes, and nothing else:
 - **Presets** — `~/Library/Application Support/PhotoLab/presets/<name>.json`,
   one per preset; the six starter looks are written there when that folder
   does not exist yet.
+- **Export presets** — `~/Library/Application Support/PhotoLab/export-presets/<name>.json`,
+  one per export preset (every export option, the watermark included, never
+  the destination); nothing is written there until you save one. A file
+  this version cannot read is listed in the Preset menu as unreadable and
+  kept as `<name>.json.unreadable-<stamp>` before a preset of that name is
+  saved, never deleted.
 - **Photos sidecars** — `~/Library/Application Support/PhotoLab/photos-sidecars/<asset-id>.json`,
   one per edited, flagged, rated or keyworded photo of a Photos album (the asset's
   identifier with its slashes as underscores), with the same rules as a
@@ -324,7 +336,8 @@ Everything the app writes, and nothing else:
   whether the filmstrip and the Info and History sections are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,
-  metadata, watermark), so the next export sheet opens with them.
+  metadata, watermark) and the last picked export preset's name, so the
+  next export sheet opens with them.
 - **Exports** — the files you ask for, in the folder you choose, written
   through a hidden partial file and moved into place when complete. An
   export to Photos renders each file into `$TMPDIR/PhotoLab-export/<run>/`,
