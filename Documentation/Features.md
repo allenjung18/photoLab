@@ -984,7 +984,8 @@ redo, Reset, the render time and any sidecar error.
   `SkyGuess.mask(in:horizon:)` on the same decode, against
   `AutoMaskDetector.horizon(in:)` (`VisionDetector`: `VNDetectHorizonRequest`,
   which gives a tilt only, so the line is that tilt through the centre column
-  at `SkyGuess.defaultHorizonY`, 70% down; nil means level there). The guess
+  at `SkyGuess.defaultHorizonY`, 70% down; nil, or a request that throws,
+  means level there). The guess
   runs on a decode of at most `SkyGuess.analysisLongSide` (512) px: a pixel
   scores 1 when blue (hue 190-250 deg, saturation > 0.15, luminance > 0.35)
   or overcast (luminance > 0.75, saturation < 0.12) (`SkyGuess.score`),

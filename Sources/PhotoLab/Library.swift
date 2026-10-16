@@ -2012,7 +2012,7 @@ final class Library {
     /// opened while it runs drops the result. One run at a time
     /// (`autoMaskDetecting`): a second call meanwhile returns nil. Select Sky
     /// (guess) (`kind` `.sky`) is the same flow with no model: the detector's
-    /// `horizon(in:)` (nil when none) and `SkyGuess.mask(in:horizon:)` on
+    /// `horizon(in:)` (nil when none or when it throws) and `SkyGuess.mask(in:horizon:)` on
     /// the same decode; nothing found is "No sky found". Returns the new
     /// mask's id.
     @discardableResult
@@ -2028,7 +2028,11 @@ final class Library {
             switch kind {
             case .subject: return try await detector.subject(in: image)
             case .person: return try await detector.person(in: image)
-            case .sky: return SkyGuess.mask(in: image, horizon: try await detector.horizon(in: image))
+            case .sky:
+                // A horizon request that fails is a horizon not found: the
+                // guess still runs, against the level default.
+                let horizon = (try? await detector.horizon(in: image)) ?? nil
+                return SkyGuess.mask(in: image, horizon: horizon)
             }
         }
         guard let found else { return nil }

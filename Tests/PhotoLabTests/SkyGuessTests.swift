@@ -143,12 +143,18 @@ final class SkyGuessTests: XCTestCase {
 
     // MARK: The flow
 
+    private struct HorizonFailed: Error {}
+
     private struct FakeDetector: AutoMaskDetector {
         var horizon: SkyGuess.Horizon?
+        var horizonThrows = false
         func subject(in image: CGImage) async throws -> MaskBitmap? { nil }
         func person(in image: CGImage) async throws -> MaskBitmap? { nil }
         func faces(in image: CGImage) async throws -> [VNFaceObservation] { [] }
-        func horizon(in image: CGImage) async throws -> SkyGuess.Horizon? { horizon }
+        func horizon(in image: CGImage) async throws -> SkyGuess.Horizon? {
+            if horizonThrows { throw HorizonFailed() }
+            return horizon
+        }
     }
 
     private func open(_ img: CGImage, _ detector: FakeDetector) throws -> (Library, Photo.ID) {
@@ -183,6 +189,18 @@ final class SkyGuessTests: XCTestCase {
         XCTAssertGreaterThan(mean(auto.bitmap, rows: 0..<40), 0.9)
         lib.undo()
         XCTAssertEqual(lib.recipe(for: id).masks, [], "one undo step")
+    }
+
+    func testAFailedHorizonFallsBackToTheLevelDefault() async throws {
+        let img = Self.image { _, _ in Self.lightBlue }
+        let (lib, id) = try open(img, FakeDetector(horizonThrows: true))
+        let maskID = await lib.selectAuto(.sky, for: id)
+        XCTAssertNotNil(maskID, "the guess still runs")
+        XCTAssertNil(lib.autoMaskMessage)
+        guard case .auto(let auto)? = lib.recipe(for: id).masks.first?.shape else { return XCTFail("no mask") }
+        // Level at 70%: kept down to about row 210, nothing below.
+        XCTAssertGreaterThan(mean(auto.bitmap, rows: 0..<60), 0.9)
+        XCTAssertEqual(mean(auto.bitmap, rows: 220..<300), 0, accuracy: 0.001)
     }
 
     func testNoSkySaysSoAndChangesNothing() async throws {

@@ -574,6 +574,7 @@ not only the pass.
   1200 x 900 image is analysed at 512 x 384. Through `Library` with a fake
   detector: one selected `.auto` sky mask "Sky 1" in one undo step and one
   sidecar write, cut at the detector's horizon (30% down, not the default);
+  a horizon that throws falls back to the level 70% default;
   all green says "No sky found" and changes nothing; the command is "Select
   Sky (guess)", has no key and needs the loupe. Mutant: dropping
   `connectedToTop` turns the rectangle test red.
