@@ -13,6 +13,9 @@ import UniformTypeIdentifiers
 final class AutoStyleTests: XCTestCase {
     private var folder: URL!
     private var support: URL!
+    /// Pollers a test starts beside a run; tearDown cancels and awaits them,
+    /// so none outlives its test.
+    private var jobs: [Task<Void, Never>] = []
 
     override func setUp() async throws {
         let base = FileManager.default.temporaryDirectory
@@ -22,6 +25,9 @@ final class AutoStyleTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        for job in jobs { job.cancel() }
+        for job in jobs { await job.value }
+        jobs = []
         try? FileManager.default.removeItem(at: folder)
         try? FileManager.default.removeItem(at: support)
     }
@@ -207,18 +213,17 @@ final class AutoStyleTests: XCTestCase {
             if url != first { Thread.sleep(forTimeInterval: 0.4) }
             return (StyleBucket.mid, [AdjustmentKind.exposure: -3])
         }
+        let ended = RunEnded()
         let canceller = Task { @MainActor in
-            // Ends too if the run finished first (progress resets), never spins forever.
-            var started = false
-            while true {
-                if lib.autoToning { started = true }
-                if lib.autoProgress.done >= 1 || (started && !lib.autoToning) { break }
-                try? await Task.sleep(nanoseconds: 2_000_000)
+            // Bounded, and ends too if the run finished first or never started: never spins forever.
+            if await pollUntil("the first Learn Style result", orStop: { ended.value }, { lib.autoProgress.done >= 1 }) {
+                lib.cancelAuto()
             }
-            lib.cancelAuto()
         }
+        jobs.append(canceller)
         lib.setRecipe({ var r = Recipe.neutral; r.set(.exposure, to: 1); return r }(), for: ids[0])
         let cancelled = await lib.learnStyle(from: ids, replace: true)
+        ended.mark()
         await canceller.value
         XCTAssertEqual(cancelled, 0)
         XCTAssertEqual(lib.autoNote, "Learn Style cancelled: nothing changed")
