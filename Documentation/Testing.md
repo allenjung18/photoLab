@@ -227,7 +227,11 @@ not only the pass.
   is one of the table's bare keys, and they are every key the window had; no
   `.keyboardShortcut` with a key is typed in any other source file (the
   test reads them); the View and Photo menus list every bare key but Return
-  and Esc, whose names a menu title spells out ("Pick (P)"); and each
+  and Esc, whose names a menu title spells out ("Pick (P)"); no placement
+  adds a `CommandMenu` of a menu SwiftUI supplies (one View menu), and every
+  `CommandMenu(` in the sources takes its title from the table; Return
+  (Open in Loupe) is disabled with no photo, so the Welcome view's Open
+  Folder… holds it; and each
   command's `perform` on a library over a temporary folder does what its
   title says (P, X, U and 0–5 mark every batch target, Y from the grid opens
   the loupe in compare, J and backslash toggle their overlays, the arrows,

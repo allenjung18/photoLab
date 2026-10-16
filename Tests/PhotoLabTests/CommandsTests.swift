@@ -113,6 +113,68 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(AppCommand.command(.export).menuTitle(ctx), "Export…")
     }
 
+    // MARK: Menus
+
+    /// One View menu (UI-27): the view items go into the View menu SwiftUI
+    /// supplies, never a `CommandMenu("View")` beside it. A placement the app
+    /// adds a menu for has a title SwiftUI does not supply; every other one
+    /// sits in a supplied menu.
+    func testNoPlacementAddsASecondMenuOfASuppliedName() {
+        XCTAssertEqual(AppCommand.Placement.view.menuTitle, "View")
+        XCTAssertFalse(AppCommand.Placement.view.addsMenu, "the View items go into SwiftUI's own View menu")
+        for placement in AppCommand.Placement.allCases {
+            guard let title = placement.menuTitle else {
+                XCTAssertEqual(placement, .keysOnly)
+                continue
+            }
+            if placement.addsMenu {
+                XCTAssertFalse(AppCommand.Placement.suppliedMenus.contains(title),
+                               "\(placement) adds a second \(title) menu")
+            } else {
+                XCTAssertTrue(AppCommand.Placement.suppliedMenus.contains(title),
+                              "\(placement) sits in \(title), which nothing supplies")
+            }
+        }
+        let added = AppCommand.Placement.allCases.filter(\.addsMenu).compactMap(\.menuTitle)
+        XCTAssertEqual(added, ["Presets", "Photo"])
+    }
+
+    /// The app's `.commands` take every `CommandMenu` title from the table, so
+    /// the test above covers the menu bar: no literal title in the sources.
+    func testEveryCommandMenuTitleComesFromTheTable() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PhotoLab")
+        let files = try FileManager.default.contentsOfDirectory(at: sources, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" }
+        var menus = 0
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for line in text.split(separator: "\n") where line.contains("CommandMenu(")
+                && !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                menus += 1
+                XCTAssertTrue(line.contains("CommandMenu(AppCommand.Placement."),
+                              "\(file.lastPathComponent): \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertEqual(menus, AppCommand.Placement.allCases.filter(\.addsMenu).count)
+    }
+
+    /// Return on the Welcome view is its Open Folder… (UI-28): the hidden
+    /// Open in Loupe key is disabled while there is no photo to open, so the
+    /// default button is the only Return.
+    func testOpenInLoupeIsDisabledWithNoPhoto() throws {
+        let empty = CommandContext(library: Library(rememberFolder: false))
+        XCTAssertNil(empty.library.source, "the Welcome view")
+        XCTAssertFalse(AppCommand.command(.open).isEnabled(empty))
+        XCTAssertTrue(HiddenShortcuts.commands.contains { $0.name == .open })
+        let (lib, ctx, ids) = try openThree()
+        XCTAssertNil(lib.selection)
+        run(.open, ctx)
+        XCTAssertTrue(lib.loupe, "Return with no selection opens the first photo")
+        XCTAssertEqual(lib.selection, ids[0])
+    }
+
     // MARK: Each command does what its title says
 
     private func makePhoto(_ name: String) throws {

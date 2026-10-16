@@ -76,7 +76,8 @@ in Xcode works too.
 Every key above except `Return` and `Esc` is also a menu item: File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
-Warning, Filmstrip, Previous and Next Photo) and **Photo** (Pick, Reject, Unflag, the
+Warning, Filmstrip, Previous and Next Photo, below the toolbar items of the one View
+menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
@@ -96,7 +97,8 @@ acts on that photo alone, inside it on the whole selection. Open Photos
 Library sits in the toolbar beside Open Folder (disabled outside the app
 bundle).
 
-`Return` and `Esc` also confirm and cancel the welcome screen's Open Folder…,
+`Return` and `Esc` also confirm and cancel the welcome screen's Open Folder… (with no
+photo to open, `Return` is never the loupe key),
 the Sync sheet and the Export sheet. Sync Settings… and the preset names in
 the Presets menu have no key.
 

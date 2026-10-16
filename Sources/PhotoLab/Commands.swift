@@ -48,6 +48,29 @@ struct AppCommand: Identifiable {
     /// menu item (Escape, Return).
     enum Placement: CaseIterable {
         case newItem, importExport, undoRedo, pasteboard, presets, view, photo, keysOnly
+
+        /// The menu bar menu that lists the placement's items; nil for
+        /// `keysOnly`.
+        var menuTitle: String? {
+            switch self {
+            case .newItem, .importExport: "File"
+            case .undoRedo, .pasteboard: "Edit"
+            case .view: "View"
+            case .photo: "Photo"
+            case .presets: "Presets"
+            case .keysOnly: nil
+            }
+        }
+
+        /// True when the app adds that menu itself (`CommandMenu`, titled
+        /// `menuTitle`). False when SwiftUI already supplies it: the items go
+        /// into a `CommandGroup` of that menu, since a `CommandMenu` of a
+        /// supplied menu's name is a second menu of that name beside it.
+        var addsMenu: Bool { self == .photo || self == .presets }
+
+        /// The menus SwiftUI supplies to a `WindowGroup` app with a toolbar
+        /// (besides the app menu): never the title of a `CommandMenu`.
+        static let suppliedMenus: Set<String> = ["File", "Edit", "View", "Window", "Help"]
     }
 
     let name: Name
@@ -203,12 +226,15 @@ struct AppCommand: Identifiable {
                    perform: { c in if let id = c.subject { c.library.resetRecipe(for: id) } }),
 
         // Keys with no menu item: Escape leaves the loupe (from the grid it
-        // collapses the selection), Return opens it.
+        // collapses the selection), Return opens it. Return is enabled only
+        // when there is a photo to open, as Loupe (E) is: the Welcome view
+        // has none, and its Open Folder… button holds Return there.
         AppCommand(name: .back, title: "Back", key: .escape, modifiers: [], placement: .keysOnly,
                    perform: { c in
                        if c.library.loupe { c.library.loupe = false } else { c.library.collapseSelection() }
                    }),
         AppCommand(name: .open, title: "Open in Loupe", key: .return, modifiers: [], placement: .keysOnly,
+                   isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { enterLoupe($0.library) }),
     ]
 

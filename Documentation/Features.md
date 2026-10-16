@@ -21,7 +21,8 @@ grid; under a filter both count the photos shown, "n of N shown".
 
 `WelcomeView` (`ContentView.swift`): an icon, "Open a folder of photos, or
 a Photos album, to begin", the last open error in red if there is one,
-**Open Folder…** (also **Return**) and **Open Photos Library…**. Under a
+**Open Folder…** (also **Return**: the hidden loupe key is disabled with
+no photo, see Menus and shortcuts) and **Open Photos Library…**. Under a
 bare `swift run` the Photos button is disabled and a line says to run
 `scripts/bundle.sh --open` and use `build/PhotoLab.app`
 (`PhotosAccess.hasBundle`): the system grants Photos access to an app
@@ -560,7 +561,11 @@ key is typed anywhere else; the README's Keys table is the user's list.
 - **Menus** are the `.commands` of `PhotoLabApp` (`PhotoLabApp.swift`),
   each a `CommandGroup` or `CommandMenu` holding `CommandItems` for one
   placement (table order, a divider between sections; an entry with an
-  `isOn` state is a checkable item):
+  `isOn` state is a checkable item). `AppCommand.Placement.menuTitle` names
+  each placement's menu and `addsMenu` says whether the app adds it: only
+  Photo and Presets are a `CommandMenu`, titled from the table; File, Edit
+  and View are the menus SwiftUI supplies (`Placement.suppliedMenus`), so
+  their items are a `CommandGroup` there and the menu bar has one of each:
   - File: **Open Folder…** **⌘O** (`Library.chooseFolder`) and **Open
     Photos Library…** **⇧⌘O** (`Library.choosePhotosAlbum`) replace
     `.newItem`; **Export…** **⇧⌘E** (`ExportQueue.requestExport(_:)` over
@@ -576,7 +581,7 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
     unused, there are no text fields).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
-  - **View**: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
+  - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
     **Show Original** **\\**, **Clipping Warning** **J**, **Previous Photo**
     **←** and **Next Photo** **→** (the keys below).
@@ -586,7 +591,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
   background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it
-  (selecting the first photo when none is); **Esc** leaves the loupe or, in
+  (selecting the first photo when none is), and both are disabled while
+  `Library.visiblePhotos` is empty, so on the Welcome view **Return** is its
+  **Open Folder…** default button; **Esc** leaves the loupe or, in
   the grid, collapses the selection; **←** / **→** are `Library.select(offset:)`;
   **Z** toggles `Library.loupeZoom` in the loupe;
   `\` toggles `Library.showBefore`; **Y** toggles `Library.compare` (and

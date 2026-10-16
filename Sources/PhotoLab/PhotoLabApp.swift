@@ -51,15 +51,19 @@ struct PhotoLabApp: App {
                 Divider()
                 CommandItems(placement: .pasteboard, context: context)
             }
-            CommandMenu("View") {
+            // SwiftUI supplies the View menu (the toolbar items, Enter Full
+            // Screen): the view items go into it, after the toolbar items,
+            // so there is one View menu (`Placement.addsMenu`).
+            CommandGroup(after: .toolbar) {
+                Divider()
                 CommandItems(placement: .view, context: context)
                 Divider()
                 ShowFilterMenu().environment(library)
             }
-            CommandMenu("Photo") { CommandItems(placement: .photo, context: context) }
+            CommandMenu(AppCommand.Placement.photo.menuTitle!) { CommandItems(placement: .photo, context: context) }
             // Presets: save the selected photo's look, or apply one by name to
             // the selection (every selected photo in the grid, one undo step).
-            CommandMenu("Presets") {
+            CommandMenu(AppCommand.Placement.presets.menuTitle!) {
                 CommandItems(placement: .presets, context: context)
                 Divider()
                 ForEach(presets.presets) { preset in
