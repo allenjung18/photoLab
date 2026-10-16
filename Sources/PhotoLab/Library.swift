@@ -92,6 +92,8 @@ final class Library {
     }
     /// Capture dates read for the `.captureDate` sort, once per photo.
     let captureDates: CaptureDates
+    /// The Info section's header reads, once per photo (`PhotoInfoStore`).
+    let photoInfo: PhotoInfoStore
     /// The anchor of the selection: the photo the loupe shows, the one a
     /// shift-click extends from, the source of Sync Settings. Setting it
     /// collapses a multi-selection to that one photo; `click` is the path
@@ -168,6 +170,15 @@ final class Library {
             defaults.set(showFilmstrip, forKey: Filmstrip.showKey)
         }
     }
+    /// The loupe panel's Info section open (View › Info, ⌘I): remembered in
+    /// `defaults` like the filmstrip, and kept across sources.
+    var showInfo = false {
+        didSet {
+            guard showInfo != oldValue, rememberFolder else { return }
+            defaults.set(showInfo, forKey: Self.showInfoKey)
+        }
+    }
+    static let showInfoKey = "showInfo"
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
     /// Why the last `open` was refused (a missing path, an album before
@@ -211,8 +222,12 @@ final class Library {
         self.rememberFolder = rememberFolder
         self.defaults = defaults
         self.captureDates = captureDates
+        self.photoInfo = PhotoInfoStore(captureDates: captureDates)
         if rememberFolder, defaults.object(forKey: Filmstrip.showKey) != nil {
             showFilmstrip = defaults.bool(forKey: Filmstrip.showKey)
+        }
+        if rememberFolder {
+            showInfo = defaults.bool(forKey: Self.showInfoKey)
         }
     }
 

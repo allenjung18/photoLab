@@ -37,7 +37,7 @@ struct AppCommand: Identifiable {
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll
         case savePreset
-        case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, previous, next
+        case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, resetPhoto
@@ -209,6 +209,15 @@ struct AppCommand: Identifiable {
         AppCommand(name: .filmstrip, title: "Filmstrip", key: "f", modifiers: [], placement: .view,
                    section: 1, isOn: { $0.library.showFilmstrip },
                    perform: { $0.library.showFilmstrip.toggle() }),
+        // The loupe panel's Info section; from the grid it opens the loupe
+        // with the section shown.
+        AppCommand(name: .info, title: "Info", key: "i", placement: .view, section: 1,
+                   isOn: { c in c.library.showInfo && c.library.loupe },
+                   isEnabled: { !$0.library.visiblePhotos.isEmpty },
+                   perform: { c in
+                       let lib = c.library
+                       if lib.loupe { lib.showInfo.toggle() } else { lib.showInfo = true; enterLoupe(lib) }
+                   }),
         AppCommand(name: .previous, title: "Previous Photo", key: .leftArrow, modifiers: [], placement: .view,
                    section: 2, isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { $0.library.select(offset: -1) }),

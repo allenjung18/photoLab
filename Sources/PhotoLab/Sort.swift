@@ -126,22 +126,46 @@ final class CaptureDates {
         return d
     }
 
+    /// A date read from the same header by the same rule somewhere else
+    /// (`PhotoInfoStore`, which reads a photo's header once for the Info
+    /// section): kept unless this photo already has one, so the sort never
+    /// reads that photo again.
+    func remember(_ date: Date?, for id: Photo.ID) {
+        guard cache.index(forKey: id) == nil else { return }
+        cache[id] = .some(date)
+    }
+
     /// EXIF `DateTimeOriginal` (local time, `yyyy:MM:dd HH:mm:ss`), else the
     /// file's creation date, else its modification date; nil when neither
     /// the header nor the file can be read.
     nonisolated static func read(_ url: URL) -> Date? {
-        if let d = exifDate(url) { return d }
+        date(properties: properties(of: url), url: url)
+    }
+
+    /// `read`'s rule on a header already read (`PhotoInfo.read` reads the
+    /// header once for every field and takes the capture date from here).
+    nonisolated static func date(properties: [CFString: Any]?, url: URL) -> Date? {
+        if let d = exifDate(in: properties) { return d }
         let v = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
         return v?.creationDate ?? v?.contentModificationDate
     }
 
     nonisolated static func exifDate(_ url: URL) -> Date? {
-        let options = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, options),
-              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, options) as? [CFString: Any],
-              let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any],
+        exifDate(in: properties(of: url))
+    }
+
+    nonisolated static func exifDate(in properties: [CFString: Any]?) -> Date? {
+        guard let exif = properties?[kCGImagePropertyExifDictionary] as? [CFString: Any],
               let text = exif[kCGImagePropertyExifDateTimeOriginal] as? String else { return nil }
         return exifFormatter.date(from: text)
+    }
+
+    /// The first image's properties (the header only, never the pixels);
+    /// nil when ImageIO cannot open the file.
+    nonisolated static func properties(of url: URL) -> [CFString: Any]? {
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, options) else { return nil }
+        return CGImageSourceCopyPropertiesAtIndex(src, 0, options) as? [CFString: Any]
     }
 
     private nonisolated static let exifFormatter: DateFormatter = {

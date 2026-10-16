@@ -1067,6 +1067,13 @@ struct AdjustmentsPanel: View {
                     HistogramView(histogram: file != nil && preview.imageURL == file ? preview.histogram : nil,
                                   showClipping: $library.showClipping)
                         .padding(.bottom, 6)
+                    DisclosureGroup(isExpanded: $library.showInfo) {
+                        InfoSection(photo: photo, file: file)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                    } label: {
+                        Text("Info").font(.callout.weight(.semibold))
+                    }
                     DisclosureGroup(isExpanded: $presetsExpanded) {
                         PresetStrip(photo: photo, file: file, unavailable: fetch.unavailableNote != nil)
                             .padding(.top, 8)

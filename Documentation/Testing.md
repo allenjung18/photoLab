@@ -246,6 +246,21 @@ not only the pass.
   choice is remembered per source kind in the injected defaults and never
   with `rememberFolder: false`; and the `sort` placement's commands check
   and set the choice.
+- `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
+  exposure, capture date, west-longitude GPS and orientation 6: every row
+  formatted, in order, dimensions as displayed; a PNG with no EXIF shows
+  only dimensions, file, size, folder, captured and edited, and empty or
+  zero header values have no row; the units (camera make not repeated,
+  focal length, aperture, shutter under and over a second, Finder sizes,
+  S/E coordinates); `PhotoInfoStore` reads a header once for three asks
+  (two at once), never on the main thread, and hands the capture date to
+  `CaptureDates` so the sort reads nothing, while a date the sort already
+  has wins; a Photos asset shows the listing's name and date, no folder,
+  and the rest from its original; the Edited row follows `Library.isEdited`;
+  View › Info (`⌘I`) opens the loupe from the grid, toggles in it and is
+  remembered. Shown to bite by six mutants (a blank value shown, the W
+  reference ignored, no `remember`, no in-flight dedupe, no orientation
+  turn, an asset's folder kept), one or more failures each.
 - `CommandsTests.swift` — the command table (`AppCommand.all`): no two
   entries share a key and modifiers, and none takes a system menu key
   (⌘Q, ⌘W, ⌘H, ⌘M, ⌘, and the clipboard's); every `HiddenShortcuts` button

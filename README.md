@@ -65,6 +65,7 @@ in Xcode works too.
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
 | `J` | Toggle the clipping warning (blown pixels red, crushed pixels blue; or click a histogram triangle) |
 | `F` | Show or hide the filmstrip under the loupe (a View menu item; the choice is remembered) |
+| `⌘I` | Show or hide the Info section of the loupe panel (from the grid it opens the loupe with it shown; the choice is remembered) |
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
 | `⌘A` | Select All Photos (grid only) |
@@ -77,7 +78,7 @@ in Xcode works too.
 Every key above except `Return` and `Esc` is also a menu item: File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
-Warning, Filmstrip, Previous and Next Photo, below the toolbar items of the one View
+Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, Reset Photo). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
@@ -114,6 +115,14 @@ removes one (the anchor moves to a photo added), double-click opens it in
 the loupe. In the loupe: a filmstrip of the visible photos runs under the photo (click a cell to move there, `⇧`-click to extend the selection, `⌘`-click to toggle); click the photo to see it at 1:1 at that point, drag to pan, click again
 for fit (`G` or `Esc` go back to the grid); double-click an adjustment's name to reset it, hold **Before** to see the
 original, press `Y` to see the original and the edit side by side.
+
+**Info** (`⌘I`, View › Info, or the **Info** heading in the loupe panel)
+lists what the photo says about itself: camera, lens, focal length,
+aperture, shutter, ISO, pixel dimensions (as displayed), file name, size and
+folder, capture date (the one the sort uses), GPS position as coordinates,
+and whether it is edited. A field the photo does not have has no line. A
+Photos album photo shows its name and date from Photos at once and the rest
+once its original has been fetched, and has no folder line.
 
 ## Adjustments
 
@@ -247,7 +256,9 @@ Everything the app writes, and nothing else:
   folder to reclaim the space; the next open downloads again, and no edit
   is lost.
 - **Preferences** — in the app's UserDefaults: the last opened source (a
-  folder's path, or a Photos album's identifier), the
+  folder's path, or a Photos album's identifier), the sort (once for
+  folders, once for Photos albums), whether the filmstrip and the Info
+  section are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,
   metadata), so the next export sheet opens with them.

@@ -268,7 +268,11 @@ display `name` the source gave it, `Photo.fileURL`, the file when the
 id is one (nil for an asset until its source produces a file), and
 `Photo.captureDate` when the listing carries one (a Photos asset's
 `creationDate`; nil for a file, whose date `CaptureDates` reads when the
-capture-date sort first needs it). The three
+capture-date sort first needs it, or takes from the Info section's header
+read, `PhotoInfoStore`, which applies the same rule). What a photo's header
+says (camera, lens, exposure, dimensions, GPS) is a `PhotoInfo`
+(`Info.swift`), read once per photo off the main thread and kept by
+`Library.photoInfo` (Features: Adjustments panel, Info). The three
 places the library shows a photo's name (Copy Settings, the Sync sheet,
 the sidecar error) read `Library.name(for:)`, never the id.
 

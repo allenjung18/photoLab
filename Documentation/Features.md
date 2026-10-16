@@ -150,7 +150,8 @@ selected. Selecting a photo scrolls it into view.
   `Photo.captureDate` when the listing carries one (a Photos asset's
   `creationDate`), else `CaptureDates` reads the file's EXIF
   `DateTimeOriginal` (header only, local time), else its creation date,
-  else its modification date, once per photo for the library's lifetime.
+  else its modification date, once per photo for the library's lifetime
+  (a date the Info section read first is kept, `CaptureDates.remember`).
   The choice is remembered per source kind (`Library.sortKind`: a
   `FolderSource` is `folder`, any other source `photos`) in the library's
   injected defaults (`sort.folder`, `sort.photos`, the
@@ -408,7 +409,7 @@ in the library (the rendered JPEG and PhotoLab's adjustment data).
 ## Adjustments panel
 
 `AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the histogram, the
-Presets strip, one `DisclosureGroup` per `AdjustmentKind.Section` in
+Info section (closed by default), the Presets strip, one `DisclosureGroup` per `AdjustmentKind.Section` in
 declaration order (Basic open by default), each with a dot when any of its
 kinds is not a no-op (`Adjustment.isNoop`), then a footer with Before, undo,
 redo, Reset, the render time and any sidecar error.
@@ -424,6 +425,23 @@ redo, Reset, the render time and any sidecar error.
   `showFilmstrip` in the library's `UserDefaults`, shown by default. The item
   list and the click live in `Filmstrip` (`FilmstripItem`), tested apart
   from the view (`FilmstripTests`).
+- **Info** (`Info.swift`). `InfoSection` is a `DisclosureGroup` under the
+  histogram, open while `Library.showInfo` is on (**View › Info**, `⌘I`, an
+  `AppCommand` that from the grid also opens the loupe; remembered under
+  `showInfo` in the library's `UserDefaults`, closed by default). It shows
+  `PhotoInfo.rows(edited:)`, one row per present field in `PhotoInfo.labels`
+  order (Camera, Lens, Focal Length, Aperture, Shutter, ISO, Dimensions,
+  File, Size, Folder, Captured, GPS, Edited): a missing or empty field has no
+  row, and Edited (`Library.isEdited`) is always there. `PhotoInfo.read`
+  reads a file's header once (`CaptureDates.properties(of:)`, never the
+  pixels) plus its size, through `PhotoInfoStore` (`Library.photoInfo`) off
+  the main thread, once per photo for the library's lifetime. The capture
+  date is the sort's (`CaptureDates.date(properties:url:)`, and a date the
+  sort already has wins; the store hands its own to
+  `CaptureDates.remember`, so a later Capture Date sort reads nothing). A
+  Photos asset shows the listing's name and `creationDate` at once, then the
+  header fields of the original the loupe fetched, with no Folder row (that
+  copy is the originals cache). Writes nothing.
 - **Histogram and clipping.** `HistogramView` (`HistogramView.swift`) at the
   top of the panel draws `PreviewModel.histogram`, a `Histogram`
   (`Histogram.swift`) of the latest rendered frame: 256 bins of red, green,
@@ -635,7 +653,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
   - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
-    **Show Original** **\\**, **Clipping Warning** **J**, **Previous Photo**
+    **Show Original** **\\**, **Clipping Warning** **J**, **Filmstrip** **F**,
+    **Info** **⌘I** (`Library.showInfo`), **Previous Photo**
     **←** and **Next Photo** **→** (the keys below); then **Show** (the
     filter) and **Sort By**, the `sort` placement's items with no keys:
     **Capture Date**, **Name**, **Rating**, **Edited** (one checked,
