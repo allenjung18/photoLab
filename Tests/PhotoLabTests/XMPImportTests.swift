@@ -146,4 +146,23 @@ final class XMPImportTests: XCTestCase {
         XCTAssertTrue(library.xmpImports.isEmpty)
         XCTAssertNotNil(library.preset(named: "Cool"))
     }
+
+    func testAFailedSaveIsShownInTheSheetAndKeepBothFitsALongName() {
+        // The stored file's own name differs from the name taken by case only.
+        library.save(.neutral, as: "warm fade")
+        let m = model()
+        m.save()
+        XCTAssertTrue(m.askingReplace)
+        m.replace()
+        XCTAssertFalse(m.finished)
+        XCTAssertNotNil(m.saveError)
+        // A 79-character name: "name 2" would be 81.
+        let long = String(repeating: "a", count: 79)
+        library.save(.neutral, as: long)
+        let l = model(Self.packet.replacingOccurrences(of: "Warm Fade", with: long))
+        l.save()
+        l.keepBoth()
+        XCTAssertTrue(l.finished)
+        XCTAssertNotNil(library.preset(named: String(repeating: "a", count: 78) + " 2"))
+    }
 }

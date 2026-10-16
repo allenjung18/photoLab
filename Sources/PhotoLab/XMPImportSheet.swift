@@ -21,6 +21,9 @@ final class XMPImportModel: Identifiable {
     var name: String
     /// The name is taken: the sheet asks Replace / Keep Both / Cancel.
     private(set) var askingReplace = false
+    /// Why the last save failed (the store's message), shown in the sheet:
+    /// the library's own error line sits behind the modal.
+    private(set) var saveError: String?
     /// Set once the sheet is done (saved or cancelled).
     private(set) var finished = false
     /// Called once when the sheet is done; the queue moves to the next file.
@@ -101,7 +104,9 @@ final class XMPImportModel: Identifiable {
     func freeName(after base: String) -> String {
         var n = 2
         while true {
-            let candidate = "\(base) \(n)"
+            // The suffix must fit inside the name limit: the base is cut, not the number.
+            let suffix = " \(n)"
+            let candidate = String(base.prefix(PresetStore.maxNameLength - suffix.count)).trimmingCharacters(in: .whitespaces) + suffix
             if (try? PresetStore.validated(candidate)) != nil, !library.store.exists(candidate) { return candidate }
             n += 1
             if n > 10_000 { return candidate }
@@ -109,8 +114,13 @@ final class XMPImportModel: Identifiable {
     }
 
     private func write(_ recipe: Recipe, as name: String) {
-        if library.save(recipe, as: name) != nil { finish() }
-        // A failed write leaves the sheet up; `library.error` says why.
+        if library.save(recipe, as: name) != nil {
+            saveError = nil
+            finish()
+        } else {
+            // A failed write leaves the sheet up and says why.
+            saveError = library.error ?? "The preset could not be saved."
+        }
     }
 
     private func finish() {
@@ -166,6 +176,9 @@ struct XMPImportSheet: View {
                 TextField("Name", text: $model.name)
                 if let problem = model.nameProblem {
                     Text(problem).font(.caption).foregroundStyle(.red)
+                }
+                if let failure = model.saveError {
+                    Text(failure).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
