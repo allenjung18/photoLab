@@ -367,6 +367,61 @@ photos only): **Photo › Move Rejected Photos to Trash…** **⌘⌫**
 Writes: the rejected originals, moved to the Trash and back; nothing else
 (no sidecar, no collection file).
 
+## Rename in place
+
+The second feature that changes an original (D-465, folder photos only):
+**Photo › Rename…** (`AppCommand.renameInPlace`, no key; "Rename n
+Photos…" over several), enabled by `Library.canRename(_:)`: the open source
+is a `FolderSource` or `CollectionSource` and every target is a listed file
+photo. A virtual copy stands for its master (one file): the batch is the
+masters, each once (`renameMasters`).
+
+- **The sheet.** `Library.requestRename(for:)` sets `Library.renameRequest`
+  (`RenameRequest`, the `batchTargets`); `RenameSheet` (`Rename.swift`) edits
+  a `RenameTemplate` (export's: `{name}`, `{date}`, `{seq}` from a start
+  number, opening on `RenameSheet.defaultPattern`, `{name}-{seq}`) and lists
+  every old → new name of `Library.renamePlan(_:for:)`, a `RenamePlan`:
+  one `RenameEntry` per photo in batch order, the new name the template's
+  stem plus the original's extension as spelled, in the same directory.
+- **Refused as a whole** (`RenamePlan.refusal`, `RenameRefusal`, said in red
+  and Rename disabled): no name changes; two photos get one name (compared
+  without case); a file not renamed already has a new name (a case-only
+  rename of a file is not a clash); any of those stores already holds a
+  sidecar or a copy sidecar for a new name (`RenameMove.sidecarTaken`); a new name starts with a dot (the scan would
+  hide it).
+- **The rename.** `Library.rename(_:)` closes an open drag and runs
+  `RenameMove.perform` over the changing entries: each `RenameMove` moves
+  the file (`FileManager.moveItem`, never replacing), then its sidecar and
+  each virtual copy's (`SidecarStore.copies(of:)`) to the new name in every
+  store that holds an edit for the file (`Library.sidecarStores`): the open
+  source's (`PhotoSource.sidecars(for:)`, a collection member's root), each
+  saved collection member's root for it, and each folder above it whose
+  `.photolab/` keeps one (the scan is recursive, so a parent folder opened
+  once holds `sub/<name>.json`). Each new path is the old sidecar's with the
+  name swapped (`RenameMove.renamed`), rewriting each `original` (`RenameMove.rewriteOriginal`; an
+  unreadable sidecar moves as it is). A move that fails puts back what it
+  moved, and the moves done before it are reversed, so nothing is renamed;
+  `Library.renameError` names the photo. A stale plan (a photo no longer
+  listed) moves nothing.
+- **Every map follows** (`Library.rekey`): `photos`, recipes, marks,
+  keywords, edit history, unreadable sidecars, the selection and anchor,
+  each listed copy's id, `Thumbnails.rename`, `CaptureDates.rename`,
+  `PhotoInfoStore.rename`, the map's positions (restarted when shown),
+  every saved collection's members (`rekeyCollections`; the open
+  collection's source too) and every remembered view-state anchor
+  (`Library.rekeyRecentAnchors`). Pending requests over the old ids are
+  dropped.
+- **Undo.** `Library.renameUndo` (`RenameUndo`) holds the moves until the
+  next `open` or `closeSource`, a move to the Trash, or another rename (and
+  a rename drops the Trash's undo: one file-level undo at a time).
+  `RenameBanner` says "Renamed n photos" with **Undo**, and **Edit › Undo
+  Rename** (`AppCommand.undoRename`) does the same: `Library.undoRename()`
+  runs the moves reversed, all or nothing. Not an edit: ⌘Z never does it.
+
+Writes: the renamed originals' directory entries (never their bytes),
+their sidecars and copy sidecars (moved, `original` rewritten), and each
+collection file holding a renamed member.
+
 ## Keywords
 
 Words on a photo, kept with the marks and like them not an edit.
@@ -1310,7 +1365,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
     unused), then **Undo Move to Trash** (`Library.undoMoveToTrash()`,
     enabled while `Library.trashUndo` holds a move; see Move rejects to the
-    Trash).
+    Trash) and **Undo Rename** (`Library.undoRename()`, enabled while
+    `Library.renameUndo` holds one; see Rename in place).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
   - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Map** **⌥⌘M**
     (`Library.showMap`, toggled; see Map), **Zoom to 1:1** **Z**
@@ -1331,7 +1387,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     Auto) and **Reset Photo** **⇧⌘R**
     (`Library.resetRecipe(for:)`, enabled when the photo is edited); then
     **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch
-    targets, see Keywords); then **Add to Collection**, a submenu
+    targets, see Keywords) and **Rename…** (`Library.requestRename(for:)`,
+    see Rename in place); then **Add to Collection**, a submenu
     (`AddToCollectionMenu`: the saved collections, then the `collection`
     placement's **New Collection…**), and **Remove from Collection**
     (`Library.removeFromCollection(_:)`), see Collections. A submenu

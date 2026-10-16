@@ -204,6 +204,17 @@ final class Thumbnails: @unchecked Sendable {
     func forget(_ id: PhotoID, recipes: [Recipe] = []) {
         for recipe in [Recipe.neutral] + recipes { cache.removeObject(forKey: CacheKey(Key(id, recipe: recipe))) }
     }
+    /// A photo renamed in place (`Library.rename`): its plain entry and the
+    /// entry of each recipe given move to the new id, so the cell does not
+    /// decode again.
+    func rename(_ old: PhotoID, to new: PhotoID, recipes: [Recipe] = []) {
+        for recipe in [Recipe.neutral] + recipes {
+            let from = CacheKey(Key(old, recipe: recipe))
+            guard let image = cache.object(forKey: from) else { continue }
+            cache.setObject(image, forKey: CacheKey(Key(new, recipe: recipe)))
+            cache.removeObject(forKey: from)
+        }
+    }
     func cached(_ id: PhotoID, recipe: Recipe = .neutral) -> NSImage? { cached(Key(id, recipe: recipe)) }
     func cached(_ url: URL) -> NSImage? { cached(.file(url)) }
 

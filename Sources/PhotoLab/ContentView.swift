@@ -65,7 +65,10 @@ struct ContentView: View {
         }
         .background(HiddenShortcuts())
         .safeAreaInset(edge: .top, spacing: 0) {
-            if library.trashBannerShown, library.trashUndo != nil || library.trashError != nil { TrashBanner() }
+            VStack(spacing: 0) {
+                if library.trashBannerShown, library.trashUndo != nil || library.trashError != nil { TrashBanner() }
+                if library.renameBannerShown, library.renameUndo != nil || library.renameError != nil { RenameBanner() }
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if exports.state != .idle { ExportBar() }
@@ -75,6 +78,9 @@ struct ContentView: View {
         }
         .sheet(item: $library.keywordsRequest) { request in
             KeywordsSheet(request: request)
+        }
+        .sheet(item: $library.renameRequest) { request in
+            RenameSheet(request: request)
         }
         .sheet(item: $exports.request) { request in
             ExportSheet(request: request, options: exports.options, folder: exports.folder,
@@ -324,6 +330,45 @@ private struct TrashBanner: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Close")
                 .help("Hide this banner; Edit › Undo Move to Trash still works until you open another source")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// Over the grid or the loupe after a Rename…: how many were renamed
+/// (`RenameUndo.banner`) with Undo (`Library.undoRename`), or why nothing
+/// was (`Library.renameError`). Its close button hides it; Edit › Undo
+/// Rename stays until the next open.
+private struct RenameBanner: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "pencil")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                if let undo = library.renameUndo {
+                    Text(undo.banner).font(.callout)
+                }
+                if let error = library.renameError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(4)
+                }
+            }
+            Spacer()
+            if library.renameUndo != nil {
+                Button("Undo") { library.undoRename() }
+                    .help("Give the photos their old names back (Edit › Undo Rename)")
+            }
+            Button { library.renameBannerShown = false } label: { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Close")
+                .help("Hide this banner; Edit › Undo Rename still works until you open another source")
         }
         .controlSize(.small)
         .padding(.horizontal, 16).padding(.vertical, 8)

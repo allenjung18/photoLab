@@ -382,6 +382,15 @@ final class Library {
     /// What the last move or undo could not do (one line per file), for the
     /// banner; the rest of the photos went ahead.
     private(set) var trashError: String?
+    /// The Rename… sheet the window should show.
+    var renameRequest: RenameRequest?
+    /// The last Rename… batch, for Undo; nil after an undo, an `open`,
+    /// `closeSource` or a move to the Trash.
+    private(set) var renameUndo: RenameUndo?
+    /// The banner over the grid shows `renameUndo` or `renameError`.
+    var renameBannerShown = false
+    /// Why the last rename or its undo moved nothing.
+    private(set) var renameError: String?
 
     private var store: SidecarStore?
     private var history: [Photo.ID: EditHistory] = [:]
@@ -1026,6 +1035,9 @@ final class Library {
         missingMembers = (source as? CollectionSource)?.missing.count ?? 0
         trashUndo = TrashUndo(photos: moved)
         trashBannerShown = true
+        // One file-level undo at a time: a rename undone after its photos
+        // went to the Trash would find nothing to move back.
+        clearRename()
         return moved.count
     }
 
@@ -1078,6 +1090,237 @@ final class Library {
         trashUndo = nil
         trashError = nil
         trashBannerShown = false
+        clearRename()
+    }
+
+    // MARK: Rename in place
+
+    /// Rename… is offered over `ids` when the open source is a folder or a
+    /// collection and every one is a listed file photo (never a Photos
+    /// asset: D-465). A virtual copy stands for its master: one file.
+    func canRename(_ ids: [Photo.ID]) -> Bool {
+        guard source is FolderSource || source is CollectionSource, !ids.isEmpty else { return false }
+        let listed = Set(photos.map(\.id))
+        return ids.allSatisfy { $0.master.fileURL != nil && listed.contains($0.master) }
+    }
+
+    /// `ids` with each virtual copy replaced by its master, each once, in
+    /// order: the files a rename moves.
+    private func renameMasters(_ ids: [Photo.ID]) -> [Photo.ID] {
+        var seen = Set<Photo.ID>()
+        return ids.map(\.master).filter { seen.insert($0).inserted }
+    }
+
+    /// Asks the window for the Rename… sheet over `ids` (the batch targets
+    /// when nil).
+    func requestRename(for ids: [Photo.ID]? = nil) {
+        let targets = ids ?? batchTargets
+        guard canRename(targets) else { return }
+        renameRequest = RenameRequest(targets: targets)
+    }
+
+    /// The batch `ids` under `template`, in the order given, a virtual copy
+    /// counted as its master (`{seq}` counts
+    /// in it; `{date}` is `captureDates`'): the sheet's preview and what
+    /// `rename(_:)` carries out. Refused as a whole for a clash
+    /// (`RenameRefusal`), and for photos `canRename` does not offer.
+    func renamePlan(_ template: RenameTemplate, for ids: [Photo.ID]) -> RenamePlan {
+        guard canRename(ids), let source else { return RenamePlan(entries: [], refusal: .notFiles) }
+        let batch = renameMasters(ids).compactMap { id -> (id: PhotoID, file: URL, date: Date?)? in
+            guard let photo = photos.first(where: { $0.id == id }), let file = photo.fileURL else { return nil }
+            return (id, file, captureDates.date(for: photo))
+        }
+        let roots = collectionRoots()
+        return RenamePlan.make(template, photos: batch) { entry in
+            sidecarStores(for: entry.id, source: source, roots: roots).contains {
+                RenameMove.sidecarTaken(in: $0, old: entry.old, new: entry.new)
+            }
+        }
+    }
+
+    /// Every saved collection's member roots, by file (one listing).
+    private func collectionRoots() -> [URL: [URL]] {
+        var out: [URL: [URL]] = [:]
+        for c in collectionStore?.loadAll().collections ?? [] {
+            for m in c.members { out[m.file.standardizedFileURL, default: []].append(m.root) }
+        }
+        return out
+    }
+
+    /// The stores a rename of `id` moves edits in, each directory once: the
+    /// open source's (`sidecars(for:)`), then every folder that may hold an
+    /// edit for the file under another name: each saved collection member's
+    /// root for it, and each folder above the file (the scan is recursive,
+    /// so a parent folder opened once keeps `sub/a.jpg.json`) whose store has
+    /// a sidecar or a copy sidecar for it.
+    private func sidecarStores(for id: Photo.ID, source: any PhotoSource, roots: [URL: [URL]]) -> [SidecarStore] {
+        let primary = source.sidecars(for: id)
+        guard let file = id.fileURL else { return [primary] }
+        var candidates = (roots[file.standardizedFileURL] ?? []).map { SidecarStore(folder: $0) }
+        var dir = file.deletingLastPathComponent().standardizedFileURL
+        while true {
+            candidates.append(SidecarStore(folder: dir))
+            let up = dir.deletingLastPathComponent().standardizedFileURL
+            if up.path == dir.path { break }
+            dir = up
+        }
+        var seen: Set<String> = [primary.directory.standardizedFileURL.path]
+        var out = [primary]
+        for store in candidates where seen.insert(store.directory.standardizedFileURL.path).inserted {
+            if store.exists(for: id) || !store.copies(of: [id]).isEmpty { out.append(store) }
+        }
+        return out
+    }
+
+    /// Renames the plan's changing photos in place: each file moved in its
+    /// own directory and its sidecar moved with it (`RenameMove`), then
+    /// every map keyed by the old id rekeyed to the new one (`rekey`). A
+    /// refused or stale plan moves nothing; a move that fails part-way
+    /// moves the done ones back, and `renameError` says which failed.
+    /// Undo (`undoRename`) is offered until the next open. Returns how many
+    /// were renamed.
+    @discardableResult
+    func rename(_ plan: RenamePlan) -> Int {
+        guard plan.refusal == nil, let source else { return 0 }
+        guard canRename(plan.entries.map(\.id)) else {
+            renameError = RenameRefusal.notFiles.message
+            renameBannerShown = true
+            return 0
+        }
+        closeOpenEdit()
+        let roots = collectionRoots()
+        let moves = plan.changing.map {
+            RenameMove(old: $0.old, new: $0.new, stores: sidecarStores(for: $0.id, source: source, roots: roots))
+        }
+        do {
+            try RenameMove.perform(moves)
+        } catch {
+            renameError = error.localizedDescription + " Nothing was renamed."
+            renameBannerShown = true
+            return 0
+        }
+        rekey(moves)
+        trashUndo = nil
+        trashError = nil
+        trashBannerShown = false
+        renameUndo = RenameUndo(moves: moves)
+        renameError = nil
+        renameBannerShown = true
+        return moves.count
+    }
+
+    /// Edit › Undo Rename and the banner's Undo: every photo of the last
+    /// batch back to its old name, sidecar and maps with it, by the same
+    /// moves reversed; all or nothing, as `rename`. Returns how many.
+    @discardableResult
+    func undoRename() -> Int {
+        guard let undo = renameUndo else { return 0 }
+        let back = undo.moves.map(\.reversed)
+        guard canRename(back.map(\.oldID)) else {
+            renameError = "Could not undo the rename: a renamed photo is no longer listed."
+            renameBannerShown = true
+            return 0
+        }
+        closeOpenEdit()
+        do {
+            try RenameMove.perform(back)
+        } catch {
+            renameError = error.localizedDescription + " Nothing was renamed back."
+            renameBannerShown = true
+            return 0
+        }
+        rekey(back)
+        renameUndo = nil
+        renameError = nil
+        renameBannerShown = false
+        return back.count
+    }
+
+    /// Drops the rename's undo and banner.
+    private func clearRename() {
+        renameRequest = nil
+        renameUndo = nil
+        renameError = nil
+        renameBannerShown = false
+    }
+
+    /// Every map keyed by a moved photo's old id now keyed by its new one:
+    /// `photos`, recipes, marks, keywords, edit history, unreadable
+    /// sidecars, the selection and its anchor, the thumbnail cache, capture
+    /// dates, the Info cache, the map's positions, every saved collection's
+    /// members (the open one's source too) and every remembered view-state
+    /// anchor. Requests made over the old ids are dropped.
+    private func rekey(_ moves: [RenameMove]) {
+        guard !moves.isEmpty else { return }
+        var map = Dictionary(moves.map { ($0.oldID, $0.newID) }, uniquingKeysWith: { a, _ in a })
+        // Each listed virtual copy follows its master (its sidecar moved too).
+        for p in photos {
+            if let n = p.id.copyNumber, let master = map[p.id.master] { map[p.id] = .copy(of: master, number: n) }
+        }
+        func re<V>(_ d: [Photo.ID: V]) -> [Photo.ID: V] {
+            Dictionary(d.map { (map[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
+        }
+        for (old, new) in map {
+            Thumbnails.shared.rename(old, to: new, recipes: [recipe(for: old)])
+            captureDates.rename(old, to: new)
+            photoInfo.rename(old, to: new, name: new.fileURL?.lastPathComponent ?? new.defaultName)
+        }
+        recipes = re(recipes)
+        marks = re(marks)
+        keywords = re(keywords)
+        history = re(history)
+        unreadableSidecars = Set(unreadableSidecars.map { map[$0] ?? $0 })
+        photos = photos.map { p in
+            guard let id = map[p.id], let file = id.fileURL else { return p }
+            return Photo(id: id, name: file.lastPathComponent, captureDate: p.captureDate, location: p.location)
+        }
+        let ids = Set(selectedIDs.map { map[$0] ?? $0 })
+        if let anchor = selection, let moved = map[anchor] { selection = moved }
+        selectedIDs = ids
+        syncRequest = nil
+        keywordsRequest = nil
+        trashRequest = nil
+        newCollectionRequest = nil
+        renameRequest = nil
+        rekeyCollections(map)
+        rekeyRecentAnchors(map)
+        resort()
+        reconcileSelection()
+        if showMap { locations.start(photos, store: photoInfo) }
+    }
+
+    /// Each saved collection holding a moved file follows it (same root);
+    /// the open collection's source is the updated one.
+    private func rekeyCollections(_ map: [Photo.ID: Photo.ID]) {
+        func moved(_ c: PhotoCollection) -> PhotoCollection? {
+            var c = c
+            var changed = false
+            for i in c.members.indices {
+                if let file = map[c.members[i].id]?.fileURL {
+                    c.members[i].file = file
+                    changed = true
+                }
+            }
+            return changed ? c : nil
+        }
+        if let collectionStore {
+            var saved = false
+            for c in collectionStore.loadAll().collections {
+                guard let next = moved(c) else { continue }
+                do {
+                    try collectionStore.save(next)
+                    saved = true
+                } catch {
+                    collectionError = error.localizedDescription
+                }
+            }
+            if saved { collectionsRevision += 1 }
+        }
+        if let open = openCollection, let next = moved(open) {
+            let source = CollectionSource(next)
+            self.source = source
+            Thumbnails.shared.source = source
+        }
     }
 
     // MARK: Keywords

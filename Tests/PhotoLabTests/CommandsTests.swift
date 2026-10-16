@@ -91,14 +91,14 @@ final class CommandsTests: XCTestCase {
         let view = AppCommand.items(in: .view).map(\.name)
         XCTAssertEqual(view, [.grid, .loupe, .map, .zoom, .compare, .showOriginal, .clipping, .maskOverlay, .filmstrip, .info, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords, .removeFromCollection,
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords, .renameInPlace, .removeFromCollection,
                                .newLinearMask, .newRadialMask, .brushMask, .trashRejects])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos, .deleteCollection])
         XCTAssertEqual(AppCommand.items(in: .collection).map(\.name), [.newCollection])
         XCTAssertEqual(AppCommand.items(in: .importExport).map(\.name), [.importCard, .export, .saveToPhotos])
-        XCTAssertEqual(AppCommand.items(in: .undoRedo).map(\.name), [.undo, .redo, .undoTrash])
+        XCTAssertEqual(AppCommand.items(in: .undoRedo).map(\.name), [.undo, .redo, .undoTrash, .undoRename])
         XCTAssertEqual(AppCommand.items(in: .pasteboard).map(\.name),
                        [.copySettings, .pasteSettings, .syncSettings, .selectAll, .search])
         XCTAssertEqual(AppCommand.items(in: .presets).map(\.name), [.savePreset])

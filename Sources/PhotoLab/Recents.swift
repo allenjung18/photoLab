@@ -169,6 +169,21 @@ extension Library {
         store(list)
     }
 
+    /// A rename in place (`Library.rename`): every remembered anchor that
+    /// was a moved photo is its new id, so a source reopens on it.
+    func rekeyRecentAnchors(_ map: [Photo.ID: Photo.ID]) {
+        guard rememberFolder else { return }
+        var list = storedRecents()
+        var changed = false
+        for i in list.indices {
+            if let anchor = list[i].state?.anchor, let moved = map[anchor] {
+                list[i].state?.anchor = moved
+                changed = true
+            }
+        }
+        if changed { store(list) }
+    }
+
     /// Called at the end of `open`: the filter comes back as it was; the
     /// anchor and the loupe only when the photo is still there and the
     /// restored filter admits it, otherwise today's reset (grid, nothing

@@ -174,6 +174,13 @@ final class CaptureDates {
         cache[id] = .some(date)
     }
 
+    /// A photo renamed in place (`Library.rename`): its date, read or not,
+    /// is the new id's (the pixels did not change).
+    func rename(_ old: Photo.ID, to new: Photo.ID) {
+        guard let hit = cache.removeValue(forKey: old) else { return }
+        cache[new] = hit
+    }
+
     /// EXIF `DateTimeOriginal` (local time, `yyyy:MM:dd HH:mm:ss`), else the
     /// file's creation date, else its modification date; nil when neither
     /// the header nor the file can be read.

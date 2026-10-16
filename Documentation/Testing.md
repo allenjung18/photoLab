@@ -571,6 +571,26 @@ not only the pass.
   `batchTargets` order, `{date}` names numbered by Add a number, the
   originals untouched. Shown to bite by counting `{seq}` from 0 (red in the
   token, padding, preview and export tests).
+- `RenameInPlaceTests.swift` — Photo › Rename… in temporary folders: three
+  files renamed with `{seq}`, their sidecars moved with `original`
+  rewritten, and the edit, marks and keywords there after a reopen; the
+  selection, anchor and undo history following the id; the extension kept
+  as spelled; each refusal (a taken name, a duplicate, nothing changing, a
+  dot name, an edit or a copy's edit under the new name) touching no file;
+  a name taken after the preview failing file two and moving file one
+  back; Undo (the `undoRename` command) restoring names and sidecars and
+  gone after an open; only changing photos moving and a stale plan moving
+  nothing; a master's virtual copy (selected alone) following with its own
+  recipe and marks across a reopen and back on Undo; a collection member
+  renamed in the collection and in its folder, the saved collection
+  following; a file with an edit under two roots (its collection's and a
+  parent folder's `sub/` sidecar) renamed from either side and undone, every
+  root's edit and copy following, and an edit under the new name in another
+  root refusing; only listed folder or collection files offered; the command's
+  title and sheet; a Trash move dropping the rename's undo; the thumbnail,
+  capture-date and Info caches moving. Shown to bite by leaving the sidecar
+  behind (17 failures in 4 tests, the reopen loses the edit) and by moving
+  edits in the open store only (9 failures in the 2 other-root tests).
 - `TrashTests.swift` — Move Rejected Photos to Trash… over a fake
   `FileTrasher` that moves into a temporary directory (never the real
   Trash): only the rejects move whatever is selected, picks and unflagged

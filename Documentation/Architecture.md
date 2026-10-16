@@ -837,7 +837,10 @@ A reject is also what `Library.rejectedPhotos` collects for Move Rejected
 Photos to Trash…: the one path that changes an original, through the
 injected `FileTrasher` (`Trash.swift`; `Library(trasher:)`, the app's
 `LiveFileTrasher`), leaving the sidecar where it is (Features: Move rejects
-to the Trash).
+to the Trash). The other, Photo › Rename…, moves a file to a new name in
+its directory and its sidecar and copy sidecars with it (`RenameMove`,
+`Rename.swift`), after which `Library.rekey` moves every map keyed by the
+old `PhotoID` (marks included) to the new one (Features: Rename in place).
 
 ### Keywords
 

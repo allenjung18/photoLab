@@ -228,6 +228,14 @@ final class PhotoInfoStore {
 
     func cached(_ id: Photo.ID) -> PhotoInfo? { cache[id] }
 
+    /// A photo renamed in place (`Library.rename`): its read info is the
+    /// new id's, with the new file name (the folder is the same).
+    func rename(_ old: Photo.ID, to new: Photo.ID, name: String) {
+        guard var info = cache.removeValue(forKey: old) else { return }
+        info.fileName = name
+        cache[new] = info
+    }
+
     /// The photo's info, reading `file` (its original) the first time;
     /// without a file yet, the listing's part, not kept.
     func info(for photo: Photo, file: URL?) async -> PhotoInfo {

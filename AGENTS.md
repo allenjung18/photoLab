@@ -18,11 +18,14 @@ to run it, the timing tests, adding an adjustment).
 
 ## Rules
 
-- **Never write to a photo's original file.** The one exception (D-465):
-  Move Rejected Photos to Trash… moves a folder photo's rejected original
-  to the Trash and back, only through the injected `FileTrasher`
-  (`Library.moveToTrash`, `Library.undoMoveToTrash`), never a Photos asset
-  and never its sidecar. Edits live in sidecar JSON
+- **Never write to a photo's original file.** The two exceptions (D-465)
+  move one, never write it: Move Rejected Photos to Trash… moves a folder
+  photo's rejected original to the Trash and back, only through the
+  injected `FileTrasher` (`Library.moveToTrash`, `Library.undoMoveToTrash`),
+  never a Photos asset and never its sidecar; Rename… renames folder and
+  collection files in their own directory with `FileManager.moveItem`
+  (never replacing a file), each sidecar and copy sidecar moved with it
+  (`RenameMove`, `Library.rename`, `Library.undoRename`), all or nothing. Edits live in sidecar JSON
   (`SidecarStore`, `<folder>/.photolab/<file>.json`, atomic; the file goes
   only when the recipe is the default and the photo has no flag or rating,
   a disabled-only edit keeps it); exports go to a separate output folder,

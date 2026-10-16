@@ -38,13 +38,13 @@ struct CommandContext {
 struct AppCommand: Identifiable {
     enum Name: String, CaseIterable {
         case openFolder, openPhotos, deleteCollection, importCard, export, saveToPhotos
-        case undo, redo, undoTrash
+        case undo, redo, undoTrash, undoRename
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, resetPhoto, keywords, removeFromCollection
+        case crop, whiteBalance, autoTone, resetPhoto, keywords, renameInPlace, removeFromCollection
         case newCollection
         case newLinearMask, newRadialMask, brushMask
         case trashRejects
@@ -204,6 +204,11 @@ struct AppCommand: Identifiable {
         AppCommand(name: .undoTrash, title: "Undo Move to Trash", key: nil, placement: .undoRedo, section: 1,
                    isEnabled: { $0.library.trashUndo != nil },
                    perform: { $0.library.undoMoveToTrash() }),
+        // The last Rename… taken back: every file and its sidecar back to its
+        // old name, until the next open (`Library.undoRename`). Not an edit.
+        AppCommand(name: .undoRename, title: "Undo Rename", key: nil, placement: .undoRedo, section: 1,
+                   isEnabled: { $0.library.renameUndo != nil },
+                   perform: { $0.library.undoRename() }),
         // Copy / paste a photo's settings; select every photo in the grid.
         AppCommand(name: .copySettings, title: "Copy Settings", key: "c", modifiers: [.command, .shift],
                    placement: .pasteboard,
@@ -335,6 +340,16 @@ struct AppCommand: Identifiable {
                    },
                    isEnabled: { !$0.targets.isEmpty },
                    perform: { $0.library.requestKeywords(for: $0.targets) }),
+        // Rename the targets' files in place from a template (`RenameSheet`):
+        // folder and collection photos only, after a preview; each sidecar
+        // follows its photo, and Edit › Undo Rename takes it back (D-465).
+        AppCommand(name: .renameInPlace, title: "Rename…", key: nil, placement: .photo, section: 3,
+                   dynamicTitle: { c in
+                       let n = c.targets.count
+                       return n > 1 ? "Rename \(n) Photos…" : "Rename…"
+                   },
+                   isEnabled: { $0.library.canRename($0.targets) },
+                   perform: { $0.library.requestRename(for: $0.targets) }),
         // Photo › Add to Collection (`AddToCollectionMenu`) is drawn before
         // this section. Removes the targets from the open collection: the
         // files and their sidecars stay where they are.
