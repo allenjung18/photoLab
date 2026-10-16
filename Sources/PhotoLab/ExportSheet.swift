@@ -135,6 +135,10 @@ struct ExportSheet: View {
                         }
                     }
                     Toggle("Keep camera info (EXIF, GPS, IPTC) from the original", isOn: $form.options.keepMetadata)
+                    Toggle("Remove location (GPS)", isOn: Binding(
+                        get: { form.options.removesLocation },
+                        set: { form.options.removeLocation = $0 ? true : nil }))
+                        .disabled(!form.options.keepMetadata)
                 }
                 Section("Watermark") {
                     Toggle("Add a text watermark", isOn: $form.watermarkOn)
@@ -265,18 +269,16 @@ struct ExportSheet: View {
 
     // MARK: Presets
 
-    /// "Preset" and its menu: every readable preset (a check on the picked
-    /// one), the unreadable files listed and disabled, then Save Current as
-    /// Preset… and Delete Preset.
+    /// "Preset" and its menu: the built-in presets, then every readable saved
+    /// preset (a check on the picked one), the unreadable files listed and
+    /// disabled, then Save Current as Preset… and Delete Preset (saved
+    /// presets only).
     private var presetRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Preset")
                 Menu(form.presetLabel) {
-                    if presets.presets.isEmpty {
-                        Text("No presets yet")
-                    }
-                    ForEach(presets.presets) { preset in
+                    ForEach(presets.builtIns + presets.presets) { preset in
                         Button {
                             pick(preset)
                         } label: {
@@ -296,7 +298,7 @@ struct ExportSheet: View {
                         naming = true
                     }
                     Button("Delete Preset") { deleting = form.picked?.name }
-                        .disabled(form.picked.map { presets.preset(named: $0.name) == nil } ?? true)
+                        .disabled(form.picked.map { !presets.isSaved($0.name) } ?? true)
                 }
                 .fixedSize()
                 Spacer()

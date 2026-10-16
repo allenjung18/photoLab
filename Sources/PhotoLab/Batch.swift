@@ -176,7 +176,8 @@ enum Exporter {
     /// writes it to `out` in `options`' format, quality and size, with the
     /// source's metadata when `options.keepMetadata` (and then, when
     /// `keywords` is not empty, IPTC Keywords set to them:
-    /// `ExportMetadata.setting(keywords:in:)`); a file at `out` is
+    /// `ExportMetadata.setting(keywords:in:)`, and without the location when
+    /// `options.removesLocation`); a file at `out` is
     /// replaced. The bytes go to a partial file beside `out`, moved into
     /// place when complete. `export` calls this after its collision rules;
     /// a Save to Photos calls it for the rendered JPEG PhotoKit asks for
@@ -193,6 +194,9 @@ enum Exporter {
             ? ExportMetadata.setting(keywords: keywords, in: ExportMetadata.properties(
                 of: source, outputWidth: result.image.width, outputHeight: result.image.height))
             : [:]
+        if options.keepMetadata && options.removesLocation {
+            properties = ExportMetadata.removingLocation(from: properties)
+        }
         if options.format.isLossy {
             properties[kCGImageDestinationLossyCompressionQuality] = options.clampedQuality
         }

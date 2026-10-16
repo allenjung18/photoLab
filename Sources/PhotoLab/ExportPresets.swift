@@ -7,7 +7,8 @@ import Observation
 /// Photos library and its album) is NOT part of a preset: it stays the
 /// sheet's own choice. Export presets are user-level files, one JSON per
 /// preset, in `ExportPresetStore.defaultDirectory`, apart from the develop
-/// presets (`PresetStore`). There is no built-in set.
+/// presets (`PresetStore`). PhotoLab also ships `builtIn` presets, which
+/// are never files.
 struct ExportPreset: Codable, Hashable, Identifiable, Sendable {
     static let currentVersion = 1
 
@@ -21,6 +22,20 @@ struct ExportPreset: Codable, Hashable, Identifiable, Sendable {
         self.name = name
         self.options = options
     }
+}
+
+extension ExportPreset {
+    /// The presets PhotoLab ships: listed in the sheet's Preset menu above
+    /// the saved ones and never stored, so never deleted; a saved preset of
+    /// the same name replaces one in the menu.
+    static let builtIn: [ExportPreset] = [web]
+
+    /// "For Google Photos / web": a JPEG at quality 85, 2048 px on the long
+    /// side, named `<stem>-web`, keeping the dates and camera info (Google
+    /// Photos files by the capture date) but not where it was taken.
+    static let web = ExportPreset(name: "For Google Photos / web", options: ExportOptions(
+        format: .jpeg, quality: 0.85, resize: .longSide(2048), keepMetadata: true,
+        suffix: "-web", removeLocation: true))
 }
 
 enum ExportPresetError: LocalizedError, Equatable {
@@ -278,7 +293,18 @@ final class ExportPresetLibrary {
         }
     }
 
-    func preset(named name: String) -> ExportPreset? { presets.first { $0.name == name } }
+    /// A saved preset of that name, else a built-in one.
+    func preset(named name: String) -> ExportPreset? {
+        presets.first { $0.name == name } ?? ExportPreset.builtIn.first { $0.name == name }
+    }
+
+    /// The built-in presets no saved preset of the same name replaces.
+    var builtIns: [ExportPreset] {
+        ExportPreset.builtIn.filter { !isSaved($0.name) }
+    }
+
+    /// True when `name` is a saved file (Delete Preset applies), not a built-in.
+    func isSaved(_ name: String) -> Bool { presets.contains { $0.name == name } }
 
     /// True when a save of `name` would replace a file (the sheet asks first).
     func exists(_ name: String) -> Bool { store.exists(name) }

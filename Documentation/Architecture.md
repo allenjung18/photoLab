@@ -1181,9 +1181,12 @@ the same file (`ExportPresetError.fileNameCollision`), `decode` refusing a
 moving it aside with `UnreadableBackup.moveAside` first, and `loadAll()`
 returning the readable presets sorted by name plus the `.json` files it
 could not decode, left alone. `remove(_:)` deletes the one file. Nothing is
-seeded: there are no built-in export presets. `ExportPresetLibrary` is the
-store read into memory for the export sheet, re-read after every change,
-with the last error.
+seeded: the built-in presets (`ExportPreset.builtIn`, today `.web`) live in
+code, never in the store. `ExportPresetLibrary` is the store read into
+memory for the export sheet, re-read after every change, with the last
+error; `builtIns` lists the built-ins no saved preset of the same name
+replaces, `preset(named:)` finds a saved preset first and then a built-in,
+and `isSaved(_:)` gates Delete Preset.
 
 `ExportForm` is the export sheet's fields as one value: `options`, the
 Size controls (`sizeMode`, `longSide`, `percent`), the Watermark section

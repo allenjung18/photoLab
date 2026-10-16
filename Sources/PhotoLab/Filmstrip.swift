@@ -65,8 +65,11 @@ struct FilmstripView: View {
                             }
                     }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 8)
+                .padding(.vertical, 8)
             }
+            // Outside the scroll view, so the cells stop short of the window
+            // edges wherever the strip is scrolled, not only at its ends.
+            .padding(.horizontal, 10)
             .onChange(of: library.selection, initial: true) { _, id in
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }

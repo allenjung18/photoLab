@@ -238,7 +238,11 @@ not only the pass.
   rotated export resized to a 2048 px long side keeps every border pixel at
   the source's gray at four angles (the rotate inset is applied at render
   size; the resize after it must not bring the rotated edge back), the
-  camera EXIF travels with the orientation reset in every format, HEIC and
+  camera EXIF travels with the orientation reset in every format, Remove
+  location drops the GPS block and the IPTC city and country while the
+  capture date, camera and keywords still travel (and an options file
+  without the field decodes with it off; shown to bite by skipping the
+  removal), HEIC and
   TIFF round trip, the collision policy (number, skip, overwrite) and the
   original is never written, not even under a case-variant name on a
   case-insensitive volume, an Overwrite onto another library original (by
@@ -718,8 +722,12 @@ not only the pass.
   too-new file is left untouched; delete removes only that file (another
   preset, a damaged `.json` and a non-JSON file stay); the default folder
   is `export-presets` beside the develop `presets`, and every export-preset
-  operation leaves a seeded develop folder byte-for-byte as it was (no
-  built-in export presets, nothing seeded); a pick sets
+  operation leaves a seeded develop folder byte-for-byte as it was (the
+  built-ins are never files, nothing seeded); the built-in web preset is a
+  JPEG at 2048 with metadata on and location off, listed with no file,
+  found by a remembered pick, not deletable, and replaced in the menu by a
+  saved preset of its name until that is deleted (shown to bite by an empty
+  `builtIns`); a pick sets
   `ExportForm.resolved` equal to the preset's options, switching a
   watermark off or replacing another one; a changed option, watermark
   field or size control shows "<name> (edited)" and changing it back

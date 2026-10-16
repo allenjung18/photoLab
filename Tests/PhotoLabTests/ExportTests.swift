@@ -322,6 +322,45 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(se[kCGImagePropertyExifPixelYDimension] as? Int, 8)
     }
 
+    func testRemoveLocationDropsGPSAndIPTCPlaceButKeepsTheDateCameraAndKeywords() throws {
+        let src = try writeSource("trip.jpg", gray(0.5, width: 16, height: 16), type: .jpeg, properties: [
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "TestCam"],
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:10:15 12:34:56"],
+            kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 47.6, kCGImagePropertyGPSLatitudeRef: "N"],
+            kCGImagePropertyIPTCDictionary: [kCGImagePropertyIPTCCity: "Seattle",
+                                             kCGImagePropertyIPTCCountryPrimaryLocationName: "USA"],
+        ])
+        XCTAssertNotNil(try properties(src)[kCGImagePropertyGPSDictionary], "the source really has GPS")
+
+        var o = ExportOptions()
+        o.removeLocation = true
+        guard case .written(let url) = try Exporter.export(src, recipe: .neutral, into: outDir, options: o,
+                                                           keywords: ["family"]) else { return XCTFail() }
+        let p = try properties(url)
+        XCTAssertNil(p[kCGImagePropertyGPSDictionary], "GPS is removed")
+        let iptc = p[kCGImagePropertyIPTCDictionary] as? [CFString: Any]
+        XCTAssertNil(iptc?[kCGImagePropertyIPTCCity], "the IPTC city is removed")
+        XCTAssertNil(iptc?[kCGImagePropertyIPTCCountryPrimaryLocationName], "the IPTC country is removed")
+        XCTAssertEqual(iptc?[kCGImagePropertyIPTCKeywords] as? [String], ["family"], "keywords still travel")
+        XCTAssertEqual((p[kCGImagePropertyExifDictionary] as? [CFString: Any])?[kCGImagePropertyExifDateTimeOriginal] as? String,
+                       "2026:10:15 12:34:56", "the capture date still travels")
+        XCTAssertEqual((p[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFMake] as? String,
+                       "TestCam", "the camera still travels")
+
+        // Off (nil, an older options file): the location travels as before.
+        var keep = ExportOptions()
+        keep.suffix = "-keep"
+        guard case .written(let kept) = try Exporter.export(src, recipe: .neutral, into: outDir, options: keep) else { return XCTFail() }
+        XCTAssertNotNil(try properties(kept)[kCGImagePropertyGPSDictionary], "GPS is kept when the option is off")
+    }
+
+    func testOptionsSavedWithoutRemoveLocationDecodeWithItOff() throws {
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ExportOptions())) as! [String: Any]
+        json.removeValue(forKey: "removeLocation")
+        let o = try JSONDecoder().decode(ExportOptions.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertFalse(o.removesLocation)
+    }
+
     // MARK: HEIC / TIFF
 
     func testHEICAndTIFFRoundTripAndOpenLikeTheJPEG() throws {

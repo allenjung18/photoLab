@@ -50,6 +50,44 @@ final class ExportPresetTests: XCTestCase {
         ((try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []).sorted()
     }
 
+    // MARK: Built-in
+
+    func testTheWebPresetIsAJPEGAt2048WithDatesButNoLocation() {
+        let o = ExportPreset.web.options
+        XCTAssertEqual(ExportPreset.web.name, "For Google Photos / web")
+        XCTAssertEqual(o.format, .jpeg)
+        XCTAssertEqual(o.quality, 0.85)
+        XCTAssertEqual(o.resize, .longSide(2048))
+        XCTAssertTrue(o.keepMetadata, "dates travel: Google Photos files by capture date")
+        XCTAssertTrue(o.removesLocation)
+        XCTAssertEqual(o.suffix, "-web")
+        XCTAssertNil(o.watermark)
+    }
+
+    func testABuiltInIsListedWithNoFileAndCannotBeDeleted() throws {
+        let lib = ExportPresetLibrary(store: ExportPresetStore(directory: dir))
+        XCTAssertEqual(lib.presets, [], "no saved presets")
+        XCTAssertEqual(lib.builtIns, [ExportPreset.web], "the built-in is listed anyway")
+        XCTAssertEqual(lib.preset(named: ExportPreset.web.name), ExportPreset.web, "a remembered pick finds it")
+        XCTAssertFalse(lib.isSaved(ExportPreset.web.name), "Delete Preset is off for it")
+        XCTAssertFalse(lib.delete(ExportPreset.web.name), "and a delete finds no file")
+        XCTAssertEqual(files(dir), [], "nothing was written for it")
+
+        var form = ExportForm(options: .default)
+        form.pick(ExportPreset.web)
+        XCTAssertEqual(form.resolved, ExportPreset.web.options, "a pick fills the sheet with its options")
+        XCTAssertEqual(form.presetLabel, ExportPreset.web.name)
+    }
+
+    func testASavedPresetOfTheSameNameReplacesTheBuiltInInTheMenu() throws {
+        let lib = ExportPresetLibrary(store: ExportPresetStore(directory: dir))
+        let mine = try XCTUnwrap(lib.save(archive, as: ExportPreset.web.name))
+        XCTAssertEqual(lib.builtIns, [], "the built-in steps aside")
+        XCTAssertEqual(lib.preset(named: ExportPreset.web.name), mine, "the saved one wins")
+        XCTAssertTrue(lib.delete(ExportPreset.web.name))
+        XCTAssertEqual(lib.builtIns, [ExportPreset.web], "and comes back once it is deleted")
+    }
+
     // MARK: Store
 
     func testRoundTripIncludingAWatermark() throws {

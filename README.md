@@ -423,7 +423,10 @@ selection back to the anchor:
   Preset…** names the current fields (an existing name asks before it is
   replaced); **Delete Preset** removes the picked one. The last pick is
   remembered, and once a field changes the menu reads "<name> (edited)".
-  There are no built-in export presets.
+  One preset is built in: **For Google Photos / web** (JPEG, 2048 px on the
+  long side, quality 85, `-web` suffix, camera info and dates kept, location
+  removed). **Remove location (GPS)**, under Keep camera info, drops where
+  a photo was taken from any export.
 
 Copy Settings (`⇧⌘C`) remembers one photo's settings; Paste Settings…
 (`⇧⌘V`) opens the same sheet onto whatever is selected, so a look can be

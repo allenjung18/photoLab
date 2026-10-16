@@ -82,8 +82,16 @@ struct ExportOptions: Codable, Hashable, Sendable {
     /// (`ExportQueue.start`), and that stem meets the collision policy as a
     /// plain name would (`Exporter.destination`).
     var nameTemplate: RenameTemplate? = nil
+    /// With `keepMetadata`, leave out where the photo was taken: the GPS
+    /// block and the IPTC location fields (`ExportMetadata.removingLocation`);
+    /// the dates, camera and lens still travel. nil = keep it; options
+    /// stored by a build without the field decode with nil.
+    var removeLocation: Bool? = nil
 
     static let `default` = ExportOptions()
+
+    /// `removeLocation` as the sheet's toggle reads it.
+    var removesLocation: Bool { removeLocation == true }
 
     var clampedQuality: Double { min(max(quality, Self.qualityRange.lowerBound), Self.qualityRange.upperBound) }
 
@@ -167,6 +175,23 @@ enum ExportMetadata {
             exif[kCGImagePropertyExifPixelXDimension] = outputWidth
             exif[kCGImagePropertyExifPixelYDimension] = outputHeight
             p[kCGImagePropertyExifDictionary] = exif
+        }
+        return p
+    }
+
+    /// `properties` without where the photo was taken: the GPS block and the
+    /// IPTC city, sub-location, state and country fields go; everything
+    /// else (dates, camera, lens, keywords) stays.
+    static func removingLocation(from properties: [CFString: Any]) -> [CFString: Any] {
+        var p = properties
+        p.removeValue(forKey: kCGImagePropertyGPSDictionary)
+        if var iptc = p[kCGImagePropertyIPTCDictionary] as? [CFString: Any] {
+            for key in [kCGImagePropertyIPTCCity, kCGImagePropertyIPTCSubLocation,
+                        kCGImagePropertyIPTCProvinceState, kCGImagePropertyIPTCCountryPrimaryLocationName,
+                        kCGImagePropertyIPTCCountryPrimaryLocationCode] {
+                iptc.removeValue(forKey: key)
+            }
+            p[kCGImagePropertyIPTCDictionary] = iptc
         }
         return p
     }

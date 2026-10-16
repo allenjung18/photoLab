@@ -878,7 +878,9 @@ redo, Reset, the render time and any sidecar error.
   badge) and keys the grid's one cache with `Thumbnails.Key(photo, recipe)`,
   never a second cache. The anchor is ringed and scrolled into view; a click
   goes through `Library.click` with the grid's `⇧` and `⌘` rules, so a batch
-  can be built from the loupe. **View › Filmstrip** (`F`, an `AppCommand`)
+  can be built from the loupe. The strip's 10 pt side inset sits outside
+  its scroll view, so cells stop short of the window edges wherever it is
+  scrolled. **View › Filmstrip** (`F`, an `AppCommand`)
   shows or hides it; `Library.showFilmstrip` is `AppSettings.showFilmstrip`,
   remembered under `showFilmstrip`, shown by default. The item
   list and the click live in `Filmstrip` (`FilmstripItem`), tested apart
@@ -1389,7 +1391,11 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   (`ExportForm.previewNames(for:)`, the template's `{seq}` padded for the
   whole batch), what to do when the file
   exists (`ExportOptions.Collision`: add a number, skip, overwrite) and
-  **Keep camera info** (`keepMetadata`); **Watermark**: a toggle, then the
+  **Keep camera info** (`keepMetadata`) with **Remove location (GPS)**
+  under it (`removeLocation`, nil = off; only with Keep camera info:
+  `ExportMetadata.removingLocation` drops the GPS block and the IPTC city,
+  sub-location, state and country, keeping dates, camera, lens and
+  keywords); **Watermark**: a toggle, then the
   text, a position (`Watermark.Position`: the four corners or the centre),
   size (`Watermark.size`, the text height as a share of the output's short
   side, `Watermark.sizeRange`) and opacity (`Watermark.opacityRange`)
@@ -1412,7 +1418,12 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
 - **Export presets.** A **Preset** row at the top of the sheet: a menu
   titled `ExportForm.presetLabel` ("None", the picked preset's name, or
   "<name> (edited)" once `ExportForm.isEdited`, the resolved options
-  differing from the preset's). It lists every `ExportPreset` read by
+  differing from the preset's). It lists first the built-in presets
+  (`ExportPresetLibrary.builtIns`: `ExportPreset.builtIn`, today only
+  `ExportPreset.web`, "For Google Photos / web" — JPEG quality 85, 2048 px
+  long side, suffix `-web`, camera info kept, location removed; never a
+  file, so Delete Preset is off for it, `isSaved`; a saved preset of the
+  same name takes its place in the menu), then every `ExportPreset` read by
   `ExportPresetLibrary` from `ExportPresetStore` (a check on the picked
   one) and every unreadable file as "<file> (unreadable)", disabled, with
   the library's error line under the row. A pick is `ExportForm.pick(_:)`:
