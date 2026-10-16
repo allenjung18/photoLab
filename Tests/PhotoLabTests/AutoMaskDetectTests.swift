@@ -1,6 +1,7 @@
 import XCTest
 import CoreGraphics
 import CoreVideo
+import Vision
 import ImageIO
 import UniformTypeIdentifiers
 @testable import PhotoLab
@@ -50,6 +51,8 @@ final class AutoMaskDetectTests: XCTestCase {
             if let gate { await gate.wait() }
             return result
         }
+        func person(in image: CGImage) async throws -> MaskBitmap? { nil }
+        func faces(in image: CGImage) async throws -> [VNFaceObservation] { [] }
     }
 
     /// The top half white.

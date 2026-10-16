@@ -1302,26 +1302,37 @@ not change is skipped.
 
 ### Detecting an automatic mask
 
-`Library.selectAuto(_:for:)` (Select Subject) is the one path that makes an
-`.auto` mask from pixels. It reads the photo's oriented decode,
+`Library.selectAuto(_:for:)` (Select Subject, Select Person) is the one path
+that makes an `.auto` mask from pixels; `Library.selectFaces(for:)` (Select
+Faces) shares its run (`runAutoDetection`) and makes radial masks instead. It reads the photo's oriented decode,
 `ImageLoading.downsampledCGImage` at `VisionDetector.inputPixelSize`
 (`MaskBitmap.maxLongSide`, 2048): the thumbnail options apply the EXIF
 orientation (`kCGImageSourceCreateThumbnailWithTransform`), so row 0 of the
 decode is the top of the photo as displayed, which is the source frame a
 `MaskBitmap` is defined over. A detached task hands it to
 `Library.autoMaskDetector`, an `AutoMaskDetector` (AutoMasks.swift,
-`Sendable`, `subject(in:) async throws -> MaskBitmap?`); the app's is
-`VisionDetector`, `VNGenerateForegroundInstanceMaskRequest` (macOS 14, on
+`Sendable`, `subject(in:)` and `person(in:) async throws -> MaskBitmap?`,
+`faces(in:) async throws -> [VNFaceObservation]`); the app's is
+`VisionDetector`: `VNGenerateForegroundInstanceMaskRequest` for a subject and
+`VNGeneratePersonInstanceMaskRequest` for a person (both macOS 14, on
 device) with `allInstances` merged by
 `generateScaledMaskForImage(forInstances:from:)` into a buffer the size of
-the input. `MaskBitmap(pixelBuffer:)` converts a one-component buffer
+the input, and `VNDetectFaceRectanglesRequest` for faces. A face's
+observation never leaves the detached task: there
+`FaceMasks.radial(for:roll:imageSize:)` turns its `boundingBox` (normalised,
+origin bottom-left) into a `.radial` in the source frame, the centre's y
+flipped (`1 - midY`), the radii the box's half width and height in pixels
+over the decode's long side times `FaceMasks.margin`, the angle `-roll` in
+degrees (Vision's roll is counter-clockwise, a radial's angle clockwise on
+screen), feather `FaceMasks.feather`. `MaskBitmap(pixelBuffer:)` converts a one-component buffer
 (`OneComponent8` as is, `OneComponent32Float` clamped and rounded to 8 bits;
 row padding skipped, any other format nil) keeping row 0 at the top. Back on
 the main actor the result is dropped unless `autoMaskGeneration` (bumped by
 a photo change and by opening a source) and the selection are what they were
-at the start; a nil or blank bitmap sets `autoMaskMessage`; otherwise any open
-edit is closed and one `setRecipe` appends the mask, one undo step and one
-sidecar write. `autoMaskDetecting` holds a second run off.
+at the start; a nil or blank bitmap (no faces, for Select Faces) sets
+`autoMaskMessage`; otherwise any open edit is closed and one `setRecipe`
+appends the mask (every face's mask, the first selected), one undo step and
+one sidecar write. `autoMaskDetecting` holds a second run off.
 
 ## 4. Export pipeline
 

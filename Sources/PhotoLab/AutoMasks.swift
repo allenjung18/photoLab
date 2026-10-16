@@ -12,13 +12,20 @@ import Vision
 protocol AutoMaskDetector: Sendable {
     /// The photo's main subject (the foreground), or nil when there is none.
     func subject(in image: CGImage) async throws -> MaskBitmap?
+    /// Every person in the photo merged into one mask, or nil when there is none.
+    func person(in image: CGImage) async throws -> MaskBitmap?
+    /// One observation per face found (Vision's normalised, bottom-left
+    /// `boundingBox` and its `roll`); empty when there is none.
+    func faces(in image: CGImage) async throws -> [VNFaceObservation]
 }
 
 /// The on-device detector: Apple Vision, run on this Mac with no network.
 /// Subject is `VNGenerateForegroundInstanceMaskRequest` (macOS 14) with every
 /// instance it finds merged into one mask, scaled to the input image
 /// (`generateScaledMaskForImage(forInstances:from:)`), so a person holding
-/// a dog selects both, as Lightroom's Select Subject does.
+/// a dog selects both, as Lightroom's Select Subject does. Person is
+/// `VNGeneratePersonInstanceMaskRequest` (macOS 14) the same way, every
+/// person merged; faces are `VNDetectFaceRectanglesRequest`.
 struct VisionDetector: AutoMaskDetector {
     /// The long side, in pixels, of the decode a detection runs on: the
     /// bitmap's own cap (`MaskBitmap.maxLongSide`), so nothing is detected
@@ -29,10 +36,59 @@ struct VisionDetector: AutoMaskDetector {
         let request = VNGenerateForegroundInstanceMaskRequest()
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
-        guard let observation = request.results?.first, !observation.allInstances.isEmpty else { return nil }
+        return try Self.merged(request.results?.first, from: handler)
+    }
+
+    func person(in image: CGImage) async throws -> MaskBitmap? {
+        let request = VNGeneratePersonInstanceMaskRequest()
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try handler.perform([request])
+        return try Self.merged(request.results?.first, from: handler)
+    }
+
+    func faces(in image: CGImage) async throws -> [VNFaceObservation] {
+        let request = VNDetectFaceRectanglesRequest()
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try handler.perform([request])
+        return request.results ?? []
+    }
+
+    /// Every instance of `observation` merged into one bitmap the size of
+    /// the handler's image; nil when there is none or it is blank.
+    private static func merged(_ observation: VNInstanceMaskObservation?,
+                               from handler: VNImageRequestHandler) throws -> MaskBitmap? {
+        guard let observation, !observation.allInstances.isEmpty else { return nil }
         let buffer = try observation.generateScaledMaskForImage(forInstances: observation.allInstances, from: handler)
         guard let bitmap = MaskBitmap(pixelBuffer: buffer), !bitmap.isBlank else { return nil }
         return bitmap
+    }
+}
+
+/// A detected face as a radial mask (Select Faces, `Library.selectFaces`).
+enum FaceMasks {
+    /// How far the ellipse reaches past the face box: radii are this times
+    /// half the box, so the feathered edge falls outside the face and the
+    /// full-effect core (radii x (1 - `feather`)) still covers most of it.
+    static let margin = 1.4
+    /// The new mask's feather.
+    static let feather = 0.4
+
+    /// A `.radial` over the face whose Vision `boundingBox` (normalised,
+    /// origin BOTTOM-left) was found in an image of `imageSize` pixels (the
+    /// oriented decode, so the source frame). The centre is flipped to the
+    /// top-left origin of `MaskPoint`; the radii are the box's half width and
+    /// half height in pixels over the long side (`MaskRadii`'s unit) times
+    /// `margin`; the angle is `-roll` in degrees, since Vision's roll turns
+    /// counter-clockwise and a radial's angle clockwise on screen. No roll
+    /// is angle 0.
+    static func radial(for boundingBox: CGRect, roll: Double?, imageSize: CGSize) -> MaskShape {
+        let w = Double(imageSize.width), h = Double(imageSize.height)
+        let long = max(w, h, 1)
+        let center = MaskPoint(x: Double(boundingBox.midX), y: 1 - Double(boundingBox.midY))
+        let radii = MaskRadii(x: Double(boundingBox.width) * w / long / 2 * margin,
+                              y: Double(boundingBox.height) * h / long / 2 * margin)
+        let angle = -(roll ?? 0) * 180 / .pi
+        return .radial(center: center, radii: radii, angle: angle, feather: feather)
     }
 }
 

@@ -306,14 +306,17 @@ final class Library {
     private(set) var whiteBalanceNote: String?
     /// True while `pickWhiteBalance` reads a photo: a second click waits.
     private(set) var whiteBalanceReading = false
-    /// Why the last Select Subject added no mask ("No subject found", an
-    /// unreadable photo), for the Masks section; cleared by the next run and
-    /// by a photo change.
+    /// Why the last Select Subject, Person or Faces added no mask ("No
+    /// subject found", "No person found", "No faces found", an unreadable
+    /// photo), for the Masks section; cleared by the next run and by a photo
+    /// change.
     private(set) var autoMaskMessage: String?
-    /// True while `selectAuto` runs a detection: Select Subject is disabled.
+    /// True while `selectAuto` or `selectFaces` runs a detection: Select
+    /// Subject, Select Person and Select Faces are disabled.
     private(set) var autoMaskDetecting = false
     /// Bumped by a photo change and by opening a source: a detection that
-    /// finishes under another generation is dropped (`selectAuto`).
+    /// finishes under another generation is dropped (`selectAuto`,
+    /// `selectFaces`).
     @ObservationIgnored private var autoMaskGeneration = 0
     /// What finds an automatic mask's pixels (`AutoMaskDetector`): Apple
     /// Vision on this Mac; a test replaces it with a fake.
@@ -1877,67 +1880,116 @@ final class Library {
         setRecipe(r, for: id)
     }
 
-    /// Select Subject (`kind` `.subject`): the photo's oriented decode
-    /// (`ImageLoading.downsampledCGImage` at `VisionDetector.inputPixelSize`,
-    /// EXIF applied, so the bitmap lands in the source frame) goes to
-    /// `autoMaskDetector` off the main actor, and what it finds becomes ONE
-    /// new `.auto` mask at the end of the list, selected, through
+    /// Select Subject (`kind` `.subject`) and Select Person (`.person`): the
+    /// photo's oriented decode (`ImageLoading.downsampledCGImage` at
+    /// `VisionDetector.inputPixelSize`, EXIF applied, so the bitmap lands in
+    /// the source frame) goes to `autoMaskDetector` off the main actor
+    /// (`subject(in:)` or `person(in:)`), and what it finds becomes ONE new
+    /// `.auto` mask of that kind at the end of the list, selected, through
     /// `setRecipe`: one undo step and one sidecar write. Nothing found sets
-    /// `autoMaskMessage` "No subject found" and changes nothing (no step, no
-    /// write); so does an unreadable original or a detector error, with its
-    /// own message. A photo change or a source opened while it runs drops
-    /// the result. One run at a time (`autoMaskDetecting`): a second call
-    /// meanwhile returns nil. Person and sky have no detector yet.
-    /// Returns the new mask's id.
+    /// `autoMaskMessage` "No subject found" / "No person found" and changes
+    /// nothing (no step, no write); so does an unreadable original or a
+    /// detector error, with its own message. A photo change or a source
+    /// opened while it runs drops the result. One run at a time
+    /// (`autoMaskDetecting`): a second call meanwhile returns nil. Sky has
+    /// no detector yet. Returns the new mask's id.
     @discardableResult
     func selectAuto(_ kind: AutoMaskKind, for id: Photo.ID) async -> UUID? {
-        guard kind == .subject, !autoMaskDetecting else { return nil }
+        let title: String
+        switch kind {
+        case .subject: title = "Subject"
+        case .person: title = "Person"
+        case .sky: return nil
+        }
+        let detector = autoMaskDetector
+        let found: MaskBitmap?? = await runAutoDetection(title, for: id) { image in
+            kind == .person ? try await detector.person(in: image) : try await detector.subject(in: image)
+        }
+        guard let found else { return nil }
+        guard let bitmap = found, !bitmap.isBlank else {
+            autoMaskMessage = "No \(title.lowercased()) found"
+            return nil
+        }
+        return appendDetectedMasks([LocalMask(shape: .auto(AutoMask(kind: kind, bitmap: bitmap)))], for: id).first
+    }
+
+    /// Select Faces: Vision's face rectangles on the photo's oriented decode
+    /// (as `selectAuto`), each turned into a `.radial` mask by
+    /// `FaceMasks.radial(for:roll:imageSize:)`, all appended in ONE
+    /// `setRecipe` (one undo step, one sidecar write), the first selected.
+    /// None found sets `autoMaskMessage` "No faces found" and changes
+    /// nothing. Shares `selectAuto`'s run guard, drop rule and messages.
+    /// Returns the new masks' ids in face order.
+    @discardableResult
+    func selectFaces(for id: Photo.ID) async -> [UUID] {
+        let detector = autoMaskDetector
+        let found: [MaskShape]? = await runAutoDetection("Faces", for: id) { image in
+            let size = CGSize(width: image.width, height: image.height)
+            return try await detector.faces(in: image).map {
+                FaceMasks.radial(for: $0.boundingBox, roll: $0.roll?.doubleValue, imageSize: size)
+            }
+        }
+        guard let found else { return [] }
+        guard !found.isEmpty else {
+            autoMaskMessage = "No faces found"
+            return []
+        }
+        return appendDetectedMasks(found.map { LocalMask(shape: $0) }, for: id)
+    }
+
+    /// The run every detection shares: one at a time (`autoMaskDetecting`),
+    /// the oriented decode at `VisionDetector.inputPixelSize` handed to
+    /// `detect` off the main actor. Nil when the run did not happen, was
+    /// dropped (a photo change or a source opened meanwhile:
+    /// `autoMaskGeneration`, the selection) or failed; a failure sets its own
+    /// `autoMaskMessage` ("Select <title>: the original could not be read." or
+    /// "Select <title> failed: ...").
+    private func runAutoDetection<T: Sendable>(_ title: String, for id: Photo.ID,
+                                               _ detect: @escaping @Sendable (CGImage) async throws -> T) async -> T? {
+        guard !autoMaskDetecting else { return nil }
         autoMaskDetecting = true
         defer { autoMaskDetecting = false }
         autoMaskMessage = nil
         let generation = autoMaskGeneration
-        let unreadable = "Select Subject: the original could not be read."
+        let unreadable = "Select \(title): the original could not be read."
         guard let url = try? await originalFile(for: id) else {
             if generation == autoMaskGeneration { autoMaskMessage = unreadable }
             return nil
         }
-        let detector = autoMaskDetector
-        let found: Result<MaskBitmap?, Error> = await Task.detached(priority: .userInitiated) {
+        let found: Result<T, Error> = await Task.detached(priority: .userInitiated) {
             guard let image = ImageLoading.downsampledCGImage(url, maxPixelSize: VisionDetector.inputPixelSize) else {
                 return .failure(AutoMaskUnreadable())
             }
-            do { return .success(try await detector.subject(in: image)) } catch { return .failure(error) }
+            do { return .success(try await detect(image)) } catch { return .failure(error) }
         }.value
         guard generation == autoMaskGeneration, selection == id,
               photos.contains(where: { $0.id == id }) else { return nil }
-        let bitmap: MaskBitmap
         switch found {
         case .failure(is AutoMaskUnreadable):
             autoMaskMessage = unreadable
             return nil
         case .failure(let error):
-            autoMaskMessage = "Select Subject failed: \(error.localizedDescription)"
+            autoMaskMessage = "Select \(title) failed: \(error.localizedDescription)"
             return nil
-        case .success(nil):
-            autoMaskMessage = "No subject found"
-            return nil
-        case .success(let detected?):
-            guard !detected.isBlank else {
-                autoMaskMessage = "No subject found"
-                return nil
-            }
-            bitmap = detected
+        case .success(let value):
+            return value
         }
-        // A drag left open would fold the new mask into its step.
+    }
+
+    /// `masks` appended to photo `id`'s list in one `setRecipe` (one undo
+    /// step, one sidecar write), the first selected, crop mode and the
+    /// eyedropper put down. Returns their ids.
+    private func appendDetectedMasks(_ masks: [LocalMask], for id: Photo.ID) -> [UUID] {
+        guard let first = masks.first else { return [] }
+        // A drag left open would fold the new masks into its step.
         closeOpenEdit()
-        let mask = LocalMask(shape: .auto(AutoMask(kind: kind, bitmap: bitmap)))
         var r = recipe(for: id)
-        r.masks.append(mask)
+        r.masks.append(contentsOf: masks)
         setRecipe(r, for: id)
         cropMode = false
         whiteBalancePicking = false
-        selectedMask = mask.id
-        return mask.id
+        selectedMask = first.id
+        return masks.map(\.id)
     }
 
     /// The crop drag's mouse-up: the edit closes (one undo step, one write).

@@ -542,6 +542,19 @@ not only the pass.
   throws `XCTSkip` with the reason when the request throws or finds no
   instance on the host. Mutant: rows flipped in `MaskBitmap(pixelBuffer:)`
   turns the pixel-buffer test red for both formats.
+- `AutoMaskPeopleTests.swift` — Select Person and Select Faces.
+  `FaceMasks.radial` on `VNFaceObservation`s built in the test: the
+  bottom-left box's centre flipped to the top-left frame, radii over the long
+  side on a landscape and a portrait size (a pixel-square face is a circle on
+  both), roll 0.3 rad giving angle -17.19, `MaskMath.weight` 1 at the face
+  centre and 0 well outside the box. A fake detector's three faces are three
+  radial masks appended in one undo step and one sidecar write, the first
+  selected; none says "No faces found" and changes nothing; a person is one
+  selected `.auto` mask "Person 1" in one undo step, nil or blank says "No
+  person found". Both commands have no key and need the loupe. Real Vision
+  on a flat grey 640 x 480 image finds no person and no faces, or throws
+  `XCTSkip` when a request throws. Mutant: the roll's sign kept turns the
+  angle assertion red.
 - `AutoMaskModelTests.swift` — the automatic mask (`MaskShape.auto`,
   `AutoMask`, `MaskBitmap`), synthetic bitmaps and temp directories only: a
   left-half-white bitmap weighs 1 at (0.25, 0.5), 0 at (0.75, 0.5) and 0.5

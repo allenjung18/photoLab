@@ -10,7 +10,7 @@ import CoreImage.CIFilterBuiltins
 /// the click) and what `Library.addMask` adds: a linear from the top edge
 /// to 40% down, a radial ellipse centred at a third of the frame, an empty
 /// brush. Subject, Person and Sky name automatic masks (`MaskShape.auto`)
-/// in the list ("Subject 1"); nothing in the panel adds one yet.
+/// in the list ("Subject 1"); Subject and Person in the add row detect one.
 enum MaskKind: CaseIterable {
     case linear, radial, brush
     /// Automatic masks (`MaskShape.auto`), named by what they select.
@@ -255,7 +255,8 @@ enum MaskTint {
 // MARK: - The Masks section
 
 /// The adjustments panel's Masks section (after the preset strip): New
-/// Linear, New Radial and New Brush (the Photo menu's commands and keys),
+/// Linear, New Radial, New Brush, Subject, Person and Faces (the Photo
+/// menu's commands and keys),
 /// the photo's masks by kind and order, and for the selected one
 /// (`Library.selectedMask`) its switch, Invert, Duplicate, Delete, for a
 /// brush or an automatic mask its Size, Feather and Flow (`BrushSettingsRows`), and the seven
@@ -274,7 +275,7 @@ struct MasksSection: View {
                 if library.autoMaskDetecting {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("Finding the subject…").font(.caption).foregroundStyle(.secondary)
+                        Text("Detecting on this Mac…").font(.caption).foregroundStyle(.secondary)
                     }
                 } else if let message = library.autoMaskMessage {
                     Text(message).font(.caption).foregroundStyle(.secondary)
@@ -333,6 +334,20 @@ struct MasksSection: View {
             }
             .disabled(!AppCommand.command(.selectSubject).isEnabled(context))
             .help("Select Subject: find the photo's subject on this Mac (Apple Vision) and mask it")
+            Button {
+                AppCommand.command(.selectPerson).perform(context)
+            } label: {
+                Label("Person", systemImage: MaskKind.person.systemImage)
+            }
+            .disabled(!AppCommand.command(.selectPerson).isEnabled(context))
+            .help("Select Person: find every person in the photo on this Mac (Apple Vision) and mask them")
+            Button {
+                AppCommand.command(.selectFaces).perform(context)
+            } label: {
+                Label("Faces", systemImage: "face.smiling")
+            }
+            .disabled(!AppCommand.command(.selectFaces).isEnabled(context))
+            .help("Select Faces: one radial mask per face found on this Mac (Apple Vision)")
         }
         .controlSize(.small)
     }

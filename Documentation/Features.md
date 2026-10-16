@@ -917,8 +917,8 @@ redo, Reset, the render time and any sidecar error.
   recipe).
 - **Masks** (`MasksPanel.swift`). `MasksSection(photo:)` is a
   `DisclosureGroup` after the Presets strip (open, with a dot while the
-  photo has a mask). **Linear**, **Radial**, **Brush** and **Subject** run the Photo
-  menu's commands (**M**, **⇧M**, **K**, Select Subject with no key). **Linear** and **Radial** are
+  photo has a mask). **Linear**, **Radial**, **Brush**, **Subject**, **Person** and **Faces** run the Photo
+  menu's commands (**M**, **⇧M**, **K**; Select Subject, Select Person and Select Faces with no key). **Linear** and **Radial** are
   toggles: they arm placement (`Library.maskPlacement`, checked in the
   menu; the same key again, `Esc`, crop mode, compare, the eyedropper, the
   brush and leaving the loupe disarm it; arming leaves crop mode, ends
@@ -954,9 +954,23 @@ redo, Reset, the render time and any sidecar error.
   `Library.autoMaskMessage` to "No subject found", shown under the add row,
   and changes nothing (no step, no write); an unreadable original or a
   Vision error has its own message. The command is disabled while
-  `Library.autoMaskDetecting` (a spinner and "Finding the subject…" in the
+  `Library.autoMaskDetecting` (a spinner and "Detecting on this Mac…" in the
   section); a photo change or a source opened meanwhile drops the result
-  (and clears the message). Person and sky have no detector yet.
+  (and clears the message).
+  **Person** (`AppCommand.Name.selectPerson`, Photo › Select Person) is
+  `Library.selectAuto(.person, for:)`, the same flow through
+  `AutoMaskDetector.person(in:)` (`VisionDetector`: Vision's person instance
+  mask, every person merged): one `.auto` mask of kind person ("Person 1"),
+  or "No person found".
+  **Faces** (`AppCommand.Name.selectFaces`, Photo › Select Faces) is
+  `Library.selectFaces(for:)`: `AutoMaskDetector.faces(in:)` (Vision's face
+  rectangles) on the same decode, each face turned by
+  `FaceMasks.radial(for:roll:imageSize:)` into a `.radial` (centre the box's
+  centre, radii `FaceMasks.margin` (1.4) times half the box over the long
+  side, angle minus Vision's roll in degrees, feather 0.4), all appended in
+  one `setRecipe` (one undo step, one sidecar write), the first selected; none
+  found sets "No faces found" and changes nothing. All three commands share
+  `autoMaskDetecting`, so one detection runs at a time. Sky has no detector yet.
   `Library.selectedMask` is tool state: never in a recipe, cleared when the
   photo changes and whenever the photo's recipe stops holding it (an undo
   of its add, a delete, a reset, a sync), by `Library.apply`. The selected

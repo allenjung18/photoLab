@@ -46,7 +46,7 @@ struct AppCommand: Identifiable {
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, autoWhiteBalance, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
-        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject
+        case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger, selectSubject, selectPerson, selectFaces
         case trashRejects
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
@@ -438,6 +438,26 @@ struct AppCommand: Identifiable {
                        let lib = c.library
                        guard let id = lib.selection else { return }
                        Task { await lib.selectAuto(.subject, for: id) }
+                   }),
+        // Select Person: every person in the loupe photo (Vision's person
+        // instance mask, merged) as one new automatic mask, as Select Subject.
+        AppCommand(name: .selectPerson, title: "Select Person", key: nil,
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil && !c.library.autoMaskDetecting },
+                   perform: { c in
+                       let lib = c.library
+                       guard let id = lib.selection else { return }
+                       Task { await lib.selectAuto(.person, for: id) }
+                   }),
+        // Select Faces: one radial mask per face Vision finds, all in one
+        // undo step, the first selected (`Library.selectFaces`). No key.
+        AppCommand(name: .selectFaces, title: "Select Faces", key: nil,
+                   placement: .photo, section: 5,
+                   isEnabled: { c in c.library.loupe && c.library.selection != nil && !c.library.autoMaskDetecting },
+                   perform: { c in
+                       let lib = c.library
+                       guard let id = lib.selection else { return }
+                       Task { await lib.selectFaces(for: id) }
                    }),
         // Every rejected photo of the open folder or collection, visible or
         // not, to the macOS Trash after a confirm (`TrashRequest`); the one

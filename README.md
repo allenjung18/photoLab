@@ -104,7 +104,7 @@ Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and Afte
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Auto White Balance, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
-to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Move Rejected Photos to Trash…). Select Subject has no key. A single-letter key (alone or with `⇧`) is written after its menu item's
+to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Select Subject, Select Person, Select Faces, Move Rejected Photos to Trash…). Select Subject, Select Person and Select Faces have no key. A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
 
@@ -227,8 +227,14 @@ what was detected, `⌥` erases from it. Each stroke is
 one undo step. **Subject** (Photo › Select Subject) finds the photo's
 subject with Apple Vision, on this Mac with no network, and adds it as a
 new automatic mask ("Subject 1"), selected, in one undo step; a photo with
-nothing to find says "No subject found" and changes nothing. It is off
-while a detection runs, and switching photos meanwhile drops the result. The selected linear or radial has handles on the
+nothing to find says "No subject found" and changes nothing. **Person**
+(Photo › Select Person) does the same for every person in the photo, as
+one mask ("Person 1"), or says "No person found". **Faces** (Photo › Select
+Faces) adds one radial mask per face it finds, a feathered ellipse a little
+larger than the face and turned with it, all in one undo step with the
+first selected, or says "No faces found"; each is an ordinary radial with
+handles. They are off while a detection runs, and switching photos
+meanwhile drops the result. The selected linear or radial has handles on the
 photo, at fit and at 1:1: a linear's centre pin moves it and the handles
 on its start and end lines turn it and set the fade's length about the
 pin; a radial's centre pin moves it, its four edge handles set its width
