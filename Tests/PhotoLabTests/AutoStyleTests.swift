@@ -200,12 +200,21 @@ final class AutoStyleTests: XCTestCase {
         XCTAssertEqual(try StyleStore(directory: support).load(), saved)
 
         // A cancel mid-run (Esc, the bar's Cancel) learns nothing.
-        lib.styleMeasure = { _, _ in
-            Thread.sleep(forTimeInterval: 0.05)
+        // The first photo answers at once and the rest late, so the cancel
+        // lands between results whatever the concurrency.
+        let first = lib.photos.first?.fileURL
+        lib.styleMeasure = { url, _ in
+            if url != first { Thread.sleep(forTimeInterval: 0.4) }
             return (StyleBucket.mid, [AdjustmentKind.exposure: -3])
         }
         let canceller = Task { @MainActor in
-            while lib.autoProgress.done < 1 { try? await Task.sleep(nanoseconds: 2_000_000) }
+            // Ends too if the run finished first (progress resets), never spins forever.
+            var started = false
+            while true {
+                if lib.autoToning { started = true }
+                if lib.autoProgress.done >= 1 || (started && !lib.autoToning) { break }
+                try? await Task.sleep(nanoseconds: 2_000_000)
+            }
             lib.cancelAuto()
         }
         lib.setRecipe({ var r = Recipe.neutral; r.set(.exposure, to: 1); return r }(), for: ids[0])
