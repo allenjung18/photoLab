@@ -805,7 +805,11 @@ redo, Reset, the render time and any sidecar error.
   radii.x, held in 0…1. Every drag goes through
   `Library.dragMask(_:_:from:to:size:for:)`, measured from the shape and
   pointer at the drag's start, inside one `beginEdit` … `endEdit`: one
-  undo step and one sidecar write (`Library.endMaskDrag`). The handles
+  undo step and one sidecar write (`Library.endMaskDrag`). A drag whose
+  view goes mid-drag (Esc, compare, crop mode, Before, another mask or
+  photo, the placement kind switched) gets no mouse-up from SwiftUI, so
+  those paths call `Library.finishMaskDrag`: the drag so far is one step
+  and one write, and the next drag starts afresh. The handles
   hide in compare, in crop mode and while Before shows, and wait until the
   shown frame was rendered with the current rotate and crop; `Esc`
   deselects the mask (after the tools it puts down, before it leaves the

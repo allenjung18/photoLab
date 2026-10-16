@@ -132,7 +132,7 @@ final class Library {
                 selectedIDs = selection.map { [$0] } ?? []
                 loupeZoom = .fit
                 cropDragStart = nil
-                maskDragStart = nil
+                finishMaskDrag()
                 selectedMask = nil
             }
             saveViewState()
@@ -181,6 +181,7 @@ final class Library {
         didSet {
             guard cropMode != oldValue else { return }
             if cropMode {
+                finishMaskDrag()
                 loupeZoom = .fit
                 compare = false
                 whiteBalancePicking = false
@@ -230,7 +231,11 @@ final class Library {
     /// changes and whenever the photo's recipe stops holding it (an undo of
     /// its add, a delete, a reset, a sync), by `apply`.
     var selectedMask: UUID? {
-        didSet { if selectedMask != oldValue { maskBrushArmed = false } }
+        didSet {
+            guard selectedMask != oldValue else { return }
+            maskBrushArmed = false
+            if maskDragStart?.mask != selectedMask { finishMaskDrag() }
+        }
     }
     /// The brush is armed on the selected brush mask (K, Photo › Brush, the
     /// Masks section's New Brush): drags on the photo will paint into it.
@@ -255,7 +260,10 @@ final class Library {
     /// the loupe disarm it.
     var maskPlacement: MaskKind? {
         didSet {
-            guard maskPlacement != oldValue, maskPlacement != nil else { return }
+            guard maskPlacement != oldValue else { return }
+            // A kind switched (or Esc) mid-placement ends that placement.
+            finishMaskDrag()
+            guard maskPlacement != nil else { return }
             cropMode = false
             compare = false
             whiteBalancePicking = false
@@ -296,11 +304,13 @@ final class Library {
     /// The Keywords sheet the window should show.
     var keywordsRequest: KeywordsRequest?
     /// Before/after: true shows the unadjusted photo in the loupe.
-    var showBefore = false
+    var showBefore = false {
+        didSet { if showBefore { finishMaskDrag() } }
+    }
     /// Before / After side by side in the loupe (Y, or the toolbar toggle):
     /// the canvas splits into the neutral render and the recipe's.
     var compare = false {
-        didSet { if compare { cropMode = false; whiteBalancePicking = false; maskBrushArmed = false; maskPlacement = nil } }
+        didSet { if compare { cropMode = false; whiteBalancePicking = false; maskBrushArmed = false; maskPlacement = nil; finishMaskDrag() } }
     }
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
@@ -1300,8 +1310,9 @@ final class Library {
         var r = recipe(for: id)
         r.masks.append(mask)
         setRecipe(r, for: id)
-        maskDragStart = (mask.id, shape)
+        // Selected first: a selection change ends any OTHER mask's drag.
         selectedMask = mask.id
+        maskDragStart = (mask.id, shape)
     }
 
     /// A click with `kind` armed: the kind's default shape centred at
@@ -1317,6 +1328,17 @@ final class Library {
         selectedMask = mask.id
         maskPlacement = nil
         return mask.id
+    }
+
+    /// Ends a mask drag the overlay can no longer finish: SwiftUI cancels a
+    /// gesture whose view goes (Esc, compare, crop mode, Before, another
+    /// mask or photo, a kind switched mid-placement) without calling its
+    /// `onEnded`, so `endMaskDrag` would never come. The edit so far closes
+    /// as one undo step and one write, and the next drag starts afresh.
+    func finishMaskDrag() {
+        guard maskDragStart != nil else { return }
+        maskDragStart = nil
+        closeOpenEdit()
     }
 
     /// A mask handle's or a placement's mouse-up: the edit closes (one undo

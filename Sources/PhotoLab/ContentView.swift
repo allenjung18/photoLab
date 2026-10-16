@@ -1165,8 +1165,8 @@ private struct PreviewCanvas: View {
 
     /// The selected mask's handles, or the placement layer while New Linear
     /// or New Radial is armed, over the frame shown: the 1:1 window once it
-    /// has landed, else the fit frame. Only once that frame was rendered
-    /// with the current rotate and crop (so the mapping is the frame's), and
+    /// has landed, else the fit frame. Only once that frame (the window's
+    /// own recipe at 1:1) was rendered with the current rotate and crop (so the mapping is the frame's), and
     /// never in crop mode or while Show Original is held (compare has no
     /// overlay at all).
     @ViewBuilder private var maskHandles: some View {
@@ -1175,7 +1175,7 @@ private struct PreviewCanvas: View {
         let shape: MaskShape? = selected.flatMap { if case .brush = $0.shape { return nil } else { return $0.shape } }
         if shape != nil || library.maskPlacement != nil,
            !library.cropMode, !library.showBefore, let file, preview.imageURL == file,
-           let cg = preview.image, let shown = preview.imageRecipe,
+           let cg = preview.image, let shown = zoomWindow != nil ? preview.zoomRecipe : preview.imageRecipe,
            MaskRender.geometryKinds.allSatisfy({ shown.effective($0) == current.effective($0) }),
            preview.masterSize.width > 0, preview.masterSize.height > 0 {
             let geometry = MaskMath.Geometry(recipe: current, source: preview.masterSize)

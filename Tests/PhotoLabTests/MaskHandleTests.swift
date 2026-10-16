@@ -203,6 +203,50 @@ final class MaskHandleTests: XCTestCase {
         XCTAssertFalse(lib.cropMode, "arming leaves crop mode")
     }
 
+    /// SwiftUI drops `onEnded` when a gesture's view goes, so a tool change
+    /// mid-drag must end the drag itself: the edit so far is one step and
+    /// one write, and the next drag starts afresh.
+    func testADragCutOffMidwayIsClosedAndTheNextOneStartsAfresh() throws {
+        let (lib, photo) = try openOne()
+        let ctx = CommandContext(library: lib)
+        // A placement cut off by Esc: kept as one step, and a new arm adds
+        // a second mask rather than reshaping the first.
+        lib.maskPlacement = .linear
+        let writes = lib.sidecarWrites
+        lib.dragPlacement(.linear, from: p(0.2, 0.2), to: p(0.2, 0.5), size: wide, for: photo)
+        AppCommand.command(.back).perform(ctx)
+        XCTAssertNil(lib.maskPlacement)
+        XCTAssertEqual(lib.sidecarWrites, writes + 1, "the cut-off placement is written once")
+        lib.maskPlacement = .linear
+        lib.dragPlacement(.linear, from: p(0.7, 0.2), to: p(0.7, 0.5), size: wide, for: photo)
+        lib.endMaskDrag(photo)
+        XCTAssertEqual(lib.recipe(for: photo).masks.count, 2, "a new placement, not a reshape of the old one")
+        XCTAssertEqual(lib.recipe(for: photo).masks[0].shape, .linear(start: p(0.2, 0.2), end: p(0.2, 0.5)))
+        // Shift-M mid-placement: the linear drag ends and is not turned radial.
+        lib.maskPlacement = .linear
+        lib.dragPlacement(.linear, from: p(0.5, 0.6), to: p(0.5, 0.9), size: wide, for: photo)
+        lib.maskPlacement = .radial
+        lib.dragPlacement(.linear, from: p(0.5, 0.6), to: p(0.6, 0.9), size: wide, for: photo)
+        XCTAssertEqual(lib.recipe(for: photo).masks.last?.shape, .linear(start: p(0.5, 0.6), end: p(0.5, 0.9)))
+        // A handle drag cut off by compare: closed, and the next drag on
+        // the same mask is measured from the shape it left, not the old start.
+        let mask = try XCTUnwrap(lib.recipe(for: photo).masks.first?.id)
+        lib.maskPlacement = nil
+        lib.selectedMask = mask
+        lib.dragMask(.linearCenter, mask, from: p(0.2, 0.35), to: p(0.3, 0.35), size: wide, for: photo)
+        let w = lib.sidecarWrites
+        lib.compare = true
+        XCTAssertEqual(lib.sidecarWrites, w + 1, "the cut-off drag is written")
+        lib.compare = false
+        lib.dragMask(.linearCenter, mask, from: p(0.3, 0.35), to: p(0.35, 0.35), size: wide, for: photo)
+        lib.endMaskDrag(photo)
+        guard case .linear(let a, _) = lib.mask(mask, for: photo)?.shape else { return XCTFail() }
+        assertEqual(a, p(0.35, 0.2), "measured from where the cut-off drag left it")
+        lib.undo()
+        guard case .linear(let b, _) = lib.mask(mask, for: photo)?.shape else { return XCTFail() }
+        assertEqual(b, p(0.3, 0.2), "two drags, two steps")
+    }
+
     func testEscDeselectsTheMaskBeforeLeavingTheLoupe() throws {
         let (lib, photo) = try openOne()
         let ctx = CommandContext(library: lib)

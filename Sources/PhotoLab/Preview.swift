@@ -154,6 +154,9 @@ final class PreviewModel {
     private var pendingZoom: ZoomRequest?
     private var zoomInFlight: ZoomRequest?
     private var zoomShown: ZoomRequest?
+    /// The recipe the shown 1:1 window was rendered from, as `imageRecipe`
+    /// is the fit frame's (the mask handles check its rotate and crop).
+    var zoomRecipe: Recipe? { zoomShown?.recipe }
     /// Which slot rendered last, so a waiting window and a waiting fit frame
     /// take turns under a drag and neither starves.
     private var lastRenderWasZoom = false
