@@ -196,6 +196,27 @@ final class AdjustmentDataTests: XCTestCase {
         XCTAssertLessThan(try meanGray(try XCTUnwrap(client.rendered["A/L0/001"])).mean, first - 20)
     }
 
+    /// Photos keeps one edit per asset: a virtual copy's save would replace
+    /// its master's, so Save to Photos is off on a copy, edited or not.
+    func testSaveToPhotosIsOffOnAVirtualCopyOfAnEditedAsset() async throws {
+        let client = fake()
+        let lib = open(client)
+        lib.selection = a
+        lib.setRecipe(exposure(1), for: a)
+        XCTAssertTrue(lib.canSaveToPhotos, "the edited master can be saved")
+        let copy = try XCTUnwrap(lib.createVirtualCopy(of: a))
+        XCTAssertEqual(lib.selection, copy)
+        XCTAssertTrue(lib.isEdited(copy), "the copy starts from the master's edit")
+        XCTAssertFalse(lib.canSaveToPhotos, "never on a copy")
+        XCTAssertFalse(AppCommand.command(.saveToPhotos).isEnabled(CommandContext(library: lib)))
+        await lib.saveToPhotos()
+        XCTAssertEqual(lib.photosSave, .idle)
+        XCTAssertEqual(client.saveCalls, 0)
+        XCTAssertTrue(client.edits.isEmpty, "the master's edit in Photos is untouched")
+        lib.selection = a
+        XCTAssertTrue(lib.canSaveToPhotos, "the master still can")
+    }
+
     func testSaveToPhotosIsOnlyForAnEditedPhotoOfAPhotosAlbum() async throws {
         // A folder photo, edited: never offered.
         let folder = base.appendingPathComponent("folder", isDirectory: true)

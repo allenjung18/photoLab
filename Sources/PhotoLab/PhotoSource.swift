@@ -109,8 +109,16 @@ struct Photo: Identifiable, Hashable, Sendable {
     }
 
     /// What a cell's caption and tooltip show: the name, or nothing while
-    /// the photo is unnamed (never the asset identifier).
-    var caption: String { isNamed ? name : "" }
+    /// the photo is unnamed (never the asset identifier); a virtual copy's
+    /// is its master's name plus `copyLabel` ("IMG_0001.JPG Copy 2"; the
+    /// label alone while unnamed).
+    var caption: String {
+        guard let copyLabel else { return isNamed ? name : "" }
+        return isNamed ? name + " " + copyLabel : copyLabel
+    }
+
+    /// "Copy 2" for virtual copy 2; nil for a master.
+    var copyLabel: String? { id.copyNumber.map { "Copy \($0)" } }
 
     /// Virtual copy `number` of this photo: the same name, capture date and
     /// position (one file), its own id (`PhotoID.copy(of:number:)`).

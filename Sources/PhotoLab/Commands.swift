@@ -44,7 +44,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, map, zoom, compare, showOriginal, clipping, maskOverlay, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, resetPhoto, keywords, renameInPlace, removeFromCollection
+        case crop, whiteBalance, autoTone, resetPhoto, createVirtualCopy, removeVirtualCopy, keywords, renameInPlace, removeFromCollection
         case newCollection
         case newLinearMask, newRadialMask, brushMask, brushSmaller, brushLarger
         case trashRejects
@@ -330,6 +330,19 @@ struct AppCommand: Identifiable {
                    placement: .photo, section: 2,
                    isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },
                    perform: { c in if let id = c.subject { c.library.resetRecipe(for: id) } }),
+        // Virtual copies of the anchor (the right-clicked photo from a cell's
+        // menu), in the grid or the loupe: a second edit of the same file
+        // (`Library.createVirtualCopy`), selected. Remove deletes a copy's
+        // edit after a confirm (`VirtualCopyRemoval`); it is not an undo
+        // step, and a master has nothing to remove.
+        AppCommand(name: .createVirtualCopy, title: "Create Virtual Copy", key: "'",
+                   placement: .photo, section: 2,
+                   isEnabled: { c in c.library.source != nil && c.subject.map { id in c.library.photos.contains { $0.id == id } } == true },
+                   perform: { c in if let id = c.subject { c.library.createVirtualCopy(of: id) } }),
+        AppCommand(name: .removeVirtualCopy, title: "Remove Virtual Copy…", key: nil,
+                   placement: .photo, section: 2,
+                   isEnabled: { c in c.library.canRemoveVirtualCopy(c.subject) },
+                   perform: { c in if let id = c.subject { c.library.requestRemoveVirtualCopy(id) } }),
         // Keywords on the batch targets: a sheet, so typing a keyword never
         // fires a bare key (`KeywordsSheet`). Metadata like the marks, not an
         // edit: no undo step.

@@ -59,7 +59,9 @@ struct ContentView: View {
                         Label("Save to Photos", systemImage: "square.and.arrow.down.on.square")
                     }
                     .disabled(!library.canSaveToPhotos)
-                    .help("Write this edit into Photos: it shows there and Revert to Original undoes it")
+                    .help(library.selection?.isCopy == true
+                          ? Library.saveToPhotosCopyHelp
+                          : "Write this edit into Photos: it shows there and Revert to Original undoes it")
                 }
             }
         }
@@ -106,6 +108,13 @@ struct ContentView: View {
         } message: { request in
             Text(request.message)
         }
+        .alert(library.removeCopyRequest?.title ?? "", isPresented: removeCopyBinding,
+               presenting: library.removeCopyRequest) { request in
+            Button("Remove", role: .destructive) { library.removeVirtualCopy(request.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            Text(request.message)
+        }
         .sheet(isPresented: Binding(get: { imports?.sheetShown ?? false },
                                     set: { if !$0 { imports?.dismiss() } })) {
             if let imports { ImportSheet().environment(imports) }
@@ -122,6 +131,12 @@ struct ContentView: View {
     private var trashBinding: Binding<Bool> {
         Binding(get: { library.trashRequest != nil },
                 set: { if !$0 { library.trashRequest = nil } })
+    }
+
+    /// The Remove Virtual Copy… confirm is up while a request is pending.
+    private var removeCopyBinding: Binding<Bool> {
+        Binding(get: { library.removeCopyRequest != nil },
+                set: { if !$0 { library.removeCopyRequest = nil } })
     }
 
     /// The toolbar picker's three segments.
@@ -167,6 +182,7 @@ struct ContentView: View {
         let shown = library.visiblePhotos.count
         if library.loupe, let i = library.visibleIndex {
             var s = !library.isNarrowed ? "\(i + 1) of \(total)" : "\(i + 1) of \(shown) shown"
+            if let copy = library.selectedPhoto?.copyLabel { s += " · Virtual " + copy }
             let marks = library.marks(for: library.selection!)
             if let flag = marks.flag { s += flag == .pick ? " · Pick" : " · Rejected" }
             if marks.rating > 0 { s += " · " + String(repeating: "★", count: marks.rating) }
@@ -781,6 +797,23 @@ private struct ExportBar: View {
     }
 }
 
+/// The corner mark of a virtual copy's cell (grid and filmstrip): its copy
+/// number on a dark capsule.
+struct VirtualCopyBadge: View {
+    let number: Int
+    var size: CGFloat = 10
+
+    var body: some View {
+        Text("\(number)")
+            .font(.system(size: size, weight: .bold).monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, size * 0.45).padding(.vertical, size * 0.15)
+            .background(.black.opacity(0.7), in: Capsule())
+            .help("Virtual copy \(number)")
+            .accessibilityLabel("Virtual copy \(number)")
+    }
+}
+
 struct ThumbnailCell: View {
     let photo: Photo
     let selected: Bool
@@ -850,6 +883,9 @@ struct ThumbnailCell: View {
                     .padding(6)
                     .help("\(marks.rating) star\(marks.rating == 1 ? "" : "s") (0–5)")
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let n = photo.id.copyNumber { VirtualCopyBadge(number: n, size: 10).padding(6) }
             }
             .opacity(marks.flag == .reject ? 0.55 : 1)
             Text(photo.caption)

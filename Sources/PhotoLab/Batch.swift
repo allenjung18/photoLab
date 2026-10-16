@@ -107,13 +107,15 @@ enum Exporter {
     /// and `.overwrite` it is the plain name whether or not it exists.
     /// `stem` is the photo's name already made from a name template
     /// (`ExportOptions.templatedStems`): it replaces `<stem><suffix>` and
-    /// meets the policy the same way (`<stem> 2.jpg`, …).
-    static func destination(for source: URL, name: String? = nil, stem: String? = nil, in folder: URL,
-                            options: ExportOptions = .default) -> URL {
+    /// meets the policy the same way (`<stem> 2.jpg`, …). `copy` is a
+    /// virtual copy's number: its `-copy<n>` is part of the name in both
+    /// forms (`ExportOptions.fileName`), so the numbering starts after it.
+    static func destination(for source: URL, name: String? = nil, stem: String? = nil, copy: Int? = nil,
+                            in folder: URL, options: ExportOptions = .default) -> URL {
         var n = 1
         while true {
-            let file = stem.map { options.fileName(stem: $0, number: n) }
-                ?? options.fileName(for: source, name: name, number: n)
+            let file = stem.map { options.fileName(stem: $0, copy: copy, number: n) }
+                ?? options.fileName(for: source, name: name, copy: copy, number: n)
             let url = folder.appendingPathComponent(file, isDirectory: false)
             if options.collision != .number || !FileManager.default.fileExists(atPath: url.path) { return url }
             n += 1
@@ -145,12 +147,13 @@ enum Exporter {
     /// with `Failure.isALibraryOriginal` and nothing is written. `keywords`
     /// are the photo's (`Library.keywords(for:)`), written per `write`.
     /// `stem` is a templated name (`destination`); nil = `<stem><suffix>`.
+    /// `copy` is a virtual copy's number (`-copy<n>` in the name); nil for a master.
     @discardableResult
-    static func export(_ source: URL, name: String? = nil, stem: String? = nil, recipe: Recipe, into folder: URL,
-                       options: ExportOptions = .default, protected: Set<URL> = [], keywords: [String] = [],
-                       renderer: Renderer = .shared) throws -> Outcome {
+    static func export(_ source: URL, name: String? = nil, stem: String? = nil, copy: Int? = nil, recipe: Recipe,
+                       into folder: URL, options: ExportOptions = .default, protected: Set<URL> = [],
+                       keywords: [String] = [], renderer: Renderer = .shared) throws -> Outcome {
         let fm = FileManager.default
-        let out = destination(for: source, name: name, stem: stem, in: folder, options: options)
+        let out = destination(for: source, name: name, stem: stem, copy: copy, in: folder, options: options)
         let exists = fm.fileExists(atPath: out.path)
         if exists {
             switch options.collision {
@@ -267,6 +270,9 @@ final class ExportQueue {
         /// The photo's capture date (`Library.captureDates`), which a name
         /// template's `{date}` reads; nil when it has none.
         var captureDate: Date? = nil
+        /// The virtual copy's number (`PhotoID.copyNumber`), which puts
+        /// `-copy<n>` in the output's name; nil for a master.
+        var copyNumber: Int? = nil
     }
 
     struct Failure: Identifiable {
@@ -284,11 +290,11 @@ final class ExportQueue {
     enum State: Equatable { case idle, running, finished, cancelled }
 
     /// Exports one item (source, recipe, folder, options, protected
-    /// originals, name, keywords, and the templated stem when the options
-    /// carry a name template) into the folder per the options; the default
-    /// is `Exporter.export`. Injected so a test can time or count jobs
-    /// without rendering.
-    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>, String?, [String], String?) throws -> Exporter.Outcome
+    /// originals, name, keywords, the templated stem when the options
+    /// carry a name template, and the virtual copy's number) into the folder
+    /// per the options; the default is `Exporter.export`. Injected so a test
+    /// can time or count jobs without rendering.
+    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>, String?, [String], String?, Int?) throws -> Exporter.Outcome
 
     private(set) var state: State = .idle
     private(set) var total = 0
@@ -340,7 +346,8 @@ final class ExportQueue {
          photos: any PhotosWriter = PhotoKitLive(),
          stagingDirectory: URL = ExportQueue.defaultStagingDirectory,
          worker: @escaping Worker = {
-             try Exporter.export($0, name: $5, stem: $7, recipe: $1, into: $2, options: $3, protected: $4, keywords: $6)
+             try Exporter.export($0, name: $5, stem: $7, copy: $8, recipe: $1, into: $2, options: $3, protected: $4,
+                                 keywords: $6)
          }) {
         self.worker = worker
         self.settings = settings ?? AppSettings(defaults: .standard, persistent: remember)
@@ -462,13 +469,14 @@ final class ExportQueue {
                     case .folder(let folder):
                         return Result {
                             switch try worker(item.source, item.recipe, folder, runOptions, item.protected, item.name,
-                                              item.keywords, stem) {
+                                              item.keywords, stem, item.copyNumber) {
                             case .written(let url): return .written(url)
                             case .skipped(let url): return .skipped(url)
                             }
                         }
                     case .photosLibrary(let album):
-                        return await Self.importIntoPhotos(item.source, name: item.name, stem: stem, recipe: item.recipe,
+                        return await Self.importIntoPhotos(item.source, name: item.name, stem: stem,
+                                                           copy: item.copyNumber, recipe: item.recipe,
                                                            staging: staging,
                                                            protected: item.protected, keywords: item.keywords,
                                                            album: album, options: runOptions,
@@ -499,12 +507,13 @@ final class ExportQueue {
     /// the one path for format, quality, size and metadata) into `staging`,
     /// imported, and the staged file removed whether or not the import
     /// worked.
-    nonisolated private static func importIntoPhotos(_ source: URL, name: String?, stem: String?, recipe: Recipe, staging: URL,
+    nonisolated private static func importIntoPhotos(_ source: URL, name: String?, stem: String?, copy: Int?,
+                                                     recipe: Recipe, staging: URL,
                                                      protected: Set<URL>, keywords: [String], album: String?,
                                                      options: ExportOptions, worker: Worker,
                                                      photos: any PhotosWriter) async -> Result<Done, Error> {
         do {
-            let outcome = try worker(source, recipe, staging, options, protected, name, keywords, stem)
+            let outcome = try worker(source, recipe, staging, options, protected, name, keywords, stem, copy)
             guard case .written(let file) = outcome else { return .success(.skipped(outcome.url)) }
             defer { try? FileManager.default.removeItem(at: file) }
             return .success(.imported(try await photos.importImage(at: file, intoAlbum: album)))

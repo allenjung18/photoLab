@@ -79,6 +79,15 @@ not only the pass.
   copy after its master in every key and direction, remove deleting only the
   copy's file and dropping it from every map, and an orphan copy file
   ignored and kept.
+- `VirtualCopyUITests.swift` — the copy commands: Create Virtual Copy (⌘')
+  and Remove Virtual Copy… in the Photo table with their keys, create on a
+  master or a copy and remove only on a copy, remove asking first and never
+  an undo step, the cell menu acting on the right-clicked photo; the caption
+  ("a.png Copy 2") and the Info row; `-copy<n>` in every `fileName` form;
+  a master and its copy exported together under Overwrite and Add a number
+  writing two files (the collision case). Save to Photos off on a copy is
+  `AdjustmentDataTests.testSaveToPhotosIsOffOnAVirtualCopyOfAnEditedAsset`;
+  the snapshot catalogue's state 02c shows the badge.
 - `SidecarTests.swift` — a recipe saved for a photo comes back when the
   folder is opened again in a new `Library`, two originals that differ only
   by extension never share a sidecar, the original is untouched, the default

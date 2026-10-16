@@ -134,6 +134,9 @@ private struct FilmstripCell: View {
                 .padding(2)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if let n = item.photo.id.copyNumber { VirtualCopyBadge(number: n, size: 7).padding(2) }
+        }
         .opacity(item.marks.flag == .reject ? 0.55 : 1)
         .contentShape(Rectangle())
         .help(failed ? "Can't open \(item.photo.caption)" : item.photo.caption)

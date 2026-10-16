@@ -227,8 +227,9 @@ scrolls it into view.
   until it arrives), a ring when selected, heavier for the anchor, a sliders
   badge when `Library.isEdited` says the photo has a saved edit, a flag in
   the top corner (a filled flag for a pick, a cross for a reject, which also
-  dims the cell), the stars along the bottom when the photo is rated, and
-  the file name. It asks `Thumbnails.shared` from a `.task(id:)` keyed by
+  dims the cell), the stars along the bottom when the photo is rated, a
+  virtual copy's number badge in the bottom-right corner (Virtual copies),
+  and `Photo.caption`. It asks `Thumbnails.shared` from a `.task(id:)` keyed by
   `Thumbnails.Key` (the photo and its recipe): the entry for that key when
   cached, else the plain thumbnail first and the rendered one when it lands
   (`Thumbnails.thumbnail(for:recipe:)`). Because the key carries the recipe,
@@ -295,7 +296,7 @@ photo in the grid, the one photo in the loupe) and read by the filter bar.
   footer for the one photo, the batch bar for `Library.batchTargets`) and
   `PhotoContextMenu` (the grid cell's right-click menu: Pick, Reject, Unflag,
   Rating, Keywords…, Apply Preset, Copy Settings, Paste Settings, Export, Reset Photo,
-  and Show in Finder for a folder photo) run the `AppCommand` of the same
+  Create Virtual Copy, Remove Virtual Copy…, and Show in Finder for a folder photo) run the `AppCommand` of the same
   name over a `CommandContext` that pins `targetIDs` and `subjectID`, so a
   key, a menu item and a button share one definition and the same `Library`
   methods; a mark is still not an undo step. `Library.contextTargets(for:)`
@@ -463,8 +464,7 @@ file held. `SidecarStore.loadAll(for:)` returns them on open.
 
 A virtual copy is a second identity of one photo (`PhotoID.copy`, its
 master's id and a copy number from 2): its own recipe, flag, rating,
-keywords and undo history, the master's pixels. The model only, so far;
-the commands and the cell badge come next.
+keywords and undo history, the master's pixels.
 
 - **Create.** `Library.createVirtualCopy(of:)` takes the lowest number from
   2 that no listed copy of that master and no sidecar file holds, starts
@@ -486,6 +486,37 @@ the commands and the cell badge come next.
   deleted) and drops the copy from the photos, recipes, marks, keywords and
   undo history; a selected copy hands the selection to its master. Refused
   on a master.
+- **Commands.** **Photo › Create Virtual Copy** **⌘'**
+  (`AppCommand.createVirtualCopy`) runs `createVirtualCopy(of:)` on the
+  command's subject (`CommandContext.subject`: the anchor from the grid or
+  the loupe, the right-clicked photo from a cell's menu); **Remove Virtual
+  Copy…** (`AppCommand.removeVirtualCopy`, enabled by
+  `Library.canRemoveVirtualCopy(_:)`, a listed copy only) sets
+  `Library.removeCopyRequest` (`VirtualCopyRemoval`, `VirtualCopies.swift`)
+  and `ContentView`'s alert's **Remove** runs `removeVirtualCopy(_:)`. The
+  removal is not an undo step, hence the confirm. Both are in
+  `PhotoContextMenu` after Reset Photo.
+- **How a copy shows.** `VirtualCopyBadge` (its number on a dark capsule)
+  sits in the bottom-right corner of its `ThumbnailCell` and
+  `FilmstripCell`; `Photo.caption` is the master's name plus
+  `Photo.copyLabel` ("IMG_0001.JPG Copy 2", the label alone while a Photos
+  copy is unnamed). The loupe subtitle adds "· Virtual Copy 2", and Info's
+  first row is **Virtual Copy**, "Virtual copy 2 of IMG_0001.JPG"
+  (`InfoSection.virtualCopy(_:)`, `PhotoInfo.virtualCopy(_:of:)`).
+- **Export.** `Library.exportItems(for:)` puts the copy's number in
+  `ExportQueue.Item.copyNumber`, handed to the `Worker` and on to
+  `Exporter.destination`; `ExportOptions.fileName` adds `-copy<n>`
+  (`ExportOptions.copySuffix`) after the stem and suffix, or after a
+  template's stem, before the collision counter and the extension
+  (`IMG_0001-edit-copy2.jpg`, then `IMG_0001-edit-copy2 2.jpg`), so a
+  master and its copy exported together never share a name and an
+  Overwrite never replaces the master's output.
+- **Save to Photos** is off on a copy (`Library.canSaveToPhotos` is false
+  for a copy id): Photos keeps one edit per asset, so a copy's save would
+  replace its master's. The toolbar button's tooltip says so
+  (`Library.saveToPhotosCopyHelp`).
+- **Everything else** (batch, Sync, Paste, presets, Auto, flags, ratings,
+  keywords, filters, sort) takes a copy as any photo.
 - **Trash.** Move Rejected Photos to Trash… never takes a copy, even a
   rejected one (the file is the master's); a trashed master's copies leave
   with it and come back with Undo, their sidecars untouched.
@@ -806,7 +837,7 @@ Writes: nothing.
   (see Menus and shortcuts).
 - **Save to Photos.** For a photo of a Photos album the toolbar gains
   **Save to Photos** (the File menu has it too), enabled by
-  `Library.canSaveToPhotos` (the photo is edited, no save running); it runs
+  `Library.canSaveToPhotos` (the photo is edited and not a virtual copy, no save running); it runs
   `Library.saveToPhotos()` (Architecture 2, Adjustment data), and the
   panel's last line says "Saving to Photos…", "Saved to Photos" or why it
   could not (`Library.photosSave`). Photos may ask to allow the change.
@@ -845,8 +876,8 @@ redo, Reset, the render time and any sidecar error.
   `AppCommand` that from the grid also opens the loupe; `Library.showInfo`
   is `AppSettings.showInfo`, remembered under `showInfo`, closed by
   default). It shows
-  `PhotoInfo.rows(edited:keywords:)`, one row per present field in `PhotoInfo.labels`
-  order (Camera, Lens, Focal Length, Aperture, Shutter, ISO, Dimensions,
+  `PhotoInfo.rows(edited:keywords:virtualCopy:)`, one row per present field in `PhotoInfo.labels`
+  order (Virtual Copy for a virtual copy only, Camera, Lens, Focal Length, Aperture, Shutter, ISO, Dimensions,
   File, Size, Folder, Captured, GPS, Keywords, Edited): a missing or empty field has no
   row, Keywords is `Library.keywords(for:)` joined with commas, and Edited (`Library.isEdited`) is always there. `PhotoInfo.read`
   reads a file's header once (`CaptureDates.properties(of:)`, never the
@@ -1226,7 +1257,8 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   photo's own file, `Exporter.Failure.isTheOriginal`; any other original of
   the open library, `Exporter.Failure.isALibraryOriginal`, matched by
   `Exporter.isSameFile` against the item's `protected` set) are in
-  `Exporter.destination(for:name:stem:in:options:)` and `Exporter.export`.
+  `Exporter.destination(for:name:stem:copy:in:options:)` and `Exporter.export`;
+  a virtual copy's name carries `-copy<n>` (Virtual copies, Export).
   Under a name template `ExportQueue.start` makes every item's stem first
   (`ExportOptions.templatedStems(for:)`, in the order of the items, which is
   `Library.batchTargets`), and that stem meets the collision policy as a plain
@@ -1411,7 +1443,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.whiteBalancePicking`, loupe only), **Auto Tone** **⌘U**
     (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
     Auto) and **Reset Photo** **⇧⌘R**
-    (`Library.resetRecipe(for:)`, enabled when the photo is edited); then
+    (`Library.resetRecipe(for:)`, enabled when the photo is edited), **Create
+    Virtual Copy** **⌘'** and **Remove Virtual Copy…** (see Virtual copies); then
     **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch
     targets, see Keywords) and **Rename…** (`Library.requestRename(for:)`,
     see Rename in place); then **Add to Collection**, a submenu

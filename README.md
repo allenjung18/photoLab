@@ -89,6 +89,7 @@ in Xcode works too.
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
 | `⌘U` | Auto Tone: exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
 | `⇧⌘R` | Reset Photo (back to the original) |
+| `⌘'` | Create Virtual Copy: a second edit of the selected photo (grid or loupe), starting from its current one, listed right after it with a small number badge and captioned "<name> Copy 2"; **Photo › Remove Virtual Copy…** (also in a cell's right-click menu) deletes a copy's edit after a confirm and is not undoable. A copy is flagged, rated, synced, batch-edited and exported like any photo; its export is named `<name>-copy2.jpg` so it never lands on its master's; Save to Photos is off on a copy (Photos keeps one edit per photo) |
 | `⇧⌘P` | Save Preset… (in the loupe) |
 | `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
 | `⇧⌘I` | Import from Card… (a card's photos, or any folder's, copied into `~/Pictures/PhotoLab` by capture date) |
@@ -101,7 +102,7 @@ Collection…, Import from Card…, Export…, Save to Photos), Edit (Undo / Red
 Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Show Mask Overlay, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…, Rename…, Add
+ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Create Virtual Copy, Remove Virtual Copy…, Keywords…, Rename…, Add
 to Collection, Remove from Collection, New Linear Gradient, New Radial Gradient, Brush, Move Rejected Photos to Trash…). A single-letter key (alone or with `⇧`) is written after its menu item's
 name, as in "Pick (P)" or "New Radial Gradient (⇧M)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix or name template) types the letter.
@@ -137,8 +138,8 @@ source that is open, the grid re-sorts at once). Thumbnails are decoded at
 The same actions are clickable: Pick, Reject, Unflag and five stars in the
 loupe panel footer (the one photo) and in the batch bar (the selected
 photos, which also has **Keywords…**), and a right-click menu on a grid photo (Pick, Reject, Unflag,
-Rating, Keywords…, Apply Preset, Copy and Paste Settings, Export, Reset Photo, and Show
-in Finder for a folder photo). A right-click on a photo outside the selection
+Rating, Keywords…, Apply Preset, Copy and Paste Settings, Export, Reset Photo, Create
+and Remove Virtual Copy, and Show in Finder for a folder photo). A right-click on a photo outside the selection
 acts on that photo alone, inside it on the whole selection. Open Photos
 Library sits in the toolbar beside Open Folder (disabled outside the app
 bundle).
@@ -352,6 +353,7 @@ selection back to the anchor:
   LZW **TIFF**), the JPEG/HEIC quality, the size (as edited, an exact long
   side in pixels, or a percentage; never upscaled), the file name (the
   original's name plus a suffix, `DSC06727` + `-edit` → `DSC06727-edit.jpg`,
+  a virtual copy's with `-copy2` after it, `DSC06727-edit-copy2.jpg`,
   or a **Template** of literal text and the tokens `{name}` (the original's
   name), `{date}` (its capture date, `2026-03-14`; `undated` without one)
   and `{seq}` (its place in the batch from a settable start number,

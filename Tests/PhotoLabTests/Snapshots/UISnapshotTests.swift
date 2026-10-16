@@ -144,7 +144,7 @@ final class UISnapshotTests: XCTestCase {
         if group != "main" { await shootSheetStates(h) }
         try h.writeIndex(notes: Self.notes, file: group == "all" ? "index.txt" : "index-\(group).txt")
         XCTAssertEqual(h.failures, [], "states that failed to write")
-        if group == "all" { XCTAssertEqual(h.written.count, 37, "every state of the catalogue was taken") }
+        if group == "all" { XCTAssertEqual(h.written.count, 38, "every state of the catalogue was taken") }
         // Every state in both modes, none flat.
         for s in h.written {
             for mode in SnapshotHarness.Mode.allCases {
@@ -187,6 +187,16 @@ final class UISnapshotTests: XCTestCase {
         await h.shoot(shot("02b", "grid-900x600", "the grid at the 900x600 floor", model: gridModel, caveat: materialNote,
                            size: Self.floor)) {
             try await self.scene { lib, _, _ in self.decorate(lib) }
+        }
+        await h.shoot(shot("02c", "grid-virtual-copy", "the grid with a virtual copy: the copy's corner badge (2) and its caption \"<name> Copy 2\" after its master",
+                           model: gridModel + "; Library.createVirtualCopy(of: the first photo), the copy edited (exposure -0.8) and selected",
+                           caveat: materialNote)) {
+            try await self.scene { lib, _, _ in
+                self.decorate(lib)
+                let first = self.ids(lib)[0]
+                let copy = try XCTUnwrap(lib.createVirtualCopy(of: first))
+                self.edited(lib, copy) { $0.set(.exposure, to: -0.8) }
+            }
         }
         // 3. filter
         await h.shoot(shot("03", "grid-filter", "the grid under the 3-star filter: a subset and the n of N count",
@@ -463,7 +473,7 @@ final class UISnapshotTests: XCTestCase {
     private func runningExport() async throws -> SnapshotHarness.Scene {
         let gate = Gate()
         let out = FileManager.default.temporaryDirectory
-        let (scene, exports, items) = try await exportScene(items: 5) { source, _, _, _, _, _, _, _ in
+        let (scene, exports, items) = try await exportScene(items: 5) { source, _, _, _, _, _, _, _, _ in
             if gate.next() > 2 { gate.semaphore.wait() }
             return .written(out.appendingPathComponent(source.lastPathComponent))
         }
@@ -484,7 +494,7 @@ final class UISnapshotTests: XCTestCase {
 
     private func finishedExport() async throws -> SnapshotHarness.Scene {
         let out = FileManager.default.temporaryDirectory
-        let (scene, exports, items) = try await exportScene(items: 6) { source, _, _, _, _, _, _, _ in
+        let (scene, exports, items) = try await exportScene(items: 6) { source, _, _, _, _, _, _, _, _ in
             let name = source.lastPathComponent
             if name == "IMG_0003.jpg" { throw DiskFull() }
             if name == "IMG_0004.jpg" { return .skipped(out.appendingPathComponent(name)) }

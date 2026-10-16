@@ -392,6 +392,8 @@ final class Library {
     let trasher: (any FileTrasher)?
     /// The Move Rejected Photos to Trash… confirm the window should show.
     var trashRequest: TrashRequest?
+    /// The Remove Virtual Copy… confirm the window should show.
+    var removeCopyRequest: VirtualCopyRemoval?
     /// The last move to the Trash, for Undo; nil after an undo, an `open`
     /// or `closeSource`.
     private(set) var trashUndo: TrashUndo?
@@ -695,6 +697,20 @@ final class Library {
         reconcileSelection()  // a master the filter or the search hides is not the anchor
         if selection == nil { loupe = false }
         return true
+    }
+
+    /// True when `id` is a listed virtual copy: Photo › Remove Virtual Copy
+    /// is on.
+    func canRemoveVirtualCopy(_ id: Photo.ID?) -> Bool {
+        guard let id, id.isCopy, source != nil else { return false }
+        return photos.contains { $0.id == id }
+    }
+
+    /// Asks the window for the confirm before `removeVirtualCopy` (no undo
+    /// step takes a removal back). Ignored for a master.
+    func requestRemoveVirtualCopy(_ id: Photo.ID) {
+        guard canRemoveVirtualCopy(id) else { return }
+        removeCopyRequest = VirtualCopyRemoval(id: id, name: name(for: id))
     }
 
     /// The photo's display name as its source gave it (the file name for a
@@ -1301,6 +1317,7 @@ final class Library {
         trashRequest = nil
         newCollectionRequest = nil
         renameRequest = nil
+        removeCopyRequest = nil
         rekeyCollections(map)
         rekeyRecentAnchors(map)
         resort()
@@ -1462,9 +1479,11 @@ final class Library {
     }
 
     /// Save to Photos is offered for the anchor when it is an edited photo
-    /// of a Photos album and no save is running.
+    /// of a Photos album, not a virtual copy, and no save is running. A copy
+    /// never: Photos keeps one edit per asset, so a copy's save would
+    /// replace its master's (`saveToPhotosCopyHelp` says so).
     var canSaveToPhotos: Bool {
-        guard let id = selection, source is PhotosSource, isEdited(id) else { return false }
+        guard let id = selection, !id.isCopy, source is PhotosSource, isEdited(id) else { return false }
         if case .saving = photosSave { return false }
         return true
     }
@@ -1606,7 +1625,7 @@ final class Library {
     /// its capture date (`captureDates`), which a name template's `{date}`
     /// reads.
     func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
-        var resolved: [(URL, Recipe, String?, [String], Date?)] = []
+        var resolved: [(URL, Recipe, String?, [String], Date?, Int?)] = []
         for id in ids {
             // A Photos original's cached copy is named by its id: the output
             // takes the photo's own name instead. Folder photos keep theirs.
@@ -1616,11 +1635,13 @@ final class Library {
                 own = name(for: id)
             }
             let date = photos.first(where: { $0.id == id }).flatMap { captureDates.date(for: $0) }
-            resolved.append((try await originalFile(for: id), recipe(for: id), own, keywords(for: id), date))
+            resolved.append((try await originalFile(for: id), recipe(for: id), own, keywords(for: id), date,
+                             id.copyNumber))
         }
         let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))
         return resolved.map {
-            ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected, keywords: $0.3, captureDate: $0.4)
+            ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected, keywords: $0.3,
+                             captureDate: $0.4, copyNumber: $0.5)
         }
     }
 

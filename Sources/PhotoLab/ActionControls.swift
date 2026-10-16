@@ -93,6 +93,8 @@ struct PhotoContextMenu: View {
         item(ctx, .pasteSettings)
         item(ctx, .export)
         item(ctx, .resetPhoto)
+        item(ctx, .createVirtualCopy)
+        item(ctx, .removeVirtualCopy)
         if let url = photo.fileURL {
             Divider()
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }

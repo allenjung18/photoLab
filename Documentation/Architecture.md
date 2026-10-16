@@ -521,7 +521,10 @@ and `name(for:)` switch on `id.master`; a folder's and a collection's
 already read `fileURL`). The copy's sidecar and its discovery are the
 store's (below); `Library.createVirtualCopy(of:)` and
 `Library.removeVirtualCopy(_:)` are the model's two operations (Features:
-Virtual copies).
+Virtual copies). Where a copy shows as one: `Photo.caption` and
+`Photo.copyLabel`, `VirtualCopyBadge`, the Info row
+(`InfoSection.virtualCopy(_:)`), the export name (`ExportOptions.copySuffix`,
+section 4) and `Library.canSaveToPhotos`, false on a copy.
 
 Where photos come from is a `PhotoSource`: `title` (the window title),
 `photos()` (in any order: `Library` sorts them by `Library.sort`, a
@@ -944,7 +947,9 @@ One value per export run, carried unchanged through the queue to every item:
 - `quality`, clamped to `ExportOptions.qualityRange` by `clampedQuality`.
 - `resize`, an optional `OutputSize`; nil writes the rendered size.
 - `suffix`, appended to the original's stem (`fileName(for:)` gives
-  `<stem><suffix>.<ext>`), cleaned of anything a file name cannot hold
+  `<stem><suffix>.<ext>`, and `<stem><suffix>-copy<n>.<ext>` for a virtual
+  copy, its `copy:` number through `ExportOptions.copySuffix`, also after a
+  template's stem in `fileName(stem:copy:number:)`), cleaned of anything a file name cannot hold
   (`RenameTemplate.clean`: `/`, `:`, `\`, NUL, line breaks).
 - `nameTemplate`, an optional `RenameTemplate` (`Rename.swift`: `pattern`,
   `start`) that replaces `<stem><suffix>`: `{name}` the original's stem,
@@ -1176,7 +1181,8 @@ under the Skip policy), `failures` (one `Failure` per item that threw, with
 its source and message), `current` (the photo in flight) and `state`
 (`running`, then `finished` or `cancelled`; `dismiss()` returns it to
 `idle`). The default `Worker` is `Exporter.export`, handed each item's
-source, recipe, `protected` set, name and keywords; it is injected so a test can count or
+source, recipe, `protected` set, name, keywords, templated stem and
+`copyNumber` (a virtual copy's, `PhotoID.copyNumber`); it is injected so a test can count or
 slow jobs without rendering.
 
 A Photos target runs the same `Worker` (so format, quality, resize and
@@ -1207,11 +1213,13 @@ beside its original, which is never changed.
 
 ### `Exporter.export`
 
-`Exporter.export(_:name:recipe:into:options:protected:keywords:renderer:)` (`Batch.swift`) writes
+`Exporter.export(_:name:stem:copy:recipe:into:options:protected:keywords:renderer:)` (`Batch.swift`) writes
 one photo:
 
-1. `Exporter.destination(for:in:options:)` names the file:
-   `<stem><suffix>.<ext>` from `ExportOptions.fileName(for:)`. Under
+1. `Exporter.destination(for:name:stem:copy:in:options:)` names the file:
+   `<stem><suffix>.<ext>` from `ExportOptions.fileName(for:)` (a virtual
+   copy's with `-copy<n>` before the extension, so it never takes its
+   master's name). Under
    `.number` (the default) it is the next free name when that one is taken,
    `<stem> 2.jpg`, `<stem> 3.jpg`, …, so nothing is ever replaced, not even
    the original when exporting into its own folder. Under `.skip` and

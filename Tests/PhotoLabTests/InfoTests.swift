@@ -76,8 +76,11 @@ final class InfoTests: XCTestCase {
     func testEveryFieldOfATaggedPhotoIsReadAndFormatted() throws {
         let url = try write("tagged.jpg", in: base.appendingPathComponent("shoot"), properties: Self.tagged)
         let info = PhotoInfo.read(url)
-        let rows = info.rows(edited: false, keywords: ["beach", "Sunset"])
+        let rows = info.rows(edited: false, keywords: ["beach", "Sunset"],
+                             virtualCopy: PhotoInfo.virtualCopy(2, of: "tagged.jpg"))
         XCTAssertEqual(rows.map(\.label), PhotoInfo.labels, "every field present, in order")
+        XCTAssertEqual(value(rows, "Virtual Copy"), "Virtual copy 2 of tagged.jpg")
+        XCTAssertNil(value(info.rows(edited: false), "Virtual Copy"), "a master has no Virtual Copy row")
         XCTAssertEqual(value(rows, "Keywords"), "beach, Sunset")
         XCTAssertNil(value(info.rows(edited: false), "Keywords"), "no keywords, no row")
         XCTAssertEqual(value(rows, "Camera"), "TestCam T-1")

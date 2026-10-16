@@ -236,9 +236,9 @@ struct ExportForm: Equatable {
     func previewNames(for items: [ExportQueue.Item], limit: Int = 2) -> [String] {
         let o = resolved
         if let stems = o.templatedStems(for: items.map { ($0.source, $0.name, $0.captureDate) }) {
-            return stems.prefix(limit).map { o.fileName(stem: $0) }
+            return zip(stems, items).prefix(limit).map { o.fileName(stem: $0, copy: $1.copyNumber) }
         }
-        return items.prefix(limit).map { o.fileName(for: $0.source, name: $0.name) }
+        return items.prefix(limit).map { o.fileName(for: $0.source, name: $0.name, copy: $0.copyNumber) }
     }
 
     /// The Preset menu's title: "None", the picked name, or

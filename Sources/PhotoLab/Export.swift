@@ -93,9 +93,13 @@ struct ExportOptions: Codable, Hashable, Sendable {
     /// `<stem><suffix>.<ext>` for `source`, before any collision handling.
     /// `name` is the photo's own file name when the source file is a cache
     /// copy under another name (a Photos original); its extension is dropped
-    /// like the source's.
-    func fileName(for source: URL, name: String? = nil) -> String {
-        Self.stem(of: source, name: name) + cleanSuffix + "." + format.fileExtension
+    /// like the source's. `copy` is a virtual copy's number
+    /// (`PhotoID.copyNumber`): `-copy<n>` goes before the extension
+    /// (`DSC06727-edit-copy2.jpg`), so a master and its copy exported
+    /// together never share a name (an Overwrite would replace the master's
+    /// output); nil for a master.
+    func fileName(for source: URL, name: String? = nil, copy: Int? = nil) -> String {
+        fileName(for: source, name: name, copy: copy, number: 1)
     }
 
     private static func stem(of source: URL, name: String?) -> String {
@@ -103,15 +107,23 @@ struct ExportOptions: Codable, Hashable, Sendable {
         return (name as NSString).deletingPathExtension
     }
 
-    /// `fileName(for:)` with a counter: `<stem><suffix> 2.<ext>` (n = 2).
-    func fileName(for source: URL, name: String? = nil, number n: Int) -> String {
-        fileName(stem: Self.stem(of: source, name: name) + cleanSuffix, number: n)
+    /// `-copy<n>` for virtual copy `n`; empty for a master (nil).
+    static func copySuffix(_ copy: Int?) -> String {
+        copy.map { "-copy\($0)" } ?? ""
+    }
+
+    /// `fileName(for:)` with a counter: `<stem><suffix> 2.<ext>` (n = 2),
+    /// `<stem><suffix>-copy<c> 2.<ext>` for copy `c`.
+    func fileName(for source: URL, name: String? = nil, copy: Int? = nil, number n: Int) -> String {
+        fileName(stem: Self.stem(of: source, name: name) + cleanSuffix, copy: copy, number: n)
     }
 
     /// `<stem>.<ext>`, or `<stem> <n>.<ext>` for n > 1: a stem already
-    /// made (a `nameTemplate`'s), with this format's extension.
-    func fileName(stem: String, number n: Int = 1) -> String {
-        (n <= 1 ? stem : "\(stem) \(n)") + "." + format.fileExtension
+    /// made (a `nameTemplate`'s), with this format's extension; a virtual
+    /// copy's `-copy<c>` (`copySuffix`) after the stem, before the counter.
+    func fileName(stem: String, copy: Int? = nil, number n: Int = 1) -> String {
+        let stem = stem + Self.copySuffix(copy)
+        return (n <= 1 ? stem : "\(stem) \(n)") + "." + format.fileExtension
     }
 
     /// One stem per photo of a batch under `nameTemplate`, in order, with

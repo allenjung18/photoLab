@@ -38,19 +38,21 @@ struct PhotoInfo: Equatable, Sendable {
         var id: String { label }
     }
 
-    /// The labels in display order (`rows(edited:keywords:)` shows a subset of them).
-    static let labels = ["Camera", "Lens", "Focal Length", "Aperture", "Shutter", "ISO",
+    /// The labels in display order (`rows(edited:keywords:virtualCopy:)` shows a subset of them).
+    static let labels = ["Virtual Copy", "Camera", "Lens", "Focal Length", "Aperture", "Shutter", "ISO",
                          "Dimensions", "File", "Size", "Folder", "Captured", "GPS", "Keywords", "Edited"]
 
-    /// The present fields, formatted, in `labels` order; Keywords (the
-    /// photo's, comma-separated) only when it has any; Edited is always
-    /// there.
-    func rows(edited: Bool, keywords: [String] = []) -> [Row] {
+    /// The present fields, formatted, in `labels` order; Virtual Copy only
+    /// for a copy (`virtualCopy`, from `PhotoInfo.virtualCopy(_:of:)`, first so
+    /// it is not missed); Keywords (the photo's, comma-separated) only when
+    /// it has any; Edited is always there.
+    func rows(edited: Bool, keywords: [String] = [], virtualCopy: String? = nil) -> [Row] {
         var out: [Row] = []
         func add(_ label: String, _ value: String?) {
             guard let value, !value.isEmpty else { return }
             out.append(Row(label: label, value: value))
         }
+        add("Virtual Copy", virtualCopy)
         add("Camera", Self.camera(make: make, model: model))
         add("Lens", lens)
         add("Focal Length", focalLength.flatMap(Self.focalLength))
@@ -277,6 +279,11 @@ struct InfoSection: View {
     let file: URL?
     @State private var loaded: (id: Photo.ID, info: PhotoInfo)?
 
+    /// The Virtual Copy row's value for `photo`; nil for a master.
+    static func virtualCopy(_ photo: Photo) -> String? {
+        photo.id.copyNumber.map { PhotoInfo.virtualCopy($0, of: photo.isNamed ? photo.name : nil) }
+    }
+
     private struct Load: Equatable {
         let id: Photo.ID
         let file: URL?
@@ -296,7 +303,8 @@ struct InfoSection: View {
     var body: some View {
         let info = shown
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
-            ForEach(info.rows(edited: library.isEdited(photo.id), keywords: library.keywords(for: photo.id))) { row in
+            ForEach(info.rows(edited: library.isEdited(photo.id), keywords: library.keywords(for: photo.id),
+                              virtualCopy: Self.virtualCopy(photo))) { row in
                 GridRow {
                     Text(row.label)
                         .foregroundStyle(.secondary)
