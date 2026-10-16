@@ -221,8 +221,13 @@ the whole source exactly as for the whole frame and only the pixels read
 back differ, so every spatial radius stays a fraction of the whole image;
 never render a cropped input instead. `Result.frameSize` is the whole
 rendered frame's size and `Result.region` the window it holds. That resize is a Lanczos
-scale, the last step of the chain, done once. The result is an 8-bit
-`CGImage` in the source's color space, returned as `Renderer.Result` with the
+scale, the last step of the chain, done once. For a whole frame only, an
+export's `sharpening` (`ExportOptions.Sharpening`: `CISharpenLuminance` at a
+1 px radius in the output) runs right after it, so a downsized file gets
+back the edge the resize softened. The result is an 8-bit `CGImage` in the
+source's color space, or in an export's `colorSpace`
+(`ExportOptions.ColorSpace`: sRGB or Display P3; Core Image converts, never
+retags), returned as `Renderer.Result` with the
 wall time of the whole step in `milliseconds` (the loupe's footer and the
 tests read it). `render` is synchronous; every caller runs it off the main
 thread.

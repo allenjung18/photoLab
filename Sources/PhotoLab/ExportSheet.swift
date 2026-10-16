@@ -75,6 +75,18 @@ struct ExportSheet: View {
                         Text("TIFF is lossless (LZW compressed).")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    Picker("Color space", selection: $form.options.colorSpace) {
+                        Text("Same as original").tag(ExportOptions.ColorSpace?.none)
+                        ForEach(ExportOptions.ColorSpace.allCases, id: \.self) {
+                            Text($0.label).tag(ExportOptions.ColorSpace?.some($0))
+                        }
+                    }
+                    Picker("Output sharpening", selection: $form.options.sharpening) {
+                        Text("Off").tag(ExportOptions.Sharpening?.none)
+                        ForEach(ExportOptions.Sharpening.allCases, id: \.self) {
+                            Text($0.label).tag(ExportOptions.Sharpening?.some($0))
+                        }
+                    }
                 }
                 Section("Size") {
                     Picker("Size", selection: $form.sizeMode) {

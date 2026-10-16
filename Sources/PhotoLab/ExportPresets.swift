@@ -31,11 +31,12 @@ extension ExportPreset {
     static let builtIn: [ExportPreset] = [web]
 
     /// "For Google Photos / web": a JPEG at quality 85, 2048 px on the long
-    /// side, named `<stem>-web`, keeping the dates and camera info (Google
-    /// Photos files by the capture date) but not where it was taken.
+    /// side, in sRGB with Standard output sharpening (D-475), named
+    /// `<stem>-web`, keeping the dates and camera info (Google Photos files
+    /// by the capture date) but not where it was taken.
     static let web = ExportPreset(name: "For Google Photos / web", options: ExportOptions(
         format: .jpeg, quality: 0.85, resize: .longSide(2048), keepMetadata: true,
-        suffix: "-web", removeLocation: true))
+        suffix: "-web", removeLocation: true, colorSpace: .sRGB, sharpening: .standard))
 }
 
 enum ExportPresetError: LocalizedError, Equatable {

@@ -187,7 +187,9 @@ enum Exporter {
         let fm = FileManager.default
         let folder = out.deletingLastPathComponent()
         guard let image = Renderer.fullResolution(source) else { throw Failure.cannotDecode(source) }
-        guard let result = renderer.render(image, recipe: recipe, resize: options.resize, watermark: options.watermark) else {
+        guard let result = renderer.render(image, recipe: recipe, resize: options.resize, watermark: options.watermark,
+                                           sharpening: options.sharpening,
+                                           colorSpace: options.colorSpace?.cgColorSpace) else {
             throw Failure.cannotRender(source)
         }
         var properties = options.keepMetadata

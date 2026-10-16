@@ -354,11 +354,96 @@ final class ExportTests: XCTestCase {
         XCTAssertNotNil(try properties(kept)[kCGImagePropertyGPSDictionary], "GPS is kept when the option is off")
     }
 
+    /// A flat Display P3 picture of one colour.
+    private func p3Fill(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, width: Int, height: Int) -> CGImage {
+        let space = CGColorSpace(name: CGColorSpace.displayP3)!
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(colorSpace: space, components: [r, g, b, 1])!)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()!
+    }
+
+    /// The centre pixel's 8-bit RGB once drawn into sRGB (`decode`).
+    private func centreRGB(_ url: URL) throws -> [Int] {
+        let cg = try decode(url)
+        let data = try XCTUnwrap(cg.dataProvider?.data as Data?)
+        let i = (cg.height / 2) * cg.bytesPerRow + (cg.width / 2) * 4
+        return [Int(data[i]), Int(data[i + 1]), Int(data[i + 2])]
+    }
+
+    func testAnSRGBExportOfADisplayP3PhotoIsConvertedNotRetagged() throws {
+        let src = try writeSource("p3.heic", p3Fill(0.8, 0.3, 0.3, width: 32, height: 32), type: .heic)
+        let srcName = try properties(src)[kCGImagePropertyProfileName] as? String
+        XCTAssertEqual(srcName, "Display P3", "the source really is P3")
+
+        // What the colour is in sRGB numbers: P3 (0.8, 0.3, 0.3) is redder there.
+        let p3 = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!, components: [0.8, 0.3, 0.3, 1])!
+        let want = try XCTUnwrap(p3.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)?
+            .components).prefix(3).map { Int(($0 * 255).rounded()) }
+        XCTAssertGreaterThan(want[0] - 204, 8, "the test colour differs in sRGB, so a retag would show")
+
+        for format in [ExportOptions.Format.jpeg, .heic] {
+            var o = ExportOptions()
+            o.format = format
+            o.quality = 1
+            o.colorSpace = .sRGB
+            o.suffix = "-srgb"
+            guard case .written(let url) = try Exporter.export(src, recipe: .neutral, into: outDir, options: o) else { return XCTFail() }
+            let name = try properties(url)[kCGImagePropertyProfileName] as? String
+            XCTAssertTrue(name?.hasPrefix("sRGB") == true, "\(format): written in sRGB, got \(String(describing: name))")
+            let got = try centreRGB(url)
+            for c in 0..<3 {
+                XCTAssertEqual(got[c], want[c], accuracy: 4, "\(format) channel \(c): \(got) vs \(want) — the colour is converted, not retagged")
+            }
+        }
+
+        // Same as original (nil): still P3, and it looks the same.
+        var keep = ExportOptions()
+        keep.quality = 1
+        keep.suffix = "-keep"
+        guard case .written(let kept) = try Exporter.export(src, recipe: .neutral, into: outDir, options: keep) else { return XCTFail() }
+        XCTAssertEqual(try properties(kept)[kCGImagePropertyProfileName] as? String, "Display P3", "nil keeps the source's space")
+        let k = try centreRGB(kept)
+        for c in 0..<3 { XCTAssertEqual(k[c], want[c], accuracy: 4, "channel \(c): \(k) vs \(want)") }
+    }
+
+    /// The sum of |step| along the middle row: the more an edge overshoots,
+    /// the larger.
+    private func rowVariation(_ url: URL) throws -> Int {
+        let cg = try decode(url)
+        let data = try XCTUnwrap(cg.dataProvider?.data as Data?)
+        let row = (cg.height / 2) * cg.bytesPerRow
+        return (1..<cg.width).reduce(0) { $0 + abs(Int(data[row + $1 * 4]) - Int(data[row + ($1 - 1) * 4])) }
+    }
+
+    func testOutputSharpeningRunsAfterTheResizeAndGrowsWithItsLevel() throws {
+        let src = try writeSource("edge.png", halves(width: 400, height: 200))
+        var levels: [Int] = []
+        for level in [nil] + ExportOptions.Sharpening.allCases.map(Optional.some) {
+            var o = ExportOptions()
+            o.format = .tiff
+            o.resize = .longSide(100)
+            o.sharpening = level
+            o.suffix = "-\(level?.rawValue ?? "off")"
+            guard case .written(let url) = try Exporter.export(src, recipe: .neutral, into: outDir, options: o) else { return XCTFail() }
+            try assertSize(url, 100, 50, "\(String(describing: level))")
+            levels.append(try rowVariation(url))
+        }
+        XCTAssertEqual(levels, levels.sorted(), "off <= low <= standard <= high: \(levels)")
+        XCTAssertGreaterThan(levels[1], levels[0], "low sharpens at all: \(levels)")
+        XCTAssertGreaterThan(levels[3], levels[1], "high sharpens more than low: \(levels)")
+    }
+
     func testOptionsSavedWithoutRemoveLocationDecodeWithItOff() throws {
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ExportOptions())) as! [String: Any]
         json.removeValue(forKey: "removeLocation")
+        json.removeValue(forKey: "colorSpace")
+        json.removeValue(forKey: "sharpening")
         let o = try JSONDecoder().decode(ExportOptions.self, from: JSONSerialization.data(withJSONObject: json))
         XCTAssertFalse(o.removesLocation)
+        XCTAssertNil(o.colorSpace, "same as original")
+        XCTAssertNil(o.sharpening, "off")
     }
 
     // MARK: HEIC / TIFF

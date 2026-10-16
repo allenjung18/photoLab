@@ -242,7 +242,10 @@ not only the pass.
   location drops the GPS block and the IPTC city and country while the
   capture date, camera and keywords still travel (and an options file
   without the field decodes with it off; shown to bite by skipping the
-  removal), HEIC and
+  removal), an sRGB export of a Display P3 HEIC is CONVERTED (sRGB profile and
+  the colour's sRGB numbers, in JPEG and HEIC; nil keeps P3; shown to bite by
+  retagging), output sharpening after a resize to 100 px grows the edge
+  overshoot Off < Low < High (shown to bite by skipping it), HEIC and
   TIFF round trip, the collision policy (number, skip, overwrite) and the
   original is never written, not even under a case-variant name on a
   case-insensitive volume, an Overwrite onto another library original (by

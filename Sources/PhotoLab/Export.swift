@@ -56,6 +56,50 @@ struct ExportOptions: Codable, Hashable, Sendable {
         }
     }
 
+    /// The colour space the file is written in. nil (`ExportOptions`) keeps
+    /// the source's own, as every export did before the option existed.
+    enum ColorSpace: String, Codable, CaseIterable, Sendable {
+        case sRGB, displayP3
+
+        var label: String {
+            switch self {
+            case .sRGB: return "sRGB"
+            case .displayP3: return "Display P3"
+            }
+        }
+
+        var cgColorSpace: CGColorSpace {
+            switch self {
+            case .sRGB: return CGColorSpace(name: CGColorSpace.sRGB)!
+            case .displayP3: return CGColorSpace(name: CGColorSpace.displayP3)!
+            }
+        }
+    }
+
+    /// Sharpening for the output, applied after the resize at the written
+    /// size (`Renderer.render(sharpening:)`), so a downsized file keeps its
+    /// edges. nil (`ExportOptions`) is off.
+    enum Sharpening: String, Codable, CaseIterable, Sendable {
+        case low, standard, high
+
+        var label: String {
+            switch self {
+            case .low: return "Low"
+            case .standard: return "Standard"
+            case .high: return "High"
+            }
+        }
+
+        /// `CISharpenLuminance.sharpness` at a 1 px radius in the output.
+        var sharpness: Float {
+            switch self {
+            case .low: return 0.3
+            case .standard: return 0.6
+            case .high: return 1.0
+            }
+        }
+    }
+
     /// The quality a lossy export may ask for: the sheet's slider range and
     /// the clamp `clampedQuality` applies are this one constant.
     static let qualityRange: ClosedRange<Double> = 0.3...1.0
@@ -87,6 +131,12 @@ struct ExportOptions: Codable, Hashable, Sendable {
     /// the dates, camera and lens still travel. nil = keep it; options
     /// stored by a build without the field decode with nil.
     var removeLocation: Bool? = nil
+    /// The file's colour space; nil = the source's own. Options stored by a
+    /// build without the field decode with nil.
+    var colorSpace: ColorSpace? = nil
+    /// Output sharpening after the resize; nil = off. Options stored by a
+    /// build without the field decode with nil.
+    var sharpening: Sharpening? = nil
 
     static let `default` = ExportOptions()
 

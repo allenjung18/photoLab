@@ -388,8 +388,15 @@ final class Renderer: @unchecked Sendable {
     /// file's short side. Only `Exporter.write` passes one; the loupe, the
     /// preset strip, thumbnails and Save to Photos never do. Nil or blank
     /// text leaves the output as it was; ignored with a `region`.
+    ///
+    /// `sharpening` (`ExportOptions.sharpening`) runs after `resize` and
+    /// before the watermark, at a 1 px radius in the OUTPUT, so it restores
+    /// what the downsize softened whatever the source size. `colorSpace` is
+    /// the space the pixels are written in (`ExportOptions.colorSpace`);
+    /// nil keeps the source's. Both are export-only, ignored with a `region`.
     func render(_ source: CIImage, recipe: Recipe, maxPixelSize: Int? = nil, resize: OutputSize? = nil,
-                region: Region? = nil, watermark: Watermark? = nil) -> Result? {
+                region: Region? = nil, watermark: Watermark? = nil,
+                sharpening: ExportOptions.Sharpening? = nil, colorSpace: CGColorSpace? = nil) -> Result? {
         let t0 = DispatchTime.now().uptimeNanoseconds
         var image = source
         let extent = source.extent
@@ -426,10 +433,17 @@ final class Renderer: @unchecked Sendable {
                 rect = CGRect(origin: .zero, size: target)
             }
         }
+        if region == nil, let sharpening {
+            let f = CIFilter.sharpenLuminance()
+            f.inputImage = image.clampedToExtent()
+            f.sharpness = sharpening.sharpness
+            f.radius = 1
+            if let out = f.outputImage { image = out.cropped(to: rect) }
+        }
         if region == nil, let watermark, !watermark.isBlank {
             image = watermark.composite(over: image, in: rect)
         }
-        let space = source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = (region == nil ? colorSpace : nil) ?? source.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let cg = context.createCGImage(image, from: rect, format: .RGBA8, colorSpace: space) else {
             return nil
         }

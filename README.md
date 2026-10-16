@@ -424,8 +424,10 @@ selection back to the anchor:
   replaced); **Delete Preset** removes the picked one. The last pick is
   remembered, and once a field changes the menu reads "<name> (edited)".
   One preset is built in: **For Google Photos / web** (JPEG, 2048 px on the
-  long side, quality 85, `-web` suffix, camera info and dates kept, location
-  removed). **Remove location (GPS)**, under Keep camera info, drops where
+  long side, quality 85, sRGB, Standard output sharpening, `-web` suffix,
+  camera info and dates kept, location removed). **Color space** (Same as
+  original, sRGB, Display P3) and **Output sharpening** (Off, Low, Standard,
+  High; applied after the resize) sit under Format. **Remove location (GPS)**, under Keep camera info, drops where
   a photo was taken from any export.
 
 Copy Settings (`⇧⌘C`) remembers one photo's settings; Paste Settings…

@@ -60,6 +60,8 @@ final class ExportPresetTests: XCTestCase {
         XCTAssertEqual(o.resize, .longSide(2048))
         XCTAssertTrue(o.keepMetadata, "dates travel: Google Photos files by capture date")
         XCTAssertTrue(o.removesLocation)
+        XCTAssertEqual(o.colorSpace, .sRGB, "D-475 (a)")
+        XCTAssertEqual(o.sharpening, .standard, "D-475 (a)")
         XCTAssertEqual(o.suffix, "-web")
         XCTAssertNil(o.watermark)
     }

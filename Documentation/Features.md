@@ -1382,7 +1382,10 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   `ExportOptions` through its `ExportForm` (`ExportPresets.swift`: the
   options plus the Size, Name and Watermark controls, folded by
   `ExportForm.resolved`): **Format** (`ExportOptions.Format`: JPEG, HEIC, TIFF)
-  with a quality slider for the lossy two; **Size** as edited, an exact
+  with a quality slider for the lossy two, **Color space** (Same as original
+  = nil, sRGB, Display P3: `ExportOptions.colorSpace`) and **Output
+  sharpening** (Off = nil, Low, Standard, High: `ExportOptions.sharpening`,
+  after the resize at the written size); **Size** as edited, an exact
   long side or a percentage (`OutputSize.longSide`, `OutputSize.percent`,
   nil for as edited; never upscaled); **File**: **Name** is Original name +
   suffix (`suffix`) or Template (`ExportForm.NameMode`; a `RenameTemplate`
@@ -1421,7 +1424,8 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   differing from the preset's). It lists first the built-in presets
   (`ExportPresetLibrary.builtIns`: `ExportPreset.builtIn`, today only
   `ExportPreset.web`, "For Google Photos / web" — JPEG quality 85, 2048 px
-  long side, suffix `-web`, camera info kept, location removed; never a
+  long side, sRGB, Standard output sharpening (D-475), suffix `-web`, camera
+  info kept, location removed; never a
   file, so Delete Preset is off for it, `isSaved`; a saved preset of the
   same name takes its place in the menu), then every `ExportPreset` read by
   `ExportPresetLibrary` from `ExportPresetStore` (a check on the picked
