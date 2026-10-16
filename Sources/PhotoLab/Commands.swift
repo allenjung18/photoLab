@@ -39,7 +39,7 @@ struct AppCommand: Identifiable {
         case undo, redo
         case copySettings, pasteSettings, syncSettings, selectAll, search
         case savePreset
-        case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
+        case grid, loupe, map, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
         case crop, whiteBalance, autoTone, resetPhoto, keywords
@@ -205,12 +205,18 @@ struct AppCommand: Identifiable {
         // View: Lightroom's G / E and Z, the before/after keys, the clipping
         // warning, and the arrows that move the selection.
         AppCommand(name: .grid, title: "Grid", key: "g", modifiers: [], placement: .view,
-                   isOn: { !$0.library.loupe },
-                   perform: { $0.library.loupe = false }),
+                   isOn: { !$0.library.loupe && !$0.library.showMap },
+                   perform: { $0.library.loupe = false; $0.library.showMap = false }),
         AppCommand(name: .loupe, title: "Loupe", key: "e", modifiers: [], placement: .view,
                    isOn: { $0.library.loupe },
                    isEnabled: { !$0.library.visiblePhotos.isEmpty },
                    perform: { enterLoupe($0.library) }),
+        // The visible photos that carry a GPS position, on a map in the
+        // grid's place; again returns to the grid.
+        AppCommand(name: .map, title: "Map", key: "m", modifiers: [.command, .option], placement: .view,
+                   isOn: { $0.library.showMap },
+                   isEnabled: { !$0.library.photos.isEmpty },
+                   perform: { $0.library.showMap.toggle() }),
         // Fit or 1:1 at the middle of the photo, in the loupe only (a click
         // on the photo zooms at that point instead).
         AppCommand(name: .zoom, title: "Zoom to 1:1", key: "z", modifiers: [], placement: .view,

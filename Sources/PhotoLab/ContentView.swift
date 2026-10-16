@@ -13,6 +13,8 @@ struct ContentView: View {
                 WelcomeView()
             } else if library.loupe, let photo = library.selectedPhoto {
                 LoupeView(photo: photo)
+            } else if library.showMap {
+                PhotoMapView()
             } else {
                 GridView()
             }
@@ -36,12 +38,13 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 if library.source != nil {
                     Picker("View", selection: viewBinding) {
-                        Label("Grid", systemImage: "square.grid.3x3").tag(false)
-                        Label("Loupe", systemImage: "photo").tag(true)
+                        Label("Grid", systemImage: "square.grid.3x3").tag(ViewMode.grid)
+                        Label("Loupe", systemImage: "photo").tag(ViewMode.loupe)
+                        Label("Map", systemImage: "map").tag(ViewMode.map)
                     }
                     .pickerStyle(.segmented)
                     .disabled(library.photos.isEmpty)
-                    .help("Grid (G) or single photo (E)")
+                    .help("Grid (G), single photo (E) or map (⌥⌘M)")
                     Toggle(isOn: compareBinding) {
                         Label("Before / After", systemImage: "rectangle.split.2x1")
                     }
@@ -76,12 +79,23 @@ struct ContentView: View {
         }
     }
 
-    private var viewBinding: Binding<Bool> {
+    /// The toolbar picker's three segments.
+    private enum ViewMode: Hashable { case grid, loupe, map }
+
+    private var viewBinding: Binding<ViewMode> {
         Binding(
-            get: { library.loupe },
-            set: { on in
-                if on, library.selection == nil { library.selection = library.visiblePhotos.first?.id }
-                library.loupe = on && library.selection != nil
+            get: { library.loupe ? .loupe : library.showMap ? .map : .grid },
+            set: { mode in
+                switch mode {
+                case .grid:
+                    library.loupe = false
+                    library.showMap = false
+                case .loupe:
+                    if library.selection == nil { library.selection = library.visiblePhotos.first?.id }
+                    library.loupe = library.selection != nil
+                case .map:
+                    library.showMap = true
+                }
             })
     }
 

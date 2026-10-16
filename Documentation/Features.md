@@ -9,8 +9,9 @@ document is the layer between: screen to type. Every name in backticks is in
 
 The window is `ContentView` (`ContentView.swift`): the welcome screen while
 no source is open (`Library.source` is nil), the loupe while `Library.loupe`
-is on and a photo is selected, the grid otherwise; a toolbar with Open Folder,
-Open Photos Library (disabled without an app bundle) and a Grid / Loupe picker; the hidden keyboard shortcuts; the export bar at
+is on and a photo is selected, the map while `Library.showMap` is on, the
+grid otherwise; a toolbar with Open Folder,
+Open Photos Library (disabled without an app bundle) and a Grid / Loupe / Map picker; the hidden keyboard shortcuts; the export bar at
 the bottom when a run is going; and three sheets, Sync, Export and Open
 Photos Library. The
 title is the source's name (the folder's, or the album's), the subtitle "n of N" in the loupe (with the
@@ -392,6 +393,50 @@ puts up the same `SyncSheet` with that recipe as the source and
 
 Writes: one sidecar per photo the sync changed, each through `setRecipe`.
 Nothing else; the copied settings live in memory.
+
+## Map
+
+`PhotoMapView` (`PhotoMapView.swift`), in the grid's place while
+`Library.showMap` is on (View › Map, **⌥⌘M**, or the toolbar picker's Map
+segment): a SwiftUI `Map` (MapKit; Apple's tiles over the network, no key
+and no entitlement, the app is not sandboxed; offline the pins draw on a
+blank grid) of `Library.visiblePhotos` that have a position.
+
+- **Positions.** `Library.locations`, a `PhotoLocations` (`PhotoMap.swift`):
+  `PhotoLocations.start(_:store:)` runs when the map opens over every photo
+  of the source. A Photos asset's position is `Photo.location`, from
+  `PHAsset.location` in the listing (`PhotosAsset.location`), never a read;
+  a photo whose `PhotoInfo` is already cached in `Library.photoInfo` takes
+  its GPS from there; every other folder photo is read in one background
+  pass, a file at a time, through `PhotoInfoStore.info(for:file:)`, so the
+  Info section and the map share each header read. `PhotoLocations.reading`
+  is the pass's progress ("Reading locations n of N" in the footer).
+  Leaving the map (`showMap` off, including the loupe opening) is
+  `PhotoLocations.cancel()`, which stops the pass after the file in flight
+  and keeps what it read; `Library.open` is `PhotoLocations.reset()`.
+- **Pins.** `MapPins.group(_:cellDegrees:)` buckets the located photos into
+  square cells of `MapPins.cellDegrees(latitudeDelta:longitudeDelta:)`, the
+  visible span's wider side over `MapPins.cellsAcross` (12), re-read after
+  every camera move (`onMapCameraChange`): one `Annotation` per non-empty
+  cell at its photos' mean position, `MapPinLabel` drawing the first photo's
+  thumbnail (with its edit, `Thumbnails.thumbnail(for:recipe:)`), the count
+  when more than one, an accent border when any of them is selected.
+- **Framing.** `MapPins.region(fitting:)`: the points' extent times
+  `MapPins.padding` (1.3), at least `MapPins.minimumSpanMeters` (1 km) each
+  way, so one photo frames its neighbourhood; set when the map appears and
+  again when the pass finishes.
+- **Clicks.** A click on a pin is `Library.clickPin(_:)`, a double-click
+  `Library.openPin(_:)`: both `Library.select(_:)` the pin's listed,
+  visible photos with the first as the anchor; the double-click then sets
+  `Library.loupe`.
+- **Footer and empty state.** The footer says
+  `PhotoLocations.summary(located:of:)` ("n of N photos have a location",
+  over the visible photos) once no pass runs; with no located photo and no
+  pass, the map gives way to "None of these photos has a location".
+- **Not remembered.** `showMap` is not in `SourceViewState` and
+  `Library.open` turns it off, so a source opens on the grid or the loupe.
+
+Writes: nothing.
 
 ## Loupe
 
@@ -957,7 +1002,8 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
     unused).
   - **Presets**: **Save Preset…** **⇧⌘P** and the preset names (see Presets).
-  - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Zoom to 1:1** **Z**
+  - **View**, after `.toolbar` in SwiftUI's own View menu: **Grid** **G**, **Loupe** **E**, **Map** **⌥⌘M**
+    (`Library.showMap`, toggled; see Map), **Zoom to 1:1** **Z**
     (`Library.toggleZoom()`, loupe only), **Before and After** **Y**,
     **Show Original** **\\**, **Clipping Warning** **J**, **Filmstrip** **F**,
     **Info** **⌘I** (`Library.showInfo`), **Previous Photo**
@@ -977,7 +1023,7 @@ key is typed anywhere else; the README's Keys table is the user's list.
     targets, see Keywords).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
-  background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it
+  background, so they work whatever has focus in the window. **G** leaves the loupe and the map; **E** and **Return** enter it
   (selecting the first photo when none is), and both are disabled while
   `Library.visiblePhotos` is empty, so on the Welcome view **Return** is its
   **Open Folder…** default button; **Esc** clears
@@ -993,9 +1039,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
   `Library.setRating(_:for:)`). **Return** and **Esc** have no menu item
   (`keysOnly`). A new key is a new `AppCommand.Name` and a table entry;
   `CommandsTests` fails on a key two entries share.
-- **Toolbar**: **Open Folder**, the **Grid / Loupe** segmented picker
+- **Toolbar**: **Open Folder**, the **Grid / Loupe / Map** segmented picker
   (which selects the first photo when entering the loupe with none
-  selected), the **Before / After** toggle (`Library.compare`, the same
+  selected; Map is `Library.showMap`), the **Before / After** toggle (`Library.compare`, the same
   as **Y**) and, in the loupe of a Photos album, **Save to Photos**.
 - **Launch**: `PhotoLabApp` opens the first command-line argument that does
   not start with `-` (a folder, or a file to open in the loupe), else the

@@ -40,7 +40,9 @@ enum PhotoID: Hashable, Codable, Sendable {
 /// ids; nil for an asset until the source materialises its original), and
 /// the capture date when the listing carries one (a Photos asset's
 /// `creationDate`; nil for a file, whose date `CaptureDates` reads on
-/// demand).
+/// demand), and the GPS position when the listing carries one (a Photos
+/// asset's `PHAsset.location`; nil for a file, whose position the map reads
+/// from its header through `PhotoInfoStore`).
 ///
 /// A listing may leave a photo unnamed (a Photos album: reading an asset's
 /// original file name is a resource read per asset, so it is asked per
@@ -54,14 +56,17 @@ struct Photo: Identifiable, Hashable, Sendable {
     private(set) var isNamed: Bool
     let fileURL: URL?
     let captureDate: Date?
+    /// The listing's GPS position (`PhotosAsset.location`); nil for a file.
+    let location: GeoPoint?
 
     /// `name` nil: the listing did not name the photo (`isNamed` false).
-    init(id: PhotoID, name: String?, captureDate: Date? = nil) {
+    init(id: PhotoID, name: String?, captureDate: Date? = nil, location: GeoPoint? = nil) {
         self.id = id
         self.name = name ?? id.defaultName
         self.isNamed = name != nil
         self.fileURL = id.fileURL
         self.captureDate = captureDate
+        self.location = location
     }
 
     /// What a cell's caption and tooltip show: the name, or nothing while

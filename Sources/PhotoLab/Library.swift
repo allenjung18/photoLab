@@ -141,9 +141,28 @@ final class Library {
     var loupe = false {
         didSet {
             if !loupe { loupeZoom = .fit; cropMode = false; whiteBalancePicking = false }
+            if loupe { showMap = false }
             saveViewState()
         }
     }
+    /// The map (View › Map, ⌥⌘M) in the grid's place: the visible photos
+    /// that carry a GPS position (`PhotoMapView`). Opening it leaves the
+    /// loupe and starts the location pass (`PhotoLocations.start`); leaving
+    /// it, or the loupe opening, cancels the pass. Not in `SourceViewState`
+    /// and reset by `open`, so a source always opens on the grid or the loupe.
+    var showMap = false {
+        didSet {
+            guard showMap != oldValue else { return }
+            if showMap {
+                loupe = false
+                locations.start(photos, store: photoInfo)
+            } else {
+                locations.cancel()
+            }
+        }
+    }
+    /// The map's positions and its location pass.
+    let locations = PhotoLocations()
     /// The loupe's zoom: fit, or 1:1 around a centre (Z, a click on the
     /// photo, a drag to pan). Back to fit whenever the photo changes (the
     /// arrows, a filmstrip click, any new anchor) and when the loupe closes;
@@ -375,6 +394,8 @@ final class Library {
         self.source = source
         Thumbnails.shared.source = source
         selection = nil
+        showMap = false
+        locations.reset()
         loupe = false
         showBefore = false
         compare = false
@@ -594,6 +615,16 @@ final class Library {
         guard !visible.isEmpty else { return }
         if let anchor = selection, isVisible(anchor) {} else { selection = visible.first?.id }
         selectedIDs = Set(visible.map(\.id))
+    }
+
+    /// Exactly the listed, visible ones of `ids`, the first of them the
+    /// anchor (a map pin's photos); nothing when none is.
+    func select(_ ids: [Photo.ID]) {
+        let listed = Set(photos.map(\.id))
+        let shown = ids.filter { listed.contains($0) && isVisible($0) }
+        guard let first = shown.first else { return }
+        selection = first
+        selectedIDs = Set(shown)
     }
 
     /// Back to the anchor alone.

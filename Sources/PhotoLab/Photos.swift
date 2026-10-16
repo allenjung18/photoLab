@@ -50,11 +50,15 @@ struct PhotosAsset: Hashable, Sendable {
     let originalFilename: String?
     /// The asset's `creationDate` (its capture time), nil when Photos has none.
     let creationDate: Date?
+    /// The asset's `location` (its GPS position), nil when Photos has none.
+    /// A listing property: no resource read.
+    let location: GeoPoint?
 
-    init(id: String, originalFilename: String?, creationDate: Date? = nil) {
+    init(id: String, originalFilename: String?, creationDate: Date? = nil, location: GeoPoint? = nil) {
         self.id = id
         self.originalFilename = originalFilename
         self.creationDate = creationDate
+        self.location = location
     }
 }
 
@@ -71,8 +75,8 @@ protocol PhotoKitClient: Sendable {
     func requestAuthorization() async -> PhotosAuthorization
     /// Recents first, then the regular albums by title.
     func albums() -> [PhotosAlbum]
-    /// The album's images, oldest capture first: identifier and capture
-    /// date only (one pass over the fetch result, no resource read), so a
+    /// The album's images, oldest capture first: identifier, capture date
+    /// and location only (one pass over the fetch result, no resource read), so a
     /// Recents of thousands lists at once; names come later, per asset.
     func assets(in album: PhotosAlbum) -> [PhotosAsset]
     /// The original resource's file name (`PhotoKitLive.originalResource`),
@@ -230,8 +234,9 @@ struct PhotoKitLive: PhotoKitClient {
         return options
     }
 
-    /// The fetch result's identifiers and creation dates, nothing else: no
-    /// `PHAssetResource` read (that is `originalFilename(of:)`, per cell).
+    /// The fetch result's identifiers, creation dates and locations,
+    /// nothing else: no `PHAssetResource` read (that is
+    /// `originalFilename(of:)`, per cell).
     func assets(in album: PhotosAlbum) -> [PhotosAsset] {
         guard canRead,
               let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id],
@@ -240,7 +245,11 @@ struct PhotoKitLive: PhotoKitClient {
         var out: [PhotosAsset] = []
         out.reserveCapacity(fetched.count)
         fetched.enumerateObjects { asset, _, _ in
-            out.append(PhotosAsset(id: asset.localIdentifier, originalFilename: nil, creationDate: asset.creationDate))
+            let location = asset.location.map {
+                GeoPoint(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+            }
+            out.append(PhotosAsset(id: asset.localIdentifier, originalFilename: nil, creationDate: asset.creationDate,
+                                   location: location))
         }
         return out
     }
@@ -492,7 +501,9 @@ struct PhotosSource: PhotoSource {
         guard status.canRead else { throw PhotosError.notAuthorized(status) }
         let assets = client.assets(in: album)
         originals.remember(assets)
-        return assets.map { Photo(id: .asset($0.id), name: $0.originalFilename, captureDate: $0.creationDate) }
+        return assets.map {
+            Photo(id: .asset($0.id), name: $0.originalFilename, captureDate: $0.creationDate, location: $0.location)
+        }
     }
 
     /// The original's file name, read from the library (one resource read)

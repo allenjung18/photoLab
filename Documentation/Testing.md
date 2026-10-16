@@ -503,6 +503,22 @@ not only the pass.
   `AppSettings.exportPreset` round-trips, clears, and a quiet store writes
   nothing. Shown to bite by keeping the previous watermark across a pick
   (8 failures in 3 tests).
+- `MapTests.swift` — `MapPins.group(_:cellDegrees:)` at two spans (a 12°
+  span merges two nearby photos into one pin, in the order of their first
+  photo, at their mean; a 0.012° span splits all three);
+  `MapPins.region(fitting:)` centres on the extent and pads it by
+  `MapPins.padding`, every point inside, and frames one photo about 1 km
+  each way; `PhotoLocations` over a fake header reader: a photo without
+  GPS is left off and counted ("2 of 4 photos have a location"), an
+  asset's listing position needs no read, a header the Info store already
+  cached is not read again and a second start reads nothing, and a pass
+  cancelled while a read is held reads nothing after it; over a fake
+  PhotoKit listing, `Photo.location` comes from `PhotosAsset.location`,
+  opening the map leaves the loupe, a pin click selects its visible photos
+  with the first as the anchor, a double-click opens the loupe; ⌥⌘M
+  toggles the map, Grid leaves it, an open resets it. No test builds the
+  `Map` view. Shown to bite by keeping only the first photo of a cell
+  (6 failures in 2 tests).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows

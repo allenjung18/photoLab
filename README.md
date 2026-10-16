@@ -60,6 +60,7 @@ in Xcode works too.
 | `⇧⌘O` | Open Photos Library… (the album sheet) |
 | `G` | Grid |
 | `E` or `Return` | Loupe (the selected photo, or the first) |
+| `⌥⌘M` | Map: the shown photos that carry a GPS position, as pins on a map in the grid's place (again, or `G`, goes back to the grid) |
 | `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
 | `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
 | `W` | In the loupe, the white-balance eyedropper (or **White Balance** in Color): click something that should be neutral grey or white, at fit or 1:1, and temperature and tint are set so it renders grey, one undo step; a clipped or near-black spot is refused with a note and changes nothing; `W` or `Esc` puts it down |
@@ -86,7 +87,7 @@ in Xcode works too.
 Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
 PhotoLab › Settings…): File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
-Photos, Search Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
+Photos, Search Photos), **View** (Grid, Loupe, Map, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
 ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…). A single-letter key is written after its menu item's
@@ -151,6 +152,19 @@ folder, capture date (the one the sort uses), GPS position as coordinates,
 the photo's keywords, and whether it is edited. A field the photo does not have has no line. A
 Photos album photo shows its name and date from Photos at once and the rest
 once its original has been fetched, and has no folder line.
+
+**Map** (`⌥⌘M`, View › Map, or the third segment of the toolbar's view
+picker) shows the photos the grid shows (its filter applies) that carry a
+GPS position, as pins on an Apple map: nearby photos share a pin showing
+the first one's thumbnail and how many it holds, and zooming in splits
+them. Click a pin to select its photos, double-click to open the first in
+the loupe. A folder photo's position is read from its file the first time
+the map opens ("Reading locations n of N" at the bottom, stopped by
+leaving the map); a Photos album photo's comes with the album at once. The
+footer says how many of the shown photos have a location. The map tiles
+come from Apple over the network (no account or key); offline the pins
+draw on a blank grid. The map is not remembered: a folder or album always
+opens on the grid or the loupe.
 
 ## Adjustments
 

@@ -408,7 +408,10 @@ id is one (nil for an asset until its source produces a file), and
 `Photo.captureDate` when the listing carries one (a Photos asset's
 `creationDate`; nil for a file, whose date `CaptureDates` reads when the
 capture-date sort first needs it, or takes from the Info section's header
-read, `PhotoInfoStore`, which applies the same rule). What a photo's header
+read, `PhotoInfoStore`, which applies the same rule), and `Photo.location`,
+a `GeoPoint`, when the listing carries one (a Photos asset's
+`PHAsset.location`; nil for a file, whose position the map takes from the
+same header read, `PhotoLocations`, Features: Map). What a photo's header
 says (camera, lens, exposure, dimensions, GPS) is a `PhotoInfo`
 (`Info.swift`), read once per photo off the main thread and kept by
 `Library.photoInfo` (Features: Adjustments panel, Info). The three
@@ -444,8 +447,8 @@ PhotoKit, so the test fake is complete and no `PHAsset` leaves
 `requestAuthorization()` (the Allow button and nothing else calls it),
 `albums()` (Recents, then the regular albums by title), `assets(in:)`
 (images only, oldest capture first: `PhotoKitLive.assetFetchOptions()`;
-one pass over the fetch result for each asset's identifier and
-`creationDate`, no `PHAssetResource` read), `originalFilename(of:)` (the
+one pass over the fetch result for each asset's identifier,
+`creationDate` and `location`, no `PHAssetResource` read), `originalFilename(of:)` (the
 original resource's file name, `PhotoKitLive.originalResource(of:)`, one
 asset at a time), `thumbnail(for:maxPixelSize:)`, `writeOriginal(of:to:)`, and the three
 calls of the adjustment data (below): `hasAdjustments(_:)`,
@@ -459,7 +462,8 @@ Welcome view checks before offering the album sheet.
 reads (`PhotosAuthorization.canRead`: authorized or limited), so `Library`
 refuses the open and nothing is fetched; it lists the album through the
 client, dating each photo by the asset's capture time
-(`PhotosAsset.creationDate` -> `Photo.captureDate`) and leaving it unnamed
+(`PhotosAsset.creationDate` -> `Photo.captureDate`), placing it by the
+asset's position (`PhotosAsset.location` -> `Photo.location`) and leaving it unnamed
 (`PhotosAsset.originalFilename` nil -> `Photo.isNamed` false) unless the
 client's listing carried the name. A name is read per asset when asked,
 `PhotosSource.name(for:)` (the `PhotoSource` requirement, defaulting to nil
