@@ -477,7 +477,8 @@ in the library (the rendered JPEG and PhotoLab's adjustment data).
 ## Adjustments panel
 
 `AdjustmentsPanel(photo:preview:)` (`ContentView.swift`): the histogram, the
-Info section (closed by default), the Presets strip, one `DisclosureGroup` per `AdjustmentKind.Section` in
+Info section (closed by default), the History section (closed by default),
+the Presets strip, one `DisclosureGroup` per `AdjustmentKind.Section` in
 declaration order (Basic open by default), each with a dot when any of its
 kinds is not a no-op (`Adjustment.isNoop`), then a footer with Before, undo,
 redo, Reset, the render time and any sidecar error.
@@ -512,6 +513,29 @@ redo, Reset, the render time and any sidecar error.
   follows `Photo.name` when the name lands) and `creationDate` at once, then the
   header fields of the original the loupe fetched, with no Folder row (that
   copy is the originals cache). Writes nothing.
+- **History** (`History.swift`). `HistoryList` is a `DisclosureGroup` under
+  Info, open while `Library.showHistory` is on (`AppSettings.showHistory`,
+  remembered under `showHistory`, closed by default). It lists
+  `Library.historyEntries(for:)` newest on top: one `HistoryEntry` per
+  undo and redo step of the photo, the current row tinted, the undone rows
+  (`isUndone`) greyed above it, and the Original (position 0) at the
+  bottom; with no step it says so. Labels are derived, never stored:
+  `HistoryLabel.describe(from:to:batch:)` diffs the recipes on either side
+  of the step by `AdjustmentKind` — to the default recipe is "Reset"; one
+  kind is its name (`AccessibleName.adjustment`) and new value
+  (`AdjustmentKind.format`), or "on" / "off" when only its switch moved; any
+  geometry kind is "Crop"; two names are both, more are the first two in
+  chain order and "+N more"; a change outside the adjustments is "Edit";
+  a batch-tagged step (`Library.sync`: Sync Settings, a preset on many
+  photos, Auto) is prefixed "Sync: ". A slider drag shows live as the
+  newest row. A click is `Library.jumpToHistory(_:for:)`, which closes an
+  open drag and then runs undo or redo on that photo until the row is
+  current, so it moves exactly what `⌘Z` / `⇧⌘Z` would (a batch step its
+  whole batch) and writes each step's sidecar as they do; the next edit
+  drops the greyed rows (`EditHistory.push` clears redo). The history is in
+  memory only, reset by `Library.open`, at most `Library.maxUndoDepth`
+  steps (past that the bottom row is the oldest step kept, not the opened
+  recipe).
 - **Histogram and clipping.** `HistogramView` (`HistogramView.swift`) at the
   top of the panel draws `PreviewModel.histogram`, a `Histogram`
   (`Histogram.swift`) of the latest rendered frame: 256 bins of red, green,

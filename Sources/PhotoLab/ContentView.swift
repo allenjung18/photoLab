@@ -1173,6 +1173,13 @@ struct AdjustmentsPanel: View {
                     } label: {
                         Text("Info").font(.callout.weight(.semibold))
                     }
+                    DisclosureGroup(isExpanded: $library.showHistory) {
+                        HistoryList(photo: photo)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                    } label: {
+                        Text("History").font(.callout.weight(.semibold))
+                    }
                     DisclosureGroup(isExpanded: $presetsExpanded) {
                         PresetStrip(photo: photo, file: file, unavailable: fetch.unavailableNote != nil)
                             .padding(.top, 8)

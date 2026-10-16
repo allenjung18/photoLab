@@ -45,7 +45,7 @@ enum LastSource: Equatable, Sendable {
 /// Every value PhotoLab keeps between launches, over one injected
 /// `UserDefaults`: the Settings window's choices (grid thumbnail size,
 /// preview quality, reopen the last source, the sort per source kind), the
-/// view toggles (filmstrip, Info), the last source and Open Recent, and the
+/// view toggles (filmstrip, Info, History), the last source and Open Recent, and the
 /// export sheet's last choices. The key strings are the ones earlier builds
 /// wrote (`Key`), so a saved value is read back as it was.
 ///
@@ -63,6 +63,7 @@ final class AppSettings {
         static let reopenLastSource = "reopenLastSource"
         static let showFilmstrip = "showFilmstrip"
         static let showInfo = "showInfo"
+        static let showHistory = "showHistory"
         static func sort(_ kind: RecentSource.Kind) -> String { "sort." + kind.rawValue }
         static let lastFolder = "lastFolder"
         static let lastSourceKind = "lastSourceKind"
@@ -109,6 +110,10 @@ final class AppSettings {
     var showInfo: Bool {
         didSet { write(showInfo, Key.showInfo) }
     }
+    /// The loupe panel's History section open (`HistoryList`).
+    var showHistory: Bool {
+        didSet { write(showHistory, Key.showHistory) }
+    }
     /// The remembered sort per source kind (`sort(for:)`, `setSort(_:for:)`).
     private(set) var sorts: [RecentSource.Kind: PhotoSort] = [:]
 
@@ -122,6 +127,7 @@ final class AppSettings {
         reopenLastSource = read?.object(forKey: Key.reopenLastSource) == nil ? true : read!.bool(forKey: Key.reopenLastSource)
         showFilmstrip = read?.object(forKey: Key.showFilmstrip) == nil ? true : read!.bool(forKey: Key.showFilmstrip)
         showInfo = read?.bool(forKey: Key.showInfo) ?? false
+        showHistory = read?.bool(forKey: Key.showHistory) ?? false
         for kind in [RecentSource.Kind.folder, .photos] {
             if let raw = read?.string(forKey: Key.sort(kind)), let sort = PhotoSort(storageKey: raw) {
                 sorts[kind] = sort

@@ -154,6 +154,15 @@ the lot. `⌘Z` / `⇧⌘Z` undo and redo (a slider drag is one step), Reset or
 `⇧⌘R` puts the photo back to the original. The footer prints the time of
 the last frame.
 
+**History**, under Info, lists the photo's steps newest on top with the
+Original at the bottom, each named for what it changed ("Exposure +0.50",
+"Crop", "Exposure, Contrast +2 more", "Reset", and "Sync: …" for a step
+taken on many photos at once). Click a row to go back (or forward) to it:
+the same as pressing `⌘Z` / `⇧⌘Z` that many times, so a sync step takes
+every photo of the sync with it. Undone steps stay greyed above the current
+row until the next edit drops them. The history is kept while the folder or
+album is open (the last 100 steps per photo) and is not saved.
+
 - **Basic** — exposure (EV), contrast, highlights, shadows, whites, blacks.
   **Auto** (or `⌘U`, Photo › Auto Tone) sets all six from the photo's
   histogram, measured with those six at zero, so pressing it again changes
@@ -297,7 +306,7 @@ Everything the app writes, and nothing else:
   thumbnail size, preview quality and reopen-at-launch choice, the last
   opened source (a folder's path, or a Photos album's identifier) and Open
   Recent's list, the sort (once for folders, once for Photos albums),
-  whether the filmstrip and the Info section are shown, the
+  whether the filmstrip and the Info and History sections are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,
   metadata), so the next export sheet opens with them.

@@ -191,6 +191,12 @@ final class Library {
         get { settings.showInfo }
         set { if newValue != settings.showInfo { settings.showInfo = newValue } }
     }
+    /// The loupe panel's History section open: `AppSettings.showHistory`,
+    /// remembered like Info.
+    var showHistory: Bool {
+        get { settings.showHistory }
+        set { if newValue != settings.showHistory { settings.showHistory = newValue } }
+    }
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
     /// Why the last `open` was refused (a missing path, an album before
@@ -915,7 +921,12 @@ final class Library {
     /// a batch, every photo whose latest edit is the same batch goes back
     /// with it (a photo edited again since keeps its later edit).
     func undo() {
-        guard let id = selection, let top = history[id]?.undo.last else { return }
+        if let id = selection { undo(anchor: id) }
+    }
+
+    /// `undo` with `id` as the anchor (the History section's photo).
+    private func undo(anchor id: Photo.ID) {
+        guard let top = history[id]?.undo.last else { return }
         openEdit = nil
         cropDragStart = nil
         for pid in members(of: top.batch, anchor: id, top: { $0.undo.last }) {
@@ -930,7 +941,12 @@ final class Library {
     /// Redoes the last undone edit of the selected photo, and of every other
     /// photo whose latest undone edit is the same batch.
     func redo() {
-        guard let id = selection, let top = history[id]?.redo.last else { return }
+        if let id = selection { redo(anchor: id) }
+    }
+
+    /// `redo` with `id` as the anchor.
+    private func redo(anchor id: Photo.ID) {
+        guard let top = history[id]?.redo.last else { return }
         openEdit = nil
         cropDragStart = nil
         for pid in members(of: top.batch, anchor: id, top: { $0.redo.last }) {
@@ -939,6 +955,57 @@ final class Library {
             history[pid] = h
             apply(step.recipe, to: pid)
             persist(pid)
+        }
+    }
+
+    // MARK: History
+
+    /// The History section's rows for `id`, oldest first: the Original
+    /// (position 0), then one row per undo step and per redo step, each
+    /// labelled by `HistoryLabel` from the recipes on either side of it. A
+    /// read-only view over the private `EditHistory`; empty while the photo
+    /// has no step (as after `open`, which resets the history). During a
+    /// slider drag the drag shows as the newest row, live, and the redo rows
+    /// it is about to drop are gone already.
+    func historyEntries(for id: Photo.ID) -> [HistoryEntry] {
+        let h = history[id] ?? EditHistory()
+        let current = recipe(for: id)
+        var states = h.undo.map(\.recipe)
+        var batches = h.undo.map(\.batch)
+        let dragging = openEdit.map { $0.id == id && $0.before != current } ?? false
+        if dragging, let openEdit {
+            states += [openEdit.before, current]
+            batches.append(nil)
+        } else {
+            states.append(current)
+            for step in h.redo.reversed() {
+                states.append(step.recipe)
+                batches.append(step.batch)
+            }
+        }
+        guard states.count > 1 else { return [] }
+        let now = h.undo.count + (dragging ? 1 : 0)
+        return states.indices.map { i in
+            HistoryEntry(position: i,
+                         label: i == 0 ? HistoryEntry.originalLabel
+                             : HistoryLabel.describe(from: states[i - 1], to: states[i], batch: batches[i - 1]),
+                         isCurrent: i == now,
+                         isUndone: i > now)
+        }
+    }
+
+    /// Makes row `position` of `historyEntries(for:)` current by running
+    /// undo or redo on `id` until it is, so a batch step takes its batch
+    /// with it exactly as ⌘Z does, and an edit after the jump drops the rows
+    /// above it (`EditHistory.push` clears redo). A drag still open is
+    /// closed first, as the step its live row showed.
+    func jumpToHistory(_ position: Int, for id: Photo.ID) {
+        closeOpenEdit()
+        guard let h = history[id] else { return }
+        let target = min(max(position, 0), h.undo.count + h.redo.count)
+        while let now = history[id]?.undo.count, now != target {
+            if now > target { undo(anchor: id) } else { redo(anchor: id) }
+            guard history[id]?.undo.count != now else { break }
         }
     }
 

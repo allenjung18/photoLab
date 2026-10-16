@@ -638,7 +638,7 @@ options between runs, and in UserDefaults across launches through its
 `AppSettings` (`Settings.swift`) is every value kept between launches, over
 one injected `UserDefaults`: the Settings window's `gridThumbnailSize`,
 `previewQuality` and `reopenLastSource`, the per-kind sort (`sort(for:)`,
-`setSort(_:for:)`), `showFilmstrip` and `showInfo`, `lastSource`,
+`setSort(_:for:)`), `showFilmstrip`, `showInfo` and `showHistory`, `lastSource`,
 `recents`, and the export sheet's `exportFolder`, `exportOptions`,
 `exportAlbum` and `exportTarget`. The keys (`AppSettings.Key`) are the
 strings earlier builds wrote, so nothing saved is lost. It is
@@ -717,6 +717,19 @@ go back to and an optional batch tag. `Library.undo()` and `Library.redo()`
 act on the selected photo; when its top step carries a batch tag, every photo
 whose top step carries the same tag goes with it, and a photo edited again
 since keeps its later edit until that is undone first.
+
+The panel's History section reads the stacks through
+`Library.historyEntries(for:)`, a read-only list of `HistoryEntry` rows (the
+oldest undo recipe as the Original, then the state after each undo step,
+the current recipe, and the redo stack in redo order); `EditHistory` itself
+stays private. Each row's label is computed from the two recipes on either
+side of it (`HistoryLabel.describe(from:to:batch:)`), so a new
+`AdjustmentKind` labels itself and nothing about a step is stored beyond
+what undo already keeps. `Library.jumpToHistory(_:for:)` is undo or redo
+in a loop (the private `undo(anchor:)` / `redo(anchor:)` that `undo()` and
+`redo()` call with the selection), never a separate write: the batch rule,
+the sidecar writes and the redo-clearing push are the ones above. Nothing
+here is persisted; `open` resets it.
 
 ### Batch
 

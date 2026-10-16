@@ -329,6 +329,21 @@ not only the pass.
   command is Photo › Auto Tone on `⌘U`, disabled with nothing to tone.
   Shown to bite by three mutants (the base keeping the six: 12 failures;
   the exposure sign flipped: 5; a batch tag per photo: 2).
+- `HistoryTests.swift` — the History section: `HistoryLabel` names one
+  kind with its new value (an HSL kind with its channel, a switched-off kind
+  "off"), any crop or rotate kind "Crop", two kinds both and more the first
+  two "+N more" in chain order, a step to the default "Reset", a batch step
+  "Sync: …", and recipes that differ outside the adjustments "Edit".
+  Through a `Library`: no rows before an edit; five edits and two undos list
+  the Original and five rows with the current one at 3 and 4–5 undone; a
+  jump back 3 then forward 2 leaves the same recipe, the same rows and the
+  same sidecar as `undo()` three times and `redo()` twice on an identical
+  library, and position 0 is the opened recipe; an edit after a jump drops
+  the redo rows; a jump back past a sync takes it off all three photos and
+  a jump forward puts it back; `open` empties the rows and keeps the edit;
+  a slider drag shows live as the newest row and stays that row at
+  mouse-up; `showHistory` is remembered under its key. Shown to bite by a
+  mutant (the jump stopping one step short: 14 failures in 3 tests).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows
