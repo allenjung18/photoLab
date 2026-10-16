@@ -364,7 +364,7 @@ All of it is in `Adjustments.swift`, `Masks.swift`, `Sidecar.swift`, `Presets.sw
 
 A photo's identity is a `PhotoID` (`PhotoSource.swift`): `PhotoID.file`,
 the file URL of a photo in a folder, or `PhotoID.asset`, a library asset's
-identifier (`UUID/L0/001`). Every `Library` map (`recipes`, `marks`, the
+identifier (`UUID/L0/001`). Every `Library` map (`recipes`, `marks`, `keywords`, the
 undo history, the selection) is keyed by it, and a `Photo` is the id, the
 display `name` the source gave it, `Photo.fileURL`, the file when the
 id is one (nil for an asset until its source produces a file), and
@@ -570,9 +570,12 @@ a brush mask is a no-op until brushes render.
 
 A `Sidecar` is the on-disk form of one photo's edit: `version`,
 `original` (the photo's file name, for a human
-reading the directory), `updated` and `recipe`, plus two optional keys,
-`flag` and `rating`, the culling marks (`Marks`, below), absent when unset
-so a file written before they existed decodes unchanged. The `version` is
+reading the directory), `updated` and `recipe`, plus three optional keys,
+`flag` and `rating`, the culling marks (`Marks`, below), and `keywords`
+(below Marks), each absent when unset
+so a file written before they existed decodes unchanged. Keywords do not
+enter the version: `Sidecar.version(for:)` reads the recipe alone, so a
+file with keywords and no masks is still format 1. The `version` is
 the format: 1 is a recipe of sliders, 2 adds `Recipe.masks`;
 `Sidecar.currentVersion` (2) is the newest this build reads, and every
 writer stamps `Sidecar.version(for:)`, the LOWEST version that holds the
@@ -659,6 +662,26 @@ enter a `Recipe`, a `Preset` or a `SyncMask` (the types do not meet).
 list of photos and write each sidecar at once through the same `persist`
 that writes a recipe, so a reset keeps the flag and a flag keeps a default
 recipe's file. `PhotoFilter` (`Library.swift`) reads them for the grid.
+
+### Keywords
+
+A photo's keywords (`Keywords.swift`) follow the marks' rules exactly: a
+list beside the recipe in the sidecar (`Sidecar.keywords`, written only when
+not empty), never an undo step, never in a `Recipe`, `Preset` or
+`SyncMask`. Every list is `Keywords.normalized` (trimmed, empty dropped,
+de-duplicated ignoring case with the first spelling kept, sorted ignoring
+case), so one set of keywords is one array and one JSON.
+`Library.keywords` holds the non-empty lists for the open source, filled by
+`SidecarStore.loadAll(for:)` on open; `Library.addKeywords(_:to:)` and
+`Library.removeKeyword(_:from:)` change them for a list of photos and write
+each changed photo's sidecar at once through `persist`, which passes the
+recipe, the marks and the keywords to
+`SidecarStore.save(_:marks:keywords:for:name:now:)`. Its nothing-to-keep
+rule is the default recipe AND no marks AND no keywords, so a keyword on an
+unedited photo keeps its file and a reset keeps the keywords; the
+recipe-only `SidecarStore.save(_:for:name:now:)` carries over the marks and
+keywords the file held. `Library.requestKeywords(for:)` sets
+`Library.keywordsRequest`, the `KeywordsSheet` the window presents.
 
 ### `Preset` and `PresetStore`
 
@@ -869,9 +892,9 @@ not change is skipped.
 ### `ExportQueue`
 
 `ExportQueue` (`Batch.swift`) is one per app. `requestExport(_:)` puts up the
-options sheet for a list of `ExportQueue.Item` (a source URL, its recipe and
-`protected`, the open library's originals, from `Library.exportItems(for:)`,
-which snapshots the recipes at that moment: an edit made while the sheet is
+options sheet for a list of `ExportQueue.Item` (a source URL, its recipe,
+`protected`, the open library's originals, and the photo's `keywords`, from `Library.exportItems(for:)`,
+which snapshots the recipes and keywords at that moment: an edit made while the sheet is
 up or the queue runs does not change what is written for a photo already in
 it; `protected` is every photo's own file plus the files resolved for the
 export, so a Photos original's cached copy is in it too); the sheet calls
@@ -886,7 +909,7 @@ under the Skip policy), `failures` (one `Failure` per item that threw, with
 its source and message), `current` (the photo in flight) and `state`
 (`running`, then `finished` or `cancelled`; `dismiss()` returns it to
 `idle`). The default `Worker` is `Exporter.export`, handed each item's
-source, recipe and `protected` set; it is injected so a test can count or
+source, recipe, `protected` set, name and keywords; it is injected so a test can count or
 slow jobs without rendering.
 
 A Photos target runs the same `Worker` (so format, quality, resize and
@@ -917,7 +940,7 @@ beside its original, which is never changed.
 
 ### `Exporter.export`
 
-`Exporter.export(_:recipe:into:options:protected:renderer:)` (`Batch.swift`) writes
+`Exporter.export(_:name:recipe:into:options:protected:keywords:renderer:)` (`Batch.swift`) writes
 one photo:
 
 1. `Exporter.destination(for:in:options:)` names the file:
@@ -943,7 +966,10 @@ one photo:
    orientation 1 at the top level and in the TIFF block (the render is
    already upright), the EXIF pixel dimensions set to the output's, the
    source format's own dictionaries and its compression and photometric tags
-   removed. Then the lossy quality for JPEG and HEIC, and LZW compression for
+   removed; then, when the item has keywords,
+   `ExportMetadata.setting(keywords:in:)` sets the IPTC Keywords to them
+   (replacing the source's, keeping the rest of its IPTC block). With
+   `keepMetadata` off nothing is carried, keywords included. Then the lossy quality for JPEG and HEIC, and LZW compression for
    TIFF.
 5. A `CGImageDestination` of the format's `utType` writes to a hidden
    `.partial` file beside the final name (`.<name>.<uuid>.partial`); only

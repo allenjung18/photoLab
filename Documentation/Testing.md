@@ -121,6 +121,19 @@ not only the pass.
   folder order and `batchTargets` never holds a hidden photo, and a sidecar
   written before the marks existed still decodes
   (`testChunkThreeSidecarStillDecodes`).
+- `KeywordsTests.swift` — keywords normalized (trimmed, de-duplicated
+  ignoring case, sorted) and counted for the sheet ("all", "n of N");
+  a round trip through the sidecar and a fresh `Library` with the format
+  still 1 and no undo step; a sidecar written before keywords decodes
+  unchanged and a photo without keywords writes no `keywords` key; a
+  keyword-only sidecar survives a reset, an undo leaves keywords alone, the
+  recipe-only save keeps them and removing the last one removes the file;
+  ⌘K over three targets writes three sidecars and a context menu pins its
+  own; an export into a temporary folder carries the keywords as IPTC
+  Keywords (the rest of the source's IPTC kept, a photo without keywords
+  keeps the source's, none with Keep camera info off). Shown to bite by
+  dropping keywords from `SidecarStore.save`'s nothing-to-keep rule (11
+  failures in 3 tests).
 - `PresetTests.swift` — the starter set is distinct looks without geometry,
   saving drops geometry and applying keeps the photo's own, a preset round
   trips through a fresh `PresetStore`, file names are sanitised and names
@@ -428,6 +441,7 @@ not only the pass.
   `CaptureDates` so the sort reads nothing, while a date the sort already
   has wins; a Photos asset shows the listing's name and date, no folder,
   and the rest from its original; the Edited row follows `Library.isEdited`;
+  the Keywords row lists the keywords given and is absent with none;
   View › Info (`⌘I`) opens the loupe from the grid, toggles in it and is
   remembered. Shown to bite by six mutants (a blank value shown, the W
   reference ignored, no `remember`, no in-flight dedupe, no orientation

@@ -194,6 +194,12 @@ final class Library {
     /// Flags and ratings per photo (only the non-empty ones), mirrored to the
     /// same sidecars beside the recipe; never an undo step.
     private(set) var marks: [Photo.ID: Marks] = [:]
+    /// Keywords per photo (only the non-empty lists, `Keywords.normalized`),
+    /// in the same sidecars as the marks and like them never an undo step,
+    /// never in a recipe, preset or sync mask; a reset leaves them.
+    private(set) var keywords: [Photo.ID: [String]] = [:]
+    /// The Keywords sheet the window should show.
+    var keywordsRequest: KeywordsRequest?
     /// Before/after: true shows the unadjusted photo in the loupe.
     var showBefore = false
     /// Before / After side by side in the loupe (Y, or the toolbar toggle):
@@ -351,6 +357,7 @@ final class Library {
         compare = false
         openEdit = nil
         syncRequest = nil
+        keywordsRequest = nil
         history = [:]
         sidecarError = nil
         whiteBalanceNote = nil
@@ -363,6 +370,7 @@ final class Library {
         let loaded = store.loadAll(for: photos.map(\.id))
         recipes = loaded.recipes
         marks = loaded.marks
+        keywords = loaded.keywords
         unreadableSidecars = Set(loaded.unreadable)
         if let first = loaded.unreadable.first {
             sidecarError = "Could not read the edit saved for \(name(for: first))"
@@ -615,6 +623,47 @@ final class Library {
         persist(id)
     }
 
+    // MARK: Keywords
+
+    /// The photo's keywords, normalized; empty when it has none.
+    func keywords(for id: Photo.ID) -> [String] { keywords[id] ?? [] }
+
+    /// Adds `words` to every photo in `ids` (a keyword a photo already has,
+    /// in any case, is kept as it was spelled). Written to each changed
+    /// photo's sidecar at once; not an undo step, the recipe untouched.
+    func addKeywords(_ words: [String], to ids: [Photo.ID]) {
+        let words = Keywords.normalized(words)
+        guard !words.isEmpty else { return }
+        for id in ids {
+            let current = keywords(for: id)
+            let merged = Keywords.normalized(current + words)
+            if merged != current { setKeywords(merged, for: id) }
+        }
+    }
+
+    /// Removes `word` (case-insensitively) from every photo in `ids` that has
+    /// it. Same rules as `addKeywords`.
+    func removeKeyword(_ word: String, from ids: [Photo.ID]) {
+        for id in ids {
+            let current = keywords(for: id)
+            let kept = current.filter { !Keywords.same($0, word) }
+            if kept.count != current.count { setKeywords(kept, for: id) }
+        }
+    }
+
+    /// Asks the window for the Keywords sheet over `ids` (the batch targets
+    /// when nil).
+    func requestKeywords(for ids: [Photo.ID]? = nil) {
+        let targets = ids ?? batchTargets
+        guard !targets.isEmpty else { return }
+        keywordsRequest = KeywordsRequest(targets: targets)
+    }
+
+    private func setKeywords(_ words: [String], for id: Photo.ID) {
+        if words.isEmpty { keywords.removeValue(forKey: id) } else { keywords[id] = words }
+        persist(id)
+    }
+
     // MARK: Recipes, undo and sidecars
 
     func recipe(for id: Photo.ID) -> Recipe { recipes[id] ?? .neutral }
@@ -825,7 +874,8 @@ final class Library {
     }
 
     /// The (file, recipe) pairs an export of `ids` writes, each file the
-    /// source's original (`originalFile(for:)`). The recipes are snapshotted
+    /// source's original (`originalFile(for:)`), with the photo's keywords
+    /// (written as IPTC Keywords when Keep camera info is on). The recipes and keywords are snapshotted
     /// here, when the export sheet opens (`ExportQueue.requestExport` is
     /// called with the result): an edit made while the sheet is up or while
     /// the queue runs does not change what is written for a photo already in it.
@@ -833,7 +883,7 @@ final class Library {
     /// photo's own file plus the files resolved for this export (a Photos
     /// original's cached copy), so an Overwrite never lands on one.
     func exportItems(for ids: [Photo.ID]) async throws -> [ExportQueue.Item] {
-        var resolved: [(URL, Recipe, String?)] = []
+        var resolved: [(URL, Recipe, String?, [String])] = []
         for id in ids {
             // A Photos original's cached copy is named by its id: the output
             // takes the photo's own name instead. Folder photos keep theirs.
@@ -842,10 +892,12 @@ final class Library {
                 await resolveName(id)
                 own = name(for: id)
             }
-            resolved.append((try await originalFile(for: id), recipe(for: id), own))
+            resolved.append((try await originalFile(for: id), recipe(for: id), own, keywords(for: id)))
         }
         let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))
-        return resolved.map { ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected) }
+        return resolved.map {
+            ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected, keywords: $0.3)
+        }
     }
 
     /// Marks the start of a continuous edit (a slider drag) on `id`. At most
@@ -1108,12 +1160,14 @@ final class Library {
         if sort.key == .edited, wasEdited != (recipes[id] != nil) { resort() }
     }
 
-    /// Writes the photo's sidecar: recipe and marks together, so a reset
-    /// keeps the flag and a flag keeps a default recipe's file.
+    /// Writes the photo's sidecar: recipe, marks and keywords together, so a
+    /// reset keeps the flag and the keywords, and a flag or a keyword keeps a
+    /// default recipe's file.
     private func persist(_ id: Photo.ID) {
         guard let store else { return }
         do {
-            try store.save(recipe(for: id), marks: marks(for: id), for: id, name: name(for: id))
+            try store.save(recipe(for: id), marks: marks(for: id), keywords: keywords(for: id),
+                           for: id, name: name(for: id))
             unreadableSidecars.remove(id)
             sidecarError = nil
         } catch {

@@ -81,6 +81,7 @@ struct PhotoContextMenu: View {
         Menu("Rating") {
             ForEach(0...Marks.maxRating, id: \.self) { n in item(ctx, AppCommand.rateNames[n]) }
         }
+        item(ctx, .keywords)
         Menu("Apply Preset") {
             ForEach(presets.presets) { preset in
                 Button(preset.name) { library.apply(preset, to: targets) }

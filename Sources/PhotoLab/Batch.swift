@@ -136,10 +136,11 @@ enum Exporter {
     /// cancelled or failed export leaves no half file. Returns what happened.
     /// `protected` is every original of the open library (`Library.exportItems`):
     /// an Overwrite whose target is one of them, by file identity, is refused
-    /// with `Failure.isALibraryOriginal` and nothing is written.
+    /// with `Failure.isALibraryOriginal` and nothing is written. `keywords`
+    /// are the photo's (`Library.keywords(for:)`), written per `write`.
     @discardableResult
     static func export(_ source: URL, name: String? = nil, recipe: Recipe, into folder: URL, options: ExportOptions = .default,
-                       protected: Set<URL> = [], renderer: Renderer = .shared) throws -> Outcome {
+                       protected: Set<URL> = [], keywords: [String] = [], renderer: Renderer = .shared) throws -> Outcome {
         let fm = FileManager.default
         let out = destination(for: source, name: name, in: folder, options: options)
         let exists = fm.fileExists(atPath: out.path)
@@ -156,19 +157,21 @@ enum Exporter {
             case .number: break
             }
         }
-        try write(source, recipe: recipe, to: out, options: options, renderer: renderer)
+        try write(source, recipe: recipe, to: out, options: options, keywords: keywords, renderer: renderer)
         return .written(out)
     }
 
     /// Renders `recipe` over the full-resolution decode of `source` and
     /// writes it to `out` in `options`' format, quality and size, with the
-    /// source's metadata when `options.keepMetadata`; a file at `out` is
+    /// source's metadata when `options.keepMetadata` (and then, when
+    /// `keywords` is not empty, IPTC Keywords set to them:
+    /// `ExportMetadata.setting(keywords:in:)`); a file at `out` is
     /// replaced. The bytes go to a partial file beside `out`, moved into
     /// place when complete. `export` calls this after its collision rules;
     /// a Save to Photos calls it for the rendered JPEG PhotoKit asks for
     /// (`PhotosSource.saveEdit`), so both are the one render and write path.
     static func write(_ source: URL, recipe: Recipe, to out: URL, options: ExportOptions,
-                      renderer: Renderer = .shared) throws {
+                      keywords: [String] = [], renderer: Renderer = .shared) throws {
         let fm = FileManager.default
         let folder = out.deletingLastPathComponent()
         guard let image = Renderer.fullResolution(source) else { throw Failure.cannotDecode(source) }
@@ -176,7 +179,8 @@ enum Exporter {
             throw Failure.cannotRender(source)
         }
         var properties = options.keepMetadata
-            ? ExportMetadata.properties(of: source, outputWidth: result.image.width, outputHeight: result.image.height)
+            ? ExportMetadata.setting(keywords: keywords, in: ExportMetadata.properties(
+                of: source, outputWidth: result.image.width, outputHeight: result.image.height))
             : [:]
         if options.format.isLossy {
             properties[kCGImageDestinationLossyCompressionQuality] = options.clampedQuality
@@ -249,6 +253,9 @@ final class ExportQueue {
         /// The open library's originals when the export was asked for: an
         /// Overwrite onto one of them is refused (`Exporter.export`).
         var protected: Set<URL> = []
+        /// The photo's keywords when the export was asked for: the output's
+        /// IPTC Keywords when Keep camera info is on.
+        var keywords: [String] = []
     }
 
     struct Failure: Identifiable {
@@ -265,10 +272,11 @@ final class ExportQueue {
 
     enum State: Equatable { case idle, running, finished, cancelled }
 
-    /// Exports one item (source, recipe, protected originals) into the
-    /// folder per the options; the default is `Exporter.export`. Injected so
-    /// a test can time or count jobs without rendering.
-    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>, String?) throws -> Exporter.Outcome
+    /// Exports one item (source, recipe, folder, options, protected
+    /// originals, name, keywords) into the folder per the options; the
+    /// default is `Exporter.export`. Injected so a test can time or count
+    /// jobs without rendering.
+    typealias Worker = @Sendable (URL, Recipe, URL, ExportOptions, Set<URL>, String?, [String]) throws -> Exporter.Outcome
 
     private(set) var state: State = .idle
     private(set) var total = 0
@@ -319,7 +327,9 @@ final class ExportQueue {
          settings: AppSettings? = nil,
          photos: any PhotosWriter = PhotoKitLive(),
          stagingDirectory: URL = ExportQueue.defaultStagingDirectory,
-         worker: @escaping Worker = { try Exporter.export($0, name: $5, recipe: $1, into: $2, options: $3, protected: $4) }) {
+         worker: @escaping Worker = {
+             try Exporter.export($0, name: $5, recipe: $1, into: $2, options: $3, protected: $4, keywords: $6)
+         }) {
         self.worker = worker
         self.settings = settings ?? AppSettings(defaults: .standard, persistent: remember)
         self.photos = photos
@@ -435,14 +445,16 @@ final class ExportQueue {
                     switch target {
                     case .folder(let folder):
                         return Result {
-                            switch try worker(item.source, item.recipe, folder, runOptions, item.protected, item.name) {
+                            switch try worker(item.source, item.recipe, folder, runOptions, item.protected, item.name,
+                                              item.keywords) {
                             case .written(let url): return .written(url)
                             case .skipped(let url): return .skipped(url)
                             }
                         }
                     case .photosLibrary(let album):
                         return await Self.importIntoPhotos(item.source, name: item.name, recipe: item.recipe, staging: staging,
-                                                           protected: item.protected, album: album, options: runOptions,
+                                                           protected: item.protected, keywords: item.keywords,
+                                                           album: album, options: runOptions,
                                                            worker: worker, photos: photos)
                     }
                 }.value
@@ -471,11 +483,11 @@ final class ExportQueue {
     /// imported, and the staged file removed whether or not the import
     /// worked.
     nonisolated private static func importIntoPhotos(_ source: URL, name: String?, recipe: Recipe, staging: URL,
-                                                     protected: Set<URL>, album: String?,
+                                                     protected: Set<URL>, keywords: [String], album: String?,
                                                      options: ExportOptions, worker: Worker,
                                                      photos: any PhotosWriter) async -> Result<Done, Error> {
         do {
-            let outcome = try worker(source, recipe, staging, options, protected, name)
+            let outcome = try worker(source, recipe, staging, options, protected, name, keywords)
             guard case .written(let file) = outcome else { return .success(.skipped(outcome.url)) }
             defer { try? FileManager.default.removeItem(at: file) }
             return .success(.imported(try await photos.importImage(at: file, intoAlbum: album)))

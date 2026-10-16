@@ -260,7 +260,7 @@ photo in the grid, the one photo in the loupe) and read by the filter bar.
 - **Clickable.** `FlagStarControl` (`ActionControls.swift`: the loupe panel
   footer for the one photo, the batch bar for `Library.batchTargets`) and
   `PhotoContextMenu` (the grid cell's right-click menu: Pick, Reject, Unflag,
-  Rating, Apply Preset, Copy Settings, Paste Settings, Export, Reset Photo,
+  Rating, Keywords…, Apply Preset, Copy Settings, Paste Settings, Export, Reset Photo,
   and Show in Finder for a folder photo) run the `AppCommand` of the same
   name over a `CommandContext` that pins `targetIDs` and `subjectID`, so a
   key, a menu item and a button share one definition and the same `Library`
@@ -282,15 +282,52 @@ photo in the grid, the one photo in the loupe) and read by the filter bar.
 Writes: the photo's sidecar. Marks ride beside the recipe as two optional
 keys, `flag` and `rating`, written only when set, so a file written before
 them decodes unchanged; the file is removed only when the recipe is the
-default and the photo is unmarked, so a flag on an unedited photo keeps its
-sidecar (`SidecarStore.save(_:marks:for:now:)`), and a recipe-only write
+default and the photo is unmarked (and has no keywords, see Keywords), so a flag on an unedited photo keeps its
+sidecar (`SidecarStore.save(_:marks:keywords:for:name:now:)`), and a recipe-only write
 keeps whatever marks the file already held.
+
+## Keywords
+
+Words on a photo, kept with the marks and like them not an edit.
+
+- **Editing.** **Keywords…** (`AppCommand` `.keywords`, **⌘K**, Photo
+  menu; the item reads **Keywords for n Photos…** over more than one) is
+  `Library.requestKeywords(for:)` over the command's targets
+  (`Library.batchTargets`, or a right-click's `contextTargets`): it sets
+  `Library.keywordsRequest`, a `KeywordsRequest`, which `ContentView`
+  presents as `KeywordsSheet` (`Keywords.swift`). The batch bar's
+  **Keywords…** and `PhotoContextMenu`'s item reach the same call. The sheet's field
+  takes comma-separated keywords (`Keywords.parse`); **Add** or Return
+  calls `Library.addKeywords(_:to:)` on every target. Below it, each
+  keyword on any target (`Keywords.tally`) with "all" or "n of N"
+  (`KeywordsSheet.share(_:of:)`) and a remove button,
+  `Library.removeKeyword(_:from:)`. The field lives in a sheet, so typing
+  never reaches `HiddenShortcuts`; **Done** (or Esc) closes it.
+- **The model.** `Library.keywords` holds each photo's non-empty list,
+  read by `Library.keywords(for:)`. Every list is
+  `Keywords.normalized`: trimmed, empty ones dropped, de-duplicated ignoring
+  case (the first spelling kept, so adding "SUNSET" to a photo with "Sunset"
+  changes nothing), sorted ignoring case. A keyword is not an undo step,
+  never enters a `Recipe`, a `Preset`, Copy Settings or a sync mask, and
+  Reset leaves it.
+- **Where it shows.** A Keywords row in the loupe's Info section (see
+  Loupe, Info), and the IPTC Keywords of an export with Keep camera info on
+  (see Export).
+
+Writes: the photo's sidecar, through the same `Library.persist` as the
+marks. Keywords are one optional key, `keywords`, written only when the list
+is not empty, so a file written before them decodes unchanged and a photo
+without keywords writes the file it always did; they do not raise the format
+version (`Sidecar.version(for:)` reads the recipe alone). The file is kept
+while the photo has a keyword, whatever its recipe and marks, and
+`SidecarStore.save(_:for:name:now:)` (recipe only) keeps the keywords the
+file held. `SidecarStore.loadAll(for:)` returns them on open.
 
 ## Batch bar
 
 `BatchBar` (`ContentView.swift`) sits under the grid while
 `Library.selectedIDs` holds more than one photo: "n selected · anchor
-<name>", then four controls.
+<name>", then five controls.
 
 - **Sync Settings…** is `Library.requestSync`: the anchor's recipe onto the
   other selected photos. It builds a `SyncRequest` (`Library.swift`: the
@@ -300,6 +337,8 @@ keeps whatever marks the file already held.
 - **Apply Preset** is a menu of `PresetLibrary.presets`; a choice calls
   `Library.apply(_:mask:to:)` with `batchTargets` (the preset's look over
   each photo's own crop and rotation, one batch).
+- **Keywords…** is `Library.requestKeywords(for:)` over `batchTargets`
+  (see Keywords).
 - **Export…** is `ExportQueue.requestExport(_:)` with
   `Library.exportItems(for:)` over `batchTargets` (see Export).
 - **Deselect** is `Library.collapseSelection`.
@@ -529,10 +568,10 @@ redo, Reset, the render time and any sidecar error.
   `AppCommand` that from the grid also opens the loupe; `Library.showInfo`
   is `AppSettings.showInfo`, remembered under `showInfo`, closed by
   default). It shows
-  `PhotoInfo.rows(edited:)`, one row per present field in `PhotoInfo.labels`
+  `PhotoInfo.rows(edited:keywords:)`, one row per present field in `PhotoInfo.labels`
   order (Camera, Lens, Focal Length, Aperture, Shutter, ISO, Dimensions,
-  File, Size, Folder, Captured, GPS, Edited): a missing or empty field has no
-  row, and Edited (`Library.isEdited`) is always there. `PhotoInfo.read`
+  File, Size, Folder, Captured, GPS, Keywords, Edited): a missing or empty field has no
+  row, Keywords is `Library.keywords(for:)` joined with commas, and Edited (`Library.isEdited`) is always there. `PhotoInfo.read`
   reads a file's header once (`CaptureDates.properties(of:)`, never the
   pixels) plus its size, through `PhotoInfoStore` (`Library.photoInfo`) off
   the main thread, once per photo for the library's lifetime. The capture
@@ -709,7 +748,7 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
 
 - **The request.** `ExportQueue.requestExport(_:)` (`Batch.swift`) takes
   the `ExportQueue.Item` list from `Library.exportItems(for:)` (each a
-  source URL, its recipe and, for a Photos photo, its own file name: the
+  source URL, its recipe, its keywords (`Library.keywords(for:)`) and, for a Photos photo, its own file name: the
   output is `<original name><suffix>.<ext>`, never the cached copy's id;
   a folder photo keeps its file's name) and sets `ExportQueue.request`; `ContentView`
   presents `ExportSheet(request:options:folder:album:toPhotos:)` for it with
@@ -746,7 +785,9 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   (`Batch.swift`) one at a time off the main thread: the full-resolution
   decode, the one render chain with the resize and then the watermark
   last (`Renderer.render(_:recipe:maxPixelSize:resize:region:watermark:)`), the format's writer
-  with the source's metadata when asked, a hidden `.partial` file moved into
+  with the source's metadata when asked (and then, for a photo with
+  keywords, IPTC Keywords set to them, replacing the source's and keeping
+  the rest of its IPTC block: `ExportMetadata.setting(keywords:in:)`), a hidden `.partial` file moved into
   place when complete. The collision policy and the refused writes (the
   photo's own file, `Exporter.Failure.isTheOriginal`; any other original of
   the open library, `Exporter.Failure.isALibraryOriginal`, matched by
@@ -864,7 +905,9 @@ key is typed anywhere else; the README's Keys table is the user's list.
     (`Library.whiteBalancePicking`, loupe only), **Auto Tone** **⌘U**
     (`Library.autoTone(_:)` over the batch targets, see Adjustments panel,
     Auto) and **Reset Photo** **⇧⌘R**
-    (`Library.resetRecipe(for:)`, enabled when the photo is edited).
+    (`Library.resetRecipe(for:)`, enabled when the photo is edited); then
+    **Keywords…** **⌘K** (`Library.requestKeywords(for:)` over the batch
+    targets, see Keywords).
 - **The bare keys** are `HiddenShortcuts` (`Commands.swift`), a `ForEach`
   over the table's bare keys: invisible zero-size buttons in the window's
   background, so they work whatever has focus in the window. **G** leaves the loupe; **E** and **Return** enter it

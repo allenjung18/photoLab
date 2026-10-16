@@ -72,6 +72,7 @@ in Xcode works too.
 | `⌘I` | Show or hide the Info section of the loupe panel (from the grid it opens the loupe with it shown; the choice is remembered) |
 | `P` / `X` / `U` | Flag the selection as a pick / a reject / unflagged |
 | `0` … `5` | Rate the selection that many stars (`0` clears) |
+| `⌘K` | Keywords… on the selection: a sheet with a field that adds comma-separated keywords to every selected photo and each keyword already on any of them, with "all" or "n of N" and a remove button; not an undo step, and Reset leaves keywords |
 | `⌘A` | Select All Photos (grid only) |
 | `⌘Z` / `⇧⌘Z` | Undo / Redo |
 | `⌘U` | Auto Tone: exposure, contrast, highlights, shadows, whites and blacks from the photo's histogram (or **Auto** in Basic); on the grid's selection, each photo its own values, one undo step for the lot |
@@ -87,7 +88,7 @@ Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
 menu macOS supplies) and **Photo** (Pick, Reject, Unflag, the
-ratings, Crop, White Balance Picker, Auto Tone, Reset Photo). A single-letter key is written after its menu item's
+ratings, Crop, White Balance Picker, Auto Tone, Reset Photo, Keywords…). A single-letter key is written after its menu item's
 name, as in "Pick (P)", rather than bound to the menu, so typing that letter
 into a text field (a preset's name, the export suffix) types the letter.
 
@@ -118,8 +119,8 @@ source that is open, the grid re-sorts at once). Thumbnails are decoded at
 
 The same actions are clickable: Pick, Reject, Unflag and five stars in the
 loupe panel footer (the one photo) and in the batch bar (the selected
-photos), and a right-click menu on a grid photo (Pick, Reject, Unflag,
-Rating, Apply Preset, Copy and Paste Settings, Export, Reset Photo, and Show
+photos, which also has **Keywords…**), and a right-click menu on a grid photo (Pick, Reject, Unflag,
+Rating, Keywords…, Apply Preset, Copy and Paste Settings, Export, Reset Photo, and Show
 in Finder for a folder photo). A right-click on a photo outside the selection
 acts on that photo alone, inside it on the whole selection. Open Photos
 Library sits in the toolbar beside Open Folder (disabled outside the app
@@ -143,7 +144,7 @@ applied, and sharpens in place once the full decode lands.
 lists what the photo says about itself: camera, lens, focal length,
 aperture, shutter, ISO, pixel dimensions (as displayed), file name, size and
 folder, capture date (the one the sort uses), GPS position as coordinates,
-and whether it is edited. A field the photo does not have has no line. A
+the photo's keywords, and whether it is edited. A field the photo does not have has no line. A
 Photos album photo shows its name and date from Photos at once and the rest
 once its original has been fetched, and has no folder line.
 
@@ -292,9 +293,10 @@ slider move: one sidecar per photo, written at once, and the whole batch is
 
 Everything the app writes, and nothing else:
 
-- **Sidecars** — `<folder>/.photolab/<file>.json`, one per edited, flagged
-  or rated photo, next to the photos. Removed when the photo is reset to the
-  original and carries no flag or rating. A sidecar this version cannot
+- **Sidecars** — `<folder>/.photolab/<file>.json`, one per edited, flagged,
+  rated or keyworded photo, next to the photos. Removed when the photo is reset to the
+  original and carries no flag, rating or keyword. A photo without keywords
+  has no `keywords` key, so its file is exactly as before. A sidecar this version cannot
   read is kept beside the new one as `<file>.json.unreadable-<stamp>`,
   never deleted. An edit with local adjustments is saved as format 2,
   which an older PhotoLab (another Mac not yet updated) treats as
@@ -304,7 +306,7 @@ Everything the app writes, and nothing else:
   one per preset; the six starter looks are written there when that folder
   does not exist yet.
 - **Photos sidecars** — `~/Library/Application Support/PhotoLab/photos-sidecars/<asset-id>.json`,
-  one per edited, flagged or rated photo of a Photos album (the asset's
+  one per edited, flagged, rated or keyworded photo of a Photos album (the asset's
   identifier with its slashes as underscores), with the same rules as a
   folder's sidecars. The Photos library is written to only by an export
   you send there (new photos) and by Save to Photos (the edit of that one

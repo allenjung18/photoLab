@@ -40,7 +40,7 @@ struct AppCommand: Identifiable {
         case grid, loupe, zoom, compare, showOriginal, clipping, filmstrip, info, previous, next
         case pick, reject, unflag
         case rate0, rate1, rate2, rate3, rate4, rate5
-        case crop, whiteBalance, autoTone, resetPhoto
+        case crop, whiteBalance, autoTone, resetPhoto, keywords
         case sortCaptureDate, sortName, sortRating, sortEdited, sortAscending, sortDescending
         case back, open
     }
@@ -257,6 +257,16 @@ struct AppCommand: Identifiable {
                    placement: .photo, section: 2,
                    isEnabled: { c in c.subject.map { c.library.isEdited($0) } ?? false },
                    perform: { c in if let id = c.subject { c.library.resetRecipe(for: id) } }),
+        // Keywords on the batch targets: a sheet, so typing a keyword never
+        // fires a bare key (`KeywordsSheet`). Metadata like the marks, not an
+        // edit: no undo step.
+        AppCommand(name: .keywords, title: "Keywords…", key: "k", placement: .photo, section: 3,
+                   dynamicTitle: { c in
+                       let n = c.targets.count
+                       return n > 1 ? "Keywords for \(n) Photos…" : "Keywords…"
+                   },
+                   isEnabled: { !$0.targets.isEmpty },
+                   perform: { $0.library.requestKeywords(for: $0.targets) }),
 
         // Sort By: the key (one checked), then the direction. No keys.
         sort(.captureDate, name: .sortCaptureDate),

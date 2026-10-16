@@ -140,6 +140,19 @@ enum ExportMetadata {
         }
         return p
     }
+
+    /// `properties` with the IPTC Keywords set to the photo's `keywords`
+    /// (`Library.keywords(for:)`), replacing any the source carried and
+    /// keeping the rest of its IPTC block. No keywords leaves `properties`
+    /// as it was (the source's own IPTC Keywords, if any, travel).
+    static func setting(keywords: [String], in properties: [CFString: Any]) -> [CFString: Any] {
+        guard !keywords.isEmpty else { return properties }
+        var p = properties
+        var iptc = p[kCGImagePropertyIPTCDictionary] as? [CFString: Any] ?? [:]
+        iptc[kCGImagePropertyIPTCKeywords] = keywords
+        p[kCGImagePropertyIPTCDictionary] = iptc
+        return p
+    }
 }
 
 /// Where an export run goes: files in a folder, or new photos in the Photos

@@ -40,6 +40,13 @@ struct Sidecar: Codable, Equatable {
     /// existed decodes unchanged and an unmarked photo's file looks as it did.
     var flag: Marks.Flag?
     var rating: Int?
+    /// The photo's keywords (`Keywords.normalized`), beside the marks and
+    /// like them never part of the recipe. Optional and absent when there are
+    /// none, so a sidecar written before keywords existed decodes unchanged,
+    /// a photo without keywords writes the file it always did, and the
+    /// format version is not raised by them (`version(for:)` looks at the
+    /// recipe alone).
+    var keywords: [String]?
 
     var marks: Marks { Marks(flag: flag, rating: rating ?? 0) }
 }
@@ -136,26 +143,32 @@ struct SidecarStore: Sendable {
         return try Self.decode(data)
     }
 
-    /// Writes the recipe for the photo, keeping whatever marks the sidecar
-    /// already holds (a recipe-only caller never loses a flag or rating).
+    /// Writes the recipe for the photo, keeping whatever marks and keywords
+    /// the sidecar already holds (a recipe-only caller never loses a flag, a
+    /// rating or a keyword).
     func save(_ recipe: Recipe, for id: PhotoID, name: String? = nil, now: Date = Date()) throws {
-        let kept = (try? read(for: id))?.marks ?? .none
-        try save(recipe, marks: kept, for: id, name: name, now: now)
+        let doc = try? read(for: id)
+        try save(recipe, marks: doc?.marks ?? .none, keywords: doc?.keywords ?? [],
+                 for: id, name: name, now: now)
     }
 
-    /// Writes the sidecar for the photo: the recipe and the marks. The file is
-    /// removed instead when there is nothing to keep — the default recipe
-    /// AND no marks — so a reset of an unmarked photo leaves no trace while
-    /// a flag or rating on a default recipe keeps its file. A recipe that
+    /// Writes the sidecar for the photo: the recipe, the marks and the
+    /// keywords. The file is removed instead when there is nothing to keep —
+    /// the default recipe AND no marks AND no keywords — so a reset of an
+    /// unmarked photo without keywords leaves no trace while a flag, a rating
+    /// or a keyword on a default recipe keeps its file. A recipe that
     /// only differs by a disabled entry is still written (`Recipe.isDefault`,
-    /// not `isNeutral`). Unset marks are omitted from the JSON, not written
-    /// as null. The file's `version` is `Sidecar.version(for:)` (1 unless the
+    /// not `isNeutral`). Unset marks and an empty keyword list are omitted
+    /// from the JSON, not written as null; keywords are written normalized
+    /// (`Keywords.normalized`). The file's `version` is `Sidecar.version(for:)` (1 unless the
     /// recipe has masks). The write is atomic (temp file + rename). `name` is the
     /// `original` the file records; the id's own name when not given.
-    func save(_ recipe: Recipe, marks: Marks, for id: PhotoID, name: String? = nil, now: Date = Date()) throws {
+    func save(_ recipe: Recipe, marks: Marks, keywords: [String] = [], for id: PhotoID,
+              name: String? = nil, now: Date = Date()) throws {
         let file = url(for: id)
         try Self.backUpIfUnreadable(file, now: now)
-        if recipe.isDefault && marks.isEmpty {
+        let keywords = Keywords.normalized(keywords)
+        if recipe.isDefault && marks.isEmpty && keywords.isEmpty {
             try remove(for: id)
             return
         }
@@ -163,7 +176,8 @@ struct SidecarStore: Sendable {
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let doc = Sidecar(version: Sidecar.version(for: recipe),
                           original: name ?? id.defaultName, updated: now, recipe: recipe,
-                          flag: marks.flag, rating: marks.rating == 0 ? nil : marks.rating)
+                          flag: marks.flag, rating: marks.rating == 0 ? nil : marks.rating,
+                          keywords: keywords.isEmpty ? nil : keywords)
         let data = try Self.encode(doc)
         try data.write(to: file, options: .atomic)
     }
@@ -182,16 +196,19 @@ struct SidecarStore: Sendable {
         }
     }
 
-    /// Every readable sidecar among `ids`: the non-default recipes and
-    /// the non-empty marks, each keyed by photo id, plus the photos whose
-    /// sidecar exists but could not be read.
+    /// Every readable sidecar among `ids`: the non-default recipes, the
+    /// non-empty marks and the non-empty keyword lists (normalized), each
+    /// keyed by photo id, plus the photos whose sidecar exists but could not
+    /// be read.
     /// Under the flat naming the directory is listed once and only the ids
     /// with a file there are read, so a Photos Recents of thousands costs
     /// one listing, not a file check per photo.
-    func loadAll(for ids: [PhotoID]) -> (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks], unreadable: [PhotoID]) {
-        guard FileManager.default.fileExists(atPath: directory.path) else { return ([:], [:], []) }
+    func loadAll(for ids: [PhotoID]) -> (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks],
+                                         keywords: [PhotoID: [String]], unreadable: [PhotoID]) {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return ([:], [:], [:], []) }
         var recipes: [PhotoID: Recipe] = [:]
         var marks: [PhotoID: Marks] = [:]
+        var keywords: [PhotoID: [String]] = [:]
         var unreadable: [PhotoID] = []
         var candidates = ids
         if naming == .flat, let present = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
@@ -203,11 +220,13 @@ struct SidecarStore: Sendable {
                 guard let doc = try read(for: id) else { continue }
                 if !doc.recipe.isDefault { recipes[id] = doc.recipe }
                 if !doc.marks.isEmpty { marks[id] = doc.marks }
+                let words = Keywords.normalized(doc.keywords ?? [])
+                if !words.isEmpty { keywords[id] = words }
             } catch {
                 unreadable.append(id)
             }
         }
-        return (recipes, marks, unreadable)
+        return (recipes, marks, keywords, unreadable)
     }
 
     /// The file name (without the extension) for an id under `naming`.
@@ -283,18 +302,21 @@ extension SidecarStore {
     func save(_ recipe: Recipe, for photo: URL, now: Date = Date()) throws {
         try save(recipe, for: .file(photo), now: now)
     }
-    func save(_ recipe: Recipe, marks: Marks, for photo: URL, now: Date = Date()) throws {
-        try save(recipe, marks: marks, for: .file(photo), now: now)
+    func save(_ recipe: Recipe, marks: Marks, keywords: [String] = [], for photo: URL, now: Date = Date()) throws {
+        try save(recipe, marks: marks, keywords: keywords, for: .file(photo), now: now)
     }
     func remove(for photo: URL) throws { try remove(for: .file(photo)) }
 
-    func loadAll(for photos: [URL]) -> (recipes: [URL: Recipe], marks: [URL: Marks], unreadable: [URL]) {
+    func loadAll(for photos: [URL]) -> (recipes: [URL: Recipe], marks: [URL: Marks],
+                                        keywords: [URL: [String]], unreadable: [URL]) {
         let all = loadAll(for: photos.map { PhotoID.file($0) })
         var recipes: [URL: Recipe] = [:]
         var marks: [URL: Marks] = [:]
+        var keywords: [URL: [String]] = [:]
         for (id, r) in all.recipes { if let u = id.fileURL { recipes[u] = r } }
         for (id, m) in all.marks { if let u = id.fileURL { marks[u] = m } }
-        return (recipes, marks, all.unreadable.compactMap(\.fileURL))
+        for (id, k) in all.keywords { if let u = id.fileURL { keywords[u] = k } }
+        return (recipes, marks, keywords, all.unreadable.compactMap(\.fileURL))
     }
 }
 

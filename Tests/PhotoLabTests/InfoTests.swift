@@ -76,8 +76,10 @@ final class InfoTests: XCTestCase {
     func testEveryFieldOfATaggedPhotoIsReadAndFormatted() throws {
         let url = try write("tagged.jpg", in: base.appendingPathComponent("shoot"), properties: Self.tagged)
         let info = PhotoInfo.read(url)
-        let rows = info.rows(edited: false)
+        let rows = info.rows(edited: false, keywords: ["beach", "Sunset"])
         XCTAssertEqual(rows.map(\.label), PhotoInfo.labels, "every field present, in order")
+        XCTAssertEqual(value(rows, "Keywords"), "beach, Sunset")
+        XCTAssertNil(value(info.rows(edited: false), "Keywords"), "no keywords, no row")
         XCTAssertEqual(value(rows, "Camera"), "TestCam T-1")
         XCTAssertEqual(value(rows, "Lens"), "50mm F1.8")
         XCTAssertEqual(value(rows, "Focal Length"), "50 mm")

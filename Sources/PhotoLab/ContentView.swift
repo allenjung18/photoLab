@@ -64,6 +64,9 @@ struct ContentView: View {
         .sheet(item: $library.syncRequest) { request in
             SyncSheet(request: request)
         }
+        .sheet(item: $library.keywordsRequest) { request in
+            KeywordsSheet(request: request)
+        }
         .sheet(item: $exports.request) { request in
             ExportSheet(request: request, options: exports.options, folder: exports.folder,
                         album: exports.album, toPhotos: exports.prefersPhotos)
@@ -319,6 +322,8 @@ private struct BatchBar: View {
             .fixedSize()
             .disabled(presets.presets.isEmpty)
             .help("Apply a preset to every selected photo (one undo step)")
+            Button("Keywords…") { library.requestKeywords() }
+                .help("Add or remove keywords on every selected photo (⌘K)")
             Button("Export…") { exports.requestExport(from: library) }
                 .disabled(exports.isRunning)
                 .help("Render every selected photo into a folder: format, quality, size and name in the sheet (⇧⌘E)")

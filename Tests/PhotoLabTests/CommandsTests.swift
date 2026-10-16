@@ -90,7 +90,7 @@ final class CommandsTests: XCTestCase {
         let view = AppCommand.items(in: .view).map(\.name)
         XCTAssertEqual(view, [.grid, .loupe, .zoom, .compare, .showOriginal, .clipping, .filmstrip, .info, .previous, .next])
         let photo = AppCommand.items(in: .photo).map(\.name)
-        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto])
+        XCTAssertEqual(photo, [.pick, .reject, .unflag, .rate0, .rate1, .rate2, .rate3, .rate4, .rate5, .crop, .whiteBalance, .autoTone, .resetPhoto, .keywords])
         XCTAssertEqual(AppCommand.items(in: .keysOnly).map(\.name), [.back, .open])
         // The File, Edit and Presets items stay where they were.
         XCTAssertEqual(AppCommand.items(in: .newItem).map(\.name), [.openFolder, .openPhotos])

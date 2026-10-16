@@ -6,9 +6,10 @@ import SwiftUI
 /// and exposure from the header's TIFF and EXIF blocks, the pixel
 /// dimensions as displayed (orientation applied), the file's name, size and
 /// folder, the capture date and the GPS position. Every field is optional;
-/// `rows(edited:)` leaves a missing one out rather than showing it blank.
-/// The edited state is not stored here: it changes with every edit, so the
-/// view asks the library (`Library.isEdited`) each time it draws.
+/// `rows(edited:keywords:)` leaves a missing one out rather than showing it blank.
+/// The edited state and the keywords are not stored here: they change with
+/// every edit, so the view asks the library (`Library.isEdited`,
+/// `Library.keywords(for:)`) each time it draws.
 struct PhotoInfo: Equatable, Sendable {
     var make: String?
     var model: String?
@@ -37,13 +38,14 @@ struct PhotoInfo: Equatable, Sendable {
         var id: String { label }
     }
 
-    /// The labels in display order (`rows(edited:)` shows a subset of them).
+    /// The labels in display order (`rows(edited:keywords:)` shows a subset of them).
     static let labels = ["Camera", "Lens", "Focal Length", "Aperture", "Shutter", "ISO",
-                         "Dimensions", "File", "Size", "Folder", "Captured", "GPS", "Edited"]
+                         "Dimensions", "File", "Size", "Folder", "Captured", "GPS", "Keywords", "Edited"]
 
-    /// The present fields, formatted, in `labels` order; Edited is always
+    /// The present fields, formatted, in `labels` order; Keywords (the
+    /// photo's, comma-separated) only when it has any; Edited is always
     /// there.
-    func rows(edited: Bool) -> [Row] {
+    func rows(edited: Bool, keywords: [String] = []) -> [Row] {
         var out: [Row] = []
         func add(_ label: String, _ value: String?) {
             guard let value, !value.isEmpty else { return }
@@ -61,6 +63,7 @@ struct PhotoInfo: Equatable, Sendable {
         add("Folder", folder.map { ($0.path as NSString).abbreviatingWithTildeInPath })
         add("Captured", captureDate.map(Self.date))
         if let latitude, let longitude { add("GPS", Self.coordinates(latitude: latitude, longitude: longitude)) }
+        add("Keywords", keywords.joined(separator: ", "))
         add("Edited", edited ? "Yes" : "No")
         return out
     }
@@ -283,7 +286,7 @@ struct InfoSection: View {
     var body: some View {
         let info = shown
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
-            ForEach(info.rows(edited: library.isEdited(photo.id))) { row in
+            ForEach(info.rows(edited: library.isEdited(photo.id), keywords: library.keywords(for: photo.id))) { row in
                 GridRow {
                     Text(row.label)
                         .foregroundStyle(.secondary)
