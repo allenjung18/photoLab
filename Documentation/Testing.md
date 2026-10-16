@@ -108,8 +108,8 @@ not only the pass.
   version this build reads. Reopen: no sidecar plus PhotoLab's data restores
   the recipe, writes the sidecar and leaves `canUndo` false, and the next
   open reads the sidecar; a sidecar wins and an unedited asset is never
-  asked; another app's data gives neutral and writes nothing; version 2 (or
-  version-2 JSON under a version-1 label) is refused and the photo listed in
+  asked; another app's data gives neutral and writes nothing; a version
+  above `Sidecar.currentVersion` (or such JSON under a version-1 label) is refused and the photo listed in
   `unreadableSidecars`; an edit made while the data is read wins.
   `testRealSaveOntoATestAssetReadsBack` imports a 16 px JPEG into "PhotoLab
   Tests", saves an edit onto that asset and reads the data back; it skips
@@ -344,6 +344,23 @@ not only the pass.
   a slider drag shows live as the newest row and stays that row at
   mouse-up; `showHistory` is remembered under its key. Shown to bite by a
   mutant (the jump stopping one step short: 14 failures in 3 tests).
+- `MaskModelTests.swift` — local adjustments as data (`LocalMask`,
+  `Recipe.masks`): a sidecar of a masks-only recipe with one linear, one
+  radial and one brush mask reads back equal, masks in order, each shape a
+  `type` in the JSON; a version-1 sidecar decodes with no masks; an
+  unmasked save writes version 1 byte-identical to the pre-mask sidecar
+  type and a masked one version 2 (back to 1 when the last mask goes); a
+  version-3 file is unreadable; `PhotosAdjustment` stamps the same 1 or 2
+  and `canHandle` takes 2 and refuses 3; a disabled or all-neutral mask is
+  `isNeutral` but not `isDefault`, and a mask's adjustments normalize to
+  `LocalMask.kinds` order; a mask cannot carry a kind outside those seven
+  (init, subscript, decode); a preset drops masks and applying one keeps
+  the target's, `.look` and `.grade` keep the target's and `.everything`
+  copies the source's, and the same through a `Library`; adding a mask is
+  one undo step and one sidecar write, a mask slider drag writes once at
+  mouse-up, and undo goes back to a version-1 file. Shown to bite by a
+  mutant (`normalized` dropping masks: 8 failures in 4 tests, the round
+  trip and `isDefault` cases among them).
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows
