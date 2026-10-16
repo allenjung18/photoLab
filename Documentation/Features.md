@@ -594,7 +594,16 @@ to its own folder's `.photolab/` as any folder edit does.
   other selected photos. It builds a `SyncRequest` (`Library.swift`: the
   source recipe, its photo's name, the target ids and the mask to open with,
   `Library.lastSyncMask`) and sets `Library.syncRequest`, which
-  `ContentView` presents as a `SyncSheet`.
+  `ContentView` presents as a `SyncSheet`. `SyncRequest.sourceID` is the
+  anchor (a paste: `Library.copiedFrom`), so a sync carrying masks can tell
+  a target that shares the anchor's master (a virtual copy, same pixels).
+  With **Masks** on, the sheet's Sync button calls
+  `Library.syncRedetecting`: each `.auto` mask of the source is detected
+  again on each target (`Library.detectAutoMasks`, the `AutoMaskDetector`),
+  keeping the mask's kind and adjustments and dropping its `strokes`; a
+  target where the kind finds nothing gets no such mask and
+  `Library.autoNote` counts the skips; a virtual copy of the anchor keeps the
+  bitmap; the other shapes copy as before; one `sync` batch applies it all.
 - **Apply Preset** is a menu of `PresetLibrary.presets`; a choice calls
   `Library.apply(_:mask:to:)` with `batchTargets` (the preset's look over
   each photo's own crop and rotation, one batch).

@@ -358,7 +358,13 @@ selection back to the anchor:
   **Grade** (the look without exposure, so each photo keeps its own
   brightness and framing). An unchecked adjustment keeps each photo's own
   value; a checked one takes the anchor's, zero included. **Masks** (checked
-  by All only) replaces each photo's masks with the anchor's.
+  by All only) replaces each photo's masks with the anchor's. An automatic
+  mask (Select Subject / Person) is found again on each photo, with its
+  adjustments kept and its brush refinement dropped (it was painted on the
+  anchor's pixels); a photo where nothing is found gets no such mask and the
+  bar at the bottom counts the skips. The whole sync is one undo step once
+  detection finishes (Esc or Cancel in the bar stops it, applying nothing);
+  a virtual copy of the anchor keeps the anchor's bitmap.
 - **Apply Preset** applies a preset to every selected photo (its look over
   each photo's own crop and rotation). The Presets menu does the same for
   the selection.

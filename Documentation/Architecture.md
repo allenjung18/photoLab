@@ -1300,6 +1300,22 @@ Photo › Auto White Balance, `Library.autoTone(_:mask:)`) under one batch tag, 
 undo step and one sidecar write per photo changed, and a photo Auto would
 not change is skipped.
 
+`Library.syncRedetecting(_:mask:from:to:)` is `sync` for a source that holds
+`.auto` masks while `SyncMask.masks` is on (the sheet's Sync button always
+calls it; without such a mask it is `sync`). It asks
+`Library.detectAutoMasks(_:for:)` for each target's bitmap per `AutoMaskKind`
+(each photo decoded once at `VisionDetector.inputPixelSize`, at most
+`autoConcurrency` at a time off the main actor, `autoProgress` and
+`cancelAuto()` shared with Auto; `.sky` has no detector and is left out;
+nothing is written to a recipe, so a later detect-on-import flow can call it
+too), then builds one source recipe per target: each `.auto` mask becomes
+`AutoMask(kind:bitmap:)` with the target's bitmap (strokes dropped, the
+`LocalMask`'s adjustments, `enabled` and `inverted` kept), or is left out
+and counted in `autoNote` when the kind found nothing; a target whose
+`Photo.ID.master` is the anchor's keeps the source's masks as they are.
+The per-target sources go through `sync(_:mask:)` once detection ends: one
+batch tag, one undo step.
+
 ### Detecting an automatic mask
 
 `Library.selectAuto(_:for:)` (Select Subject, Select Person) is the one path

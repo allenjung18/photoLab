@@ -649,7 +649,8 @@ struct SyncSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Sync \(request.targets.count) Photo\(request.targets.count == 1 ? "" : "s")") {
                     library.lastSyncMask = mask
-                    library.sync(request.source, mask: mask, to: request.targets)
+                    let request = request, mask = mask
+                    Task { await library.syncRedetecting(request.source, mask: mask, from: request.sourceID, to: request.targets) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

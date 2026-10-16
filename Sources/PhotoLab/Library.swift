@@ -12,6 +12,10 @@ struct SyncRequest: Identifiable {
     let targets: [Photo.ID]
     /// The mask the sheet opens with (the last one used).
     let mask: SyncMask
+    /// The photo the source recipe belongs to, when it is one (nil for a
+    /// preset): targets that are its master's virtual copies keep an
+    /// automatic mask's bitmap instead of detecting again.
+    var sourceID: Photo.ID? = nil
 }
 
 /// Which photos the grid shows: one of Lightroom's default filter-bar
@@ -328,6 +332,9 @@ final class Library {
     private var maskDragStart: (mask: UUID, shape: MaskShape)?
     /// Copy Settings: the recipe and the name of the photo it came from.
     private(set) var copiedSettings: (recipe: Recipe, name: String)?
+    /// The photo `copiedSettings` came from (a paste onto one of its virtual
+    /// copies keeps an automatic mask's bitmap: same pixels).
+    private(set) var copiedFrom: Photo.ID?
     /// A Sync / Paste Settings sheet the window should show.
     var syncRequest: SyncRequest?
     /// The mask of the last sync, so the next sheet opens the same way.
@@ -1661,6 +1668,112 @@ final class Library {
         return sync(sources, mask: mask)
     }
 
+    /// Detects the automatic masks `kinds` (`AutoMaskKind`, `.sky` has no
+    /// detector yet and is left out) on each photo of `ids` through
+    /// `autoMaskDetector`: the batch entry point `syncRedetecting` uses and
+    /// the one a later detect-on-import flow can call. Nothing is written to
+    /// a recipe. Each photo is read once (the oriented decode at
+    /// `VisionDetector.inputPixelSize`), at most `autoConcurrency` at a time
+    /// off the main actor, with `autoProgress` counting them and
+    /// `cancelAuto()` stopping the run. The result maps a photo to the kinds
+    /// that found something (a blank bitmap, a failure and an unreadable
+    /// original all leave the kind out); a photo with nothing has no entry.
+    /// Nil when it did not run (an Auto or another detection is running) or
+    /// was cancelled (`autoNote` says so).
+    func detectAutoMasks(_ kinds: [AutoMaskKind], for ids: [Photo.ID]) async -> [Photo.ID: [AutoMaskKind: MaskBitmap]]? {
+        guard !autoToning else { return nil }
+        var distinct: [AutoMaskKind] = []
+        for k in kinds where k != .sky && !distinct.contains(k) { distinct.append(k) }
+        let wanted = distinct
+        var seen = Set<Photo.ID>()
+        let targets = ids.filter { seen.insert($0).inserted }
+        guard !wanted.isEmpty, !targets.isEmpty else { return [:] }
+        autoToning = true
+        autoCancelled = false
+        autoNote = nil
+        autoProgress = (0, targets.count)
+        defer { autoToning = false; autoLastRun = autoProgress; autoProgress = (0, 0) }
+        let detector = autoMaskDetector
+        let cap = Self.autoConcurrency
+        var found: [Photo.ID: [AutoMaskKind: MaskBitmap]] = [:]
+        await withTaskGroup(of: (Photo.ID, [AutoMaskKind: MaskBitmap]).self) { group in
+            var next = 0
+            func start(_ id: Photo.ID) {
+                group.addTask { [weak self] in
+                    guard let self, let url = try? await self.originalFile(for: id) else { return (id, [:]) }
+                    let result = await Task.detached(priority: .userInitiated) { () -> [AutoMaskKind: MaskBitmap] in
+                        guard let image = ImageLoading.downsampledCGImage(url, maxPixelSize: VisionDetector.inputPixelSize)
+                        else { return [:] }
+                        var out: [AutoMaskKind: MaskBitmap] = [:]
+                        for kind in wanted {
+                            let bitmap = kind == .person ? try? await detector.person(in: image)
+                                                         : try? await detector.subject(in: image)
+                            if let bitmap, !bitmap.isBlank { out[kind] = bitmap }
+                        }
+                        return out
+                    }.value
+                    return (id, result)
+                }
+            }
+            while next < min(cap, targets.count) { start(targets[next]); next += 1 }
+            for await (id, result) in group {
+                autoProgress = (autoProgress.done + 1, targets.count)
+                if !result.isEmpty { found[id] = result }
+                if autoCancelled { group.cancelAll(); continue }
+                if next < targets.count { start(targets[next]); next += 1 }
+            }
+        }
+        if autoCancelled {
+            autoNote = "Detection cancelled: nothing changed (one batch, all or nothing)"
+            return nil
+        }
+        return found
+    }
+
+    /// `sync` for a source that may carry automatic masks. Without
+    /// `mask.masks`, or with no `.auto` mask in `source`, it IS `sync`.
+    /// Otherwise each `.auto` mask is detected again on each target
+    /// (`detectAutoMasks`): the target's own bitmap of that kind, `kind`
+    /// and the mask's other fields kept, `strokes` dropped (they were painted
+    /// on the source's pixels). A target where the kind finds nothing gets no
+    /// such mask and is counted in `autoNote`; the other shapes copy as
+    /// `sync` copies them. A target that shares the source's master (a
+    /// virtual copy of it, same pixels) keeps the mask as it is. The whole
+    /// sync is applied once detection finishes, as ONE undo step (`sync`'s
+    /// batch); a cancelled detection applies nothing. Returns how many
+    /// photos changed.
+    @discardableResult
+    func syncRedetecting(_ source: Recipe, mask: SyncMask, from sourceID: Photo.ID? = nil,
+                         to ids: [Photo.ID]) async -> Int {
+        let masks = source.normalized.masks
+        let kinds: [AutoMaskKind] = mask.masks ? masks.compactMap {
+            if case .auto(let a) = $0.shape { return a.kind }
+            return nil
+        } : []
+        guard !kinds.isEmpty else { return sync(source, mask: mask, to: ids) }
+        let same: (Photo.ID) -> Bool = { id in sourceID.map { id.master == $0.master } ?? false }
+        guard let found = await detectAutoMasks(kinds, for: ids.filter { !same($0) }) else { return 0 }
+        // A drag left open would fold the sync into its step.
+        closeOpenEdit()
+        var skipped = 0
+        let sources: [(id: Photo.ID, source: Recipe)] = ids.map { id in
+            guard !same(id) else { return (id, source) }
+            var r = source
+            r.masks = masks.compactMap { local in
+                guard case .auto(let a) = local.shape else { return local }
+                guard let bitmap = found[id]?[a.kind] else { skipped += 1; return nil }
+                var out = local
+                out.shape = .auto(AutoMask(kind: a.kind, bitmap: bitmap))
+                return out
+            }
+            return (id, r)
+        }
+        if skipped > 0 {
+            autoNote = "Sync: \(skipped) automatic mask\(skipped == 1 ? "" : "s") not found on the target, skipped"
+        }
+        return sync(sources, mask: mask)
+    }
+
     /// Stops a running Auto: nothing is applied (`autoTone` returns 0).
     func cancelAuto() {
         guard autoToning else { return }
@@ -1682,6 +1795,7 @@ final class Library {
     /// Copy Settings: remembers the photo's recipe for Paste Settings.
     func copySettings(from id: Photo.ID) {
         copiedSettings = (recipe(for: id), name(for: id))
+        copiedFrom = id
     }
 
     /// Asks the window for the Sync Settings sheet: the anchor's recipe onto
@@ -1691,7 +1805,7 @@ final class Library {
         let targets = batchTargets.filter { $0 != anchor }
         guard !targets.isEmpty else { return }
         syncRequest = SyncRequest(source: recipe(for: anchor), sourceName: name(for: anchor),
-                                  targets: targets, mask: lastSyncMask)
+                                  targets: targets, mask: lastSyncMask, sourceID: anchor)
     }
 
     /// Asks the window for the Paste Settings sheet: the copied recipe onto
@@ -1700,7 +1814,7 @@ final class Library {
         let targets = ids ?? batchTargets
         guard let copied = copiedSettings, !targets.isEmpty else { return }
         syncRequest = SyncRequest(source: copied.recipe, sourceName: copied.name,
-                                  targets: targets, mask: lastSyncMask)
+                                  targets: targets, mask: lastSyncMask, sourceID: copiedFrom)
     }
 
     /// The (file, recipe) pairs an export of `ids` writes, each file the
