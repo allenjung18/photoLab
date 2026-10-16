@@ -237,7 +237,7 @@ final class UISnapshotTests: XCTestCase {
         }
         await h.shoot(shot("08z", "loupe-zoomed", "the loupe at 1:1 on a 3200x2000 photo, the 1:1 badge, centred",
                            model: "IMG_0000-big.jpg selected, loupe on, exposure +0.6, loupeZoom = .actual(centre of the frame); the filmstrip shows along the bottom as in 08",
-                           caveat: materialNote + "; the zoom window renders asynchronously and the harness cannot see its readiness, so the PNG may show the fit image with the badge spinner (see the file)")) {
+                           caveat: materialNote + "; the window is zoomed (the bars are magnified, render line reads the 3200x2000 master) but the 1:1 badge at the top right is cut off at the canvas edge (\"1:\") - review whether that is real or an offscreen artifact; the folder has 14 files here (the big photo is added)")) {
             var s = try await self.scene(big: true) { lib, _, _ in
                 try self.loupe(lib, name: SnapshotFixture.big)
                 lib.loupeZoom = .actual(center: CGPoint(x: 0.5, y: 0.5))
