@@ -78,9 +78,9 @@ bundle, never to a bare binary.
   Architecture 1).
 - **Open Recent and reopening where you left off** (`Recents.swift`). The
   last 10 sources, folders and Photos albums alike, are kept most recent
-  first and deduped under `recentSources` in the library's `UserDefaults`
-  (`RecentSource`, JSON, beside `lastSourceKind`; never a test's real
-  defaults). **File › Open Recent** (`OpenRecentMenu`) and a Recent list on
+  first and deduped under `recentSources` in the library's `AppSettings`
+  (`AppSettings.recents`: `RecentSource`, JSON, beside `lastSourceKind`;
+  never a test's real defaults). **File › Open Recent** (`OpenRecentMenu`) and a Recent list on
   the Welcome view (`RecentList`) show them, with **Clear Menu**;
   `Library.recentSources` drops (and forgets) a folder that no longer
   exists and hides an album Photos no longer lists, or every album while
@@ -93,19 +93,21 @@ bundle, never to a bare binary.
   source and the restored filter admits it, otherwise the grid with nothing
   selected. `restoreLastSource` still never prompts. Window size is
   SwiftUI's own restoration, untouched here.
-- **The remembered last source.** `Library.open` stores the kind under
-  `lastSourceKind` (`Library.lastSourceKindKey`, `folder` or `photos`) with
-  the folder's path under `lastFolder` (`Library.lastFolderKey`) or the
-  album's identifier under `lastPhotosAlbum` (`Library.lastAlbumKey`) in
-  the library's `UserDefaults`, when it was made with `rememberFolder` on,
-  which the app's is and a test's (`Library(rememberFolder: false)`, or one
-  given its own `defaults`) is not. At launch `PhotoLabApp` opens the first
-  non-flag command-line argument, else calls `Library.restoreLastSource`,
-  which opens the stored folder if it still exists, or the stored album if
-  Photos access is already allowed (never a prompt at launch) and the album
-  is still there; this runs once per process (`launched`), so a window
-  re-created from the Dock does not reopen the argument and wipe the
-  selection.
+- **The remembered last source.** `Library.open` stores it as
+  `AppSettings.lastSource` (`LastSource`): the kind under `lastSourceKind`
+  (`folder` or `photos`) with the folder's path under `lastFolder` or the
+  album's identifier under `lastPhotosAlbum` (`AppSettings.Key`), when the
+  library was made with `rememberFolder` on (its `AppSettings` is
+  `persistent`), which the app's is and a test's
+  (`Library(rememberFolder: false)`, or one given its own `defaults`) is
+  not. At launch `PhotoLabApp` opens the first non-flag command-line
+  argument, else calls `Library.restoreLastSource`, which does nothing while
+  Settings › Reopen the last folder or album is off
+  (`AppSettings.reopenLastSource`, on by default) and otherwise opens the
+  stored folder if it still exists, or the stored album if Photos access is
+  already allowed (never a prompt at launch) and the album is still there;
+  this runs once per process (`launched`), so a window re-created from the
+  Dock does not reopen the argument and wipe the selection.
 
 Writes: the last source in UserDefaults. Opening an album writes nothing
 until a photo is viewed in the loupe (its original is then copied into
@@ -117,8 +119,18 @@ the originals cache, below) or edited (a sidecar under
 `GridView` (`ContentView.swift`): the filter bar above, a `LazyVGrid` of
 `ThumbnailCell` over `Library.visiblePhotos`, "No photos in this folder"
 when the scan found none and "No photos match the filter" when the filter
-hides them all, and the batch bar under it while more than one photo is
-selected. Selecting a photo scrolls it into view.
+hides them all, the batch bar under it while more than one photo is
+selected, and under that the thumbnail size strip. Selecting a photo
+scrolls it into view.
+
+- **Thumbnail size.** `GridView.columns(for:)` makes one adaptive column
+  rule: cells at least `AppSettings.gridThumbnailSize` points wide and at
+  most 1.45 times that (rounded), as many as fit. `ThumbnailSizeBar`
+  (`ContentView.swift`), the strip under the grid while it has photos,
+  shows the count of visible photos and a slider over
+  `AppSettings.thumbnailSizes` (120 to 300, `defaultThumbnailSize` 180)
+  bound to the same value as the Settings window's slider. The cells'
+  image is still the `Thumbnails.pixelSize` (480 px) decode.
 
 - **What is listed.** `Library.scan` (`Library.swift`) enumerates the folder
   and its subfolders with `.skipsHiddenFiles` and `.skipsPackageDescendants`
@@ -168,8 +180,10 @@ selected. Selecting a photo scrolls it into view.
   (a date the Info section read first is kept, `CaptureDates.remember`).
   The choice is remembered per source kind (`Library.sortKind`: a
   `FolderSource` is `folder`, any other source `photos`) in the library's
-  injected defaults (`sort.folder`, `sort.photos`, the
-  `PhotoSort.storageKey`), never written by `open` itself; with nothing
+  `AppSettings` (`AppSettings.setSort(_:for:)`, under `sort.folder` and
+  `sort.photos` as the `PhotoSort.storageKey`), never written by `open`
+  itself; the Settings window's two sort rows are the same choice
+  (`Library.defaultSort(for:)`, `Library.setDefaultSort(_:for:)`); with nothing
   stored a folder opens `PhotoSort.folderDefault` (Name ascending) and an
   album `PhotoSort.photosDefault` (Capture Date ascending). The choice is
   made in **View › Sort By** or the **Sort** menu at the right of
@@ -475,14 +489,15 @@ redo, Reset, the render time and any sidecar error.
   never a second cache. The anchor is ringed and scrolled into view; a click
   goes through `Library.click` with the grid's `⇧` and `⌘` rules, so a batch
   can be built from the loupe. **View › Filmstrip** (`F`, an `AppCommand`)
-  shows or hides it; `Library.showFilmstrip` is remembered under
-  `showFilmstrip` in the library's `UserDefaults`, shown by default. The item
+  shows or hides it; `Library.showFilmstrip` is `AppSettings.showFilmstrip`,
+  remembered under `showFilmstrip`, shown by default. The item
   list and the click live in `Filmstrip` (`FilmstripItem`), tested apart
   from the view (`FilmstripTests`).
 - **Info** (`Info.swift`). `InfoSection` is a `DisclosureGroup` under the
   histogram, open while `Library.showInfo` is on (**View › Info**, `⌘I`, an
-  `AppCommand` that from the grid also opens the loupe; remembered under
-  `showInfo` in the library's `UserDefaults`, closed by default). It shows
+  `AppCommand` that from the grid also opens the loupe; `Library.showInfo`
+  is `AppSettings.showInfo`, remembered under `showInfo`, closed by
+  default). It shows
   `PhotoInfo.rows(edited:)`, one row per present field in `PhotoInfo.labels`
   order (Camera, Lens, Focal Length, Aperture, Shutter, ISO, Dimensions,
   File, Size, Folder, Captured, GPS, Edited): a missing or empty field has no
@@ -663,12 +678,49 @@ over `Library.batchTargets`: the grid's selection, or the loupe's photo.
   for a Photos run (`ExportQueue.target`), and **Done** (`ExportQueue.dismiss()`).
 
 Writes: the output files in the chosen folder, through `Exporter.export`;
-and, because `PhotoLabApp` makes its queue with `ExportQueue(remember: true)`,
-the last folder, options, target kind and album in `UserDefaults` under
-`exportFolder`, `exportOptions`, `exportTarget` and `exportPhotosAlbum`,
+and, because `PhotoLabApp` makes its queue over the app's `AppSettings`
+(`ExportQueue(settings:)`), the last folder, options, target kind and album
+in `UserDefaults` under `exportFolder`, `exportOptions`, `exportTarget` and
+`exportPhotosAlbum` (`AppSettings.exportFolder` and its neighbours),
 read back at launch so the next sheet opens the same way. A Photos run
 writes new assets into the library (and the album) and nothing else.
 A queue made without `remember:` (every test) keeps them in memory only.
+
+## Settings
+
+`SettingsView` (`SettingsView.swift`), the window of SwiftUI's `Settings`
+scene in `PhotoLabApp`: PhotoLab › Settings…, `⌘,` (the system's key, not
+an `AppCommand`; `CommandsTests` keeps the table off it). A grouped form
+over the library's `AppSettings`; every control applies at once and is
+remembered.
+
+- **Grid › Thumbnail size**: a slider over `AppSettings.gridThumbnailSize`
+  with its value in points, the same value as the strip under the grid
+  (Grid, above).
+- **Loupe › Preview quality**: `AppSettings.previewQuality`, a
+  `PreviewQuality` (Full, Balanced, Fast). `PreviewCanvas` asks for its fit
+  frame at `PreviewQuality.pixelSize(_:)` of the pane's longest side (1,
+  0.75 or 0.5 of it, `PreviewQuality.scale`) and draws it scaled to fit
+  (the histogram is counted on that frame); the 1:1 window and every export
+  are unchanged.
+- **Launch › Reopen the last folder or album**:
+  `AppSettings.reopenLastSource`, read by `Library.restoreLastSource`
+  (Welcome, above).
+- **Sort › Folders / Photos albums**: a key and a direction per source
+  kind. `Library.defaultSort(for:)` shows the open source's own sort for its
+  kind and the remembered one for the other; `Library.setDefaultSort(_:for:)`
+  sets `Library.sort` (a re-sort at once) when the open source is of that
+  kind, and only remembers it otherwise (`AppSettings.setSort(_:for:)`).
+
+`AppSettings` (`Settings.swift`) is the one store for everything kept
+between launches: these four, the filmstrip and Info toggles, the last
+source and Open Recent, and the export sheet's last choices, each under the
+key earlier builds wrote (`AppSettings.Key`), so an upgrade loses no saved
+value. `PhotoLabApp` makes one and hands it to `Library(settings:)` and
+`ExportQueue(settings:)`; a `Library(rememberFolder: false)` gets one that
+is not `persistent` (reads and writes nothing).
+
+Writes: those keys in UserDefaults, nothing else.
 
 ## Menus and shortcuts
 

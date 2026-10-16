@@ -20,8 +20,8 @@ struct FilmstripItem: Identifiable, Equatable {
 /// (a rejected photo under Picks) shapes it exactly as it shapes the grid.
 @MainActor
 enum Filmstrip {
-    /// UserDefaults key of the show/hide choice, in the library's defaults.
-    static let showKey = "showFilmstrip"
+    /// UserDefaults key of the show/hide choice (`AppSettings.showFilmstrip`).
+    static let showKey = AppSettings.Key.showFilmstrip
 
     static func items(for library: Library) -> [FilmstripItem] {
         library.visiblePhotos.map { photo in

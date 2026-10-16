@@ -301,6 +301,21 @@ not only the pass.
   choice is remembered per source kind in the injected defaults and never
   with `rememberFolder: false`; and the `sort` placement's commands check
   and set the choice.
+- `SettingsTests.swift` — `AppSettings`: its defaults (180 pt, Full,
+  reopen on, filmstrip shown, Info closed, each kind's default sort) and a
+  read that writes nothing; a round trip of every value through an injected
+  `UserDefaults` suite, the thumbnail size clamped in memory and on disk;
+  the keys earlier builds wrote (`showFilmstrip`, `showInfo`, `sort.*`,
+  `lastFolder`, `recentSources`, `export*`) read back by a `Library` and an
+  `ExportQueue` unchanged; `GridView.columns(for:)` takes its minimum from
+  the size; `PreviewQuality.pixelSize(_:)`; Reopen off leaves
+  `restoreLastSource` on the Welcome view while Open Recent still lists the
+  folder (and on reopens it); the Settings sort rows remember a kind with
+  nothing open, re-sort the open kind at once, leave the other kind's grid
+  alone, and follow the grid's own Sort; a store that is not `persistent`
+  reads and writes nothing. Shown to bite by four mutants (no reopen guard,
+  the grid ignoring the size, a renamed `showFilmstrip` key, the Settings
+  sort never applied live), one or more failures each.
 - `InfoTests.swift` — `PhotoInfo` over a JPEG tagged with a camera, lens,
   exposure, capture date, west-longitude GPS and orientation 6: every row
   formatted, in order, dimensions as displayed; a PNG with no EXIF shows
@@ -514,8 +529,9 @@ place the app writes is injected:
   so its `.photolab/` sidecars are the test's own. A source without a
   folder gets `SidecarStore(directory:naming:)` with a temporary directory
   (the fake source in `SourceTests`).
-- `Library(rememberFolder: false)`: the opened source stays out of
-  UserDefaults; `Library(rememberFolder:defaults:)` takes a
+- `Library(rememberFolder: false)`: the opened source and every choice stay
+  out of UserDefaults (its `AppSettings` is not `persistent`);
+  `Library(rememberFolder:defaults:)` and `AppSettings(defaults:)` take a
   `UserDefaults(suiteName:)` the test removes afterwards when remembering
   is what is tested.
 - `PhotosAccess(client:sidecarDirectory:originalsDirectory:)`: the fake
@@ -525,8 +541,8 @@ place the app writes is injected:
   `requestAuthorization`: the permission dialog is the user's click, from
   the bundled app. `AdjustmentDataTests` injects its own fake the same way,
   plus a temporary directory for the JPEGs its saves render.
-- `ExportQueue`: `init(remember:worker:)` leaves `remember:` off (the folder
-  and options stay in memory) and takes a `ExportQueue.Worker`, so a test
+- `ExportQueue`: `init(remember:settings:worker:)` leaves `remember:` off
+  and `settings:` out (the folder and options stay in memory) and takes a `ExportQueue.Worker`, so a test
   can count, slow or fail jobs without rendering; exports that do render go
   into a temporary output directory.
 - `Thumbnails`: `init(decode:render:)` takes the decoder and the renderer,

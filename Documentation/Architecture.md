@@ -104,7 +104,9 @@ thread.
 ### The loupe
 
 `PreviewModel` (`Preview.swift`) holds one photo's master and renders the
-current recipe at the view's pixel size. `PreviewModel.load(_:)` decodes the
+current recipe at the view's pixel size (scaled by Settings › Preview
+quality: `PreviewCanvas` asks for `PreviewQuality.pixelSize(_:)` of it and
+draws the frame scaled to fit; the 1:1 window is never scaled). `PreviewModel.load(_:)` decodes the
 master off the main thread; `PreviewModel.request(url:recipe:maxPixelSize:)`
 records a request; `pump` runs at most one render at a time and the newest
 request replaces any waiting one (latest wins), so a fast slider never queues
@@ -608,8 +610,23 @@ One value per export run, carried unchanged through the queue to every item:
 - `keepMetadata`, whether the source's camera metadata travels.
 
 `ExportQueue` keeps the last run's folder, target kind, Photos album and
-options between runs, and in UserDefaults across launches when it was made
-with `remember` on (the app passes true; tests never do).
+options between runs, and in UserDefaults across launches through its
+`AppSettings` when that is `persistent` (the app passes its own; a test's
+`ExportQueue(remember: false)` gets one that keeps nothing).
+
+### `AppSettings`
+
+`AppSettings` (`Settings.swift`) is every value kept between launches, over
+one injected `UserDefaults`: the Settings window's `gridThumbnailSize`,
+`previewQuality` and `reopenLastSource`, the per-kind sort (`sort(for:)`,
+`setSort(_:for:)`), `showFilmstrip` and `showInfo`, `lastSource`,
+`recents`, and the export sheet's `exportFolder`, `exportOptions`,
+`exportAlbum` and `exportTarget`. The keys (`AppSettings.Key`) are the
+strings earlier builds wrote, so nothing saved is lost. It is
+`@Observable`: the grid, the loupe canvas and the Settings window read it
+and redraw when it changes. With `persistent: false` it reads nothing and
+writes nothing. The app makes one (`PhotoLabApp`) and passes it to
+`Library(settings:)` and `ExportQueue(settings:)`.
 
 ### `ExportTarget`
 

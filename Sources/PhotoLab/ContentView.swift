@@ -158,7 +158,14 @@ struct WelcomeView: View {
 
 struct GridView: View {
     @Environment(Library.self) private var library
-    private let columns = [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 10)]
+
+    /// The grid's columns: cells at least `AppSettings.gridThumbnailSize`
+    /// points wide (the slider under the grid, Settings › Thumbnail size) and
+    /// at most 1.45 times that, as many as fit.
+    static func columns(for settings: AppSettings) -> [GridItem] {
+        let size = settings.gridThumbnailSize
+        return [GridItem(.adaptive(minimum: size, maximum: (size * 1.45).rounded()), spacing: 10)]
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -177,7 +184,7 @@ struct GridView: View {
                     .padding(40)
                     .frame(maxWidth: .infinity)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 10) {
+                    LazyVGrid(columns: Self.columns(for: library.settings), spacing: 10) {
                         ForEach(library.visiblePhotos) { photo in
                             ThumbnailCell(photo: photo, selected: library.selectedIDs.contains(photo.id),
                                           anchor: photo.id == library.selection,
@@ -212,8 +219,40 @@ struct GridView: View {
             if !library.photos.isEmpty { FilterBar() }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if library.selectedIDs.count > 1 { BatchBar() }
+            VStack(spacing: 0) {
+                if library.selectedIDs.count > 1 { BatchBar() }
+                if !library.photos.isEmpty { ThumbnailSizeBar() }
+            }
         }
+    }
+}
+
+/// The strip under the grid: how many photos it shows and the thumbnail
+/// size slider, bound to `AppSettings.gridThumbnailSize` like the Settings
+/// window's.
+private struct ThumbnailSizeBar: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        @Bindable var settings = library.settings
+        HStack(spacing: 8) {
+            Text(library.visiblePhotos.count == 1 ? "1 photo" : "\(library.visiblePhotos.count) photos")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Image(systemName: "square.grid.3x3")
+                .foregroundStyle(.secondary)
+            Slider(value: $settings.gridThumbnailSize, in: AppSettings.thumbnailSizes)
+                .frame(width: 140)
+                .labelsHidden()
+                .help("Thumbnail size (also in Settings, ⌘,)")
+            Image(systemName: "square.grid.2x2")
+                .foregroundStyle(.secondary)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 
@@ -721,8 +760,10 @@ private struct PreviewCanvas: View {
         library.compare ? CGSize(width: max(0, viewSize.width - 1) / 2, height: viewSize.height) : viewSize
     }
 
-    /// One pane's longest side in pixels. Both halves are rendered at this size.
-    private var pixelSize: Int { longestSide(pane) }
+    /// One pane's longest side in pixels, times Settings › Preview quality
+    /// (`PreviewQuality.pixelSize`). Both halves are rendered at this size;
+    /// the frame is drawn scaled to fit, and the 1:1 window is not scaled.
+    private var pixelSize: Int { library.settings.previewQuality.pixelSize(longestSide(pane)) }
 
     /// The 1:1 window: one pane in pixels.
     private var window: CGSize { ZoomMath.window(pane: pane, displayScale: displayScale) }

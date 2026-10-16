@@ -193,20 +193,35 @@ final class CaptureDates {
 }
 
 /// The sort, remembered per source kind (one choice for every folder, one
-/// for every Photos album) in the library's injected `UserDefaults`.
+/// for every Photos album) in the library's `AppSettings` (`sort.folder`,
+/// `sort.photos`); the Settings window's two sort pickers are the same
+/// choice (`defaultSort(for:)`, `setDefaultSort(_:for:)`).
 extension Library {
     /// `folder` for a `FolderSource`, `photos` for any other (a library of
     /// assets).
     var sortKind: RecentSource.Kind { source is FolderSource ? .folder : .photos }
 
-    static func sortDefaultsKey(_ kind: RecentSource.Kind) -> String { "sort." + kind.rawValue }
-
     /// The sort a source of `kind` opens in: the remembered choice, else the
     /// kind's default.
     func storedSort(for kind: RecentSource.Kind) -> PhotoSort {
-        let fallback: PhotoSort = kind == .folder ? .folderDefault : .photosDefault
-        guard rememberFolder, let raw = defaults.string(forKey: Self.sortDefaultsKey(kind)) else { return fallback }
-        return PhotoSort(storageKey: raw) ?? fallback
+        settings.sort(for: kind)
+    }
+
+    /// The Settings window's sort for `kind`: the open source's own sort when
+    /// it is of that kind, else the remembered one.
+    func defaultSort(for kind: RecentSource.Kind) -> PhotoSort {
+        source != nil && sortKind == kind ? sort : storedSort(for: kind)
+    }
+
+    /// Sets the sort a source of `kind` opens in, from the Settings window.
+    /// When the open source is of that kind it re-sorts at once (`sort`,
+    /// which remembers it); otherwise it is only remembered.
+    func setDefaultSort(_ newSort: PhotoSort, for kind: RecentSource.Kind) {
+        if source != nil, sortKind == kind {
+            sort = newSort
+        } else {
+            settings.setSort(newSort, for: kind)
+        }
     }
 
     /// Re-orders `photos` by `sort`. Only the order moves: the selection,

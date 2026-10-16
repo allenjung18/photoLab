@@ -51,19 +51,15 @@ extension PhotoFilter {
 }
 
 /// Open Recent and reopening where you left off. The list lives in the
-/// Library's injected `UserDefaults` beside `lastSourceKind`, most recent
+/// Library's `AppSettings` (`recents`) beside the last source, most recent
 /// first, deduped, capped at `RecentSource.limit`.
 extension Library {
-    private static let recentsKey = "recentSources"
-
     private func storedRecents() -> [RecentSource] {
-        guard let data = defaults.data(forKey: Self.recentsKey),
-              let list = try? JSONDecoder().decode([RecentSource].self, from: data) else { return [] }
-        return list
+        settings.recents
     }
 
     private func store(_ list: [RecentSource]) {
-        defaults.set(try? JSONEncoder().encode(list), forKey: Self.recentsKey)
+        settings.recents = list
         recentsRevision += 1
     }
 

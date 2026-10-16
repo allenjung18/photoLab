@@ -79,14 +79,14 @@ final class Library {
     }
     /// The grid's order (`PhotoSort`): `photos` is kept sorted by it, so the
     /// grid, the filmstrip and the arrows follow it. Remembered per source
-    /// kind (`storedSort(for:)`); a change re-sorts at once and leaves the
-    /// selection and the anchor where they are.
+    /// kind (`storedSort(for:)`, in `settings`); a change re-sorts at once
+    /// and leaves the selection and the anchor where they are.
     var sort: PhotoSort = .folderDefault {
         didSet {
             guard sort != oldValue, !restoringViewState else { return }
             resort()
             if rememberFolder, source != nil {
-                defaults.set(sort.storageKey, forKey: Self.sortDefaultsKey(sortKind))
+                settings.setSort(sort, for: sortKind)
             }
         }
     }
@@ -179,23 +179,18 @@ final class Library {
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
     var showClipping = false
-    /// The loupe's filmstrip (View menu, F): remembered in `defaults`, next
-    /// to the per-source view state, and kept across sources.
-    var showFilmstrip = true {
-        didSet {
-            guard showFilmstrip != oldValue, rememberFolder else { return }
-            defaults.set(showFilmstrip, forKey: Filmstrip.showKey)
-        }
+    /// The loupe's filmstrip (View menu, F): `AppSettings.showFilmstrip`,
+    /// remembered and kept across sources.
+    var showFilmstrip: Bool {
+        get { settings.showFilmstrip }
+        set { if newValue != settings.showFilmstrip { settings.showFilmstrip = newValue } }
     }
-    /// The loupe panel's Info section open (View › Info, ⌘I): remembered in
-    /// `defaults` like the filmstrip, and kept across sources.
-    var showInfo = false {
-        didSet {
-            guard showInfo != oldValue, rememberFolder else { return }
-            defaults.set(showInfo, forKey: Self.showInfoKey)
-        }
+    /// The loupe panel's Info section open (View › Info, ⌘I):
+    /// `AppSettings.showInfo`, remembered like the filmstrip.
+    var showInfo: Bool {
+        get { settings.showInfo }
+        set { if newValue != settings.showInfo { settings.showInfo = newValue } }
     }
-    static let showInfoKey = "showInfo"
     /// The last sidecar write or read that failed, for the panel to show.
     private(set) var sidecarError: String?
     /// Why the last `open` was refused (a missing path, an album before
@@ -215,37 +210,30 @@ final class Library {
     private var history: [Photo.ID: EditHistory] = [:]
     /// A slider drag in progress: one undo step from mouse-down to mouse-up.
     private var openEdit: (id: Photo.ID, before: Recipe)?
-    let rememberFolder: Bool
-    let defaults: UserDefaults
+    /// Everything kept between launches (`AppSettings`): the Settings
+    /// window's choices, the view toggles, the sort per kind, the last
+    /// source and Open Recent.
+    let settings: AppSettings
+    /// False keeps the source and every choice out of UserDefaults (tests).
+    var rememberFolder: Bool { settings.persistent }
     /// Bumped whenever the recent list changes, so a menu reading it redraws.
     var recentsRevision = 0
     /// True while `open` resets and restores the view state: those writes are
     /// not the user's and must not overwrite the source's remembered state.
     var restoringViewState = false
 
-    /// The last source, by kind: `lastSourceKind` is `folder` (the path in
-    /// `lastFolder`, the key every earlier build wrote) or `photos` (the
-    /// album's identifier in `lastPhotosAlbum`).
-    private static let lastFolderKey = "lastFolder"
-    private static let lastSourceKindKey = "lastSourceKind"
-    private static let lastAlbumKey = "lastPhotosAlbum"
     nonisolated static let maxUndoDepth = 100
 
 
-    /// `rememberFolder: false` keeps the source out of UserDefaults (tests);
-    /// `defaults` is where it is remembered when it is.
+    /// `settings` is what the library remembers into (the app's one
+    /// `AppSettings`); without it, one over `defaults` is made, and
+    /// `rememberFolder: false` makes it read and write nothing (tests).
     init(rememberFolder: Bool = true, defaults: UserDefaults = .standard,
+         settings: AppSettings? = nil,
          captureDates: CaptureDates = CaptureDates()) {
-        self.rememberFolder = rememberFolder
-        self.defaults = defaults
+        self.settings = settings ?? AppSettings(defaults: defaults, persistent: rememberFolder)
         self.captureDates = captureDates
         self.photoInfo = PhotoInfoStore(captureDates: captureDates)
-        if rememberFolder, defaults.object(forKey: Filmstrip.showKey) != nil {
-            showFilmstrip = defaults.bool(forKey: Filmstrip.showKey)
-        }
-        if rememberFolder {
-            showInfo = defaults.bool(forKey: Self.showInfoKey)
-        }
     }
 
     func chooseFolder() {
@@ -273,8 +261,7 @@ final class Library {
         open(FolderSource(dir))
         guard openError == nil else { return }
         if rememberFolder {
-            defaults.set(dir.path, forKey: Self.lastFolderKey)
-            defaults.set("folder", forKey: Self.lastSourceKindKey)
+            settings.lastSource = .folder(path: dir.path)
             noteRecent(RecentSource(kind: .folder, id: dir.path, title: dir.lastPathComponent))
         }
         if !isDir.boolValue, let hit = photos.first(where: { $0.fileURL?.standardizedFileURL == url.standardizedFileURL }) {
@@ -296,8 +283,7 @@ final class Library {
         open(access.source(for: album))
         guard openError == nil else { return }
         if rememberFolder {
-            defaults.set(album.id, forKey: Self.lastAlbumKey)
-            defaults.set("photos", forKey: Self.lastSourceKindKey)
+            settings.lastSource = .photos(albumID: album.id)
             noteRecent(RecentSource(kind: .photos, id: album.id, title: album.title))
         }
     }
@@ -418,19 +404,22 @@ final class Library {
 
     /// Reopens the last source at launch: the folder if it still exists,
     /// or the album if Photos access is already allowed (never a prompt at
-    /// launch) and the album is still there. Otherwise the Welcome view.
+    /// launch) and the album is still there. Otherwise, and whenever
+    /// Settings › Reopen the last folder or album is off
+    /// (`AppSettings.reopenLastSource`), the Welcome view.
     func restoreLastSource(access: PhotosAccess = .live) {
-        guard source == nil else { return }
-        if defaults.string(forKey: Self.lastSourceKindKey) == "photos" {
-            guard let id = defaults.string(forKey: Self.lastAlbumKey),
-                  access.client.authorizationStatus().canRead,
+        guard source == nil, settings.reopenLastSource else { return }
+        switch settings.lastSource {
+        case .photos(let id)?:
+            guard access.client.authorizationStatus().canRead,
                   let album = access.client.albums().first(where: { $0.id == id }) else { return }
             open(album: album, access: access)
+        case .folder(let path)?:
+            guard FileManager.default.fileExists(atPath: path) else { return }
+            open(URL(fileURLWithPath: path))
+        case nil:
             return
         }
-        guard let path = defaults.string(forKey: Self.lastFolderKey),
-              FileManager.default.fileExists(atPath: path) else { return }
-        open(URL(fileURLWithPath: path))
     }
 
     /// The photos the filter admits, in sort order: what the grid shows and

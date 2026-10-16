@@ -227,8 +227,8 @@ enum Exporter {
 /// per-run staging directory, imported through the `PhotosWriter` as a new
 /// asset and removed. One queue per app; a run cannot start while another
 /// is going. It also keeps the options, the output folder and the Photos
-/// album between runs (UserDefaults when `remember` is on; tests leave it
-/// off).
+/// album between runs (in `AppSettings` when `remember` is on; tests leave
+/// it off).
 @MainActor
 @Observable
 final class ExportQueue {
@@ -292,42 +292,41 @@ final class ExportQueue {
 
     private var task: Task<Void, Never>?
     private let worker: Worker
-    private let remember: Bool
+    /// Where the last run's choices are kept (`AppSettings`'s export keys).
+    let settings: AppSettings
+    private var remember: Bool { settings.persistent }
     /// Imports a Photos run's files; the live PhotoKit in the app.
     let photos: any PhotosWriter
     /// Where a Photos run renders its files before the import; each run
     /// uses its own subdirectory and removes it at the end.
     let stagingDirectory: URL
 
-    private static let folderKey = "exportFolder"
-    private static let optionsKey = "exportOptions"
-    private static let albumKey = "exportPhotosAlbum"
-    private static let targetKey = "exportTarget"
-
     /// `<tmp>/PhotoLab-export/`.
     nonisolated static var defaultStagingDirectory: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("PhotoLab-export", isDirectory: true)
     }
 
+    /// `settings` is the app's one `AppSettings`; without it, `remember`
+    /// makes one over the standard defaults (on) or one that keeps nothing
+    /// (off, the tests).
     init(remember: Bool = false,
+         settings: AppSettings? = nil,
          photos: any PhotosWriter = PhotoKitLive(),
          stagingDirectory: URL = ExportQueue.defaultStagingDirectory,
          worker: @escaping Worker = { try Exporter.export($0, name: $5, recipe: $1, into: $2, options: $3, protected: $4) }) {
         self.worker = worker
-        self.remember = remember
+        self.settings = settings ?? AppSettings(defaults: .standard, persistent: remember)
         self.photos = photos
         self.stagingDirectory = stagingDirectory
-        guard remember else { return }
-        let defaults = UserDefaults.standard
-        if let path = defaults.string(forKey: Self.folderKey), FileManager.default.fileExists(atPath: path) {
+        guard self.settings.persistent else { return }
+        if let path = self.settings.exportFolder, FileManager.default.fileExists(atPath: path) {
             folder = URL(fileURLWithPath: path, isDirectory: true)
         }
-        if defaults.object(forKey: Self.albumKey) != nil {
-            album = ExportTarget.album(from: defaults.string(forKey: Self.albumKey) ?? "")
+        if let stored = self.settings.exportAlbum {
+            album = ExportTarget.album(from: stored)
         }
-        prefersPhotos = defaults.string(forKey: Self.targetKey) == "photos"
-        if let data = defaults.data(forKey: Self.optionsKey),
-           let saved = try? JSONDecoder().decode(ExportOptions.self, from: data) {
+        prefersPhotos = self.settings.exportTarget == "photos"
+        if let saved = self.settings.exportOptions {
             options = saved
         }
     }
@@ -381,11 +380,10 @@ final class ExportQueue {
             prefersPhotos = true
         }
         guard remember else { return }
-        let defaults = UserDefaults.standard
-        if let folder = target.folder { defaults.set(folder.path, forKey: Self.folderKey) }
-        if case .photosLibrary(let album) = target { defaults.set(album ?? "", forKey: Self.albumKey) }
-        defaults.set(target.isPhotosLibrary ? "photos" : "folder", forKey: Self.targetKey)
-        if let data = try? JSONEncoder().encode(options) { defaults.set(data, forKey: Self.optionsKey) }
+        if let folder = target.folder { settings.exportFolder = folder.path }
+        if case .photosLibrary(let album) = target { settings.exportAlbum = album ?? "" }
+        settings.exportTarget = target.isPhotosLibrary ? "photos" : "folder"
+        settings.exportOptions = options
     }
 
     /// Starts writing `items` into `folder` per `options`. Ignored while a

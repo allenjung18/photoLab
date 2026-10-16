@@ -3,15 +3,20 @@ import AppKit
 
 @main
 struct PhotoLabApp: App {
-    @State private var library = Library()
+    /// The one `AppSettings` (UserDefaults.standard): the library and the
+    /// export queue remember into it, and the Settings window edits it.
+    @State private var library: Library
     @State private var presets = PresetLibrary()
-    @State private var exports = ExportQueue(remember: true)
+    @State private var exports: ExportQueue
     /// The launch open runs once: a window re-created later (the last one
     /// closed, then the Dock icon) must not reopen the argument and wipe the
     /// selection and history.
     @State private var launched = false
 
     init() {
+        let settings = AppSettings()
+        _library = State(initialValue: Library(settings: settings))
+        _exports = State(initialValue: ExportQueue(settings: settings))
         // Running from `swift run` has no bundle; make the process a real
         // foreground app so the window and menu bar appear.
         NSApplication.shared.setActivationPolicy(.regular)
@@ -29,7 +34,8 @@ struct PhotoLabApp: App {
                     guard !launched else { return }
                     launched = true
                     // `PhotoLab <folder>` opens that folder; otherwise the last
-                    // one. Flags (`-NSDocumentRevisionsDebugMode` from Xcode,
+                    // one, unless Settings says not to (`restoreLastSource`).
+                    // Flags (`-NSDocumentRevisionsDebugMode` from Xcode,
                     // `-psn_…` from Finder) are not paths and are skipped.
                     if let arg = CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("-") }) {
                         library.open(URL(fileURLWithPath: arg))
@@ -72,6 +78,12 @@ struct PhotoLabApp: App {
                         .disabled(library.batchTargets.isEmpty)
                 }
             }
+        }
+        // PhotoLab › Settings… (⌘, from SwiftUI's Settings scene, not the
+        // command table): the window over `library.settings`.
+        Settings {
+            SettingsView()
+                .environment(library)
         }
     }
 

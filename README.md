@@ -7,7 +7,7 @@ Native Swift, SwiftUI and Core Image. Originals are never written to.
 ## Run
 
     swift build                   # debug build
-    swift run PhotoLab            # opens the last folder (or ⌘O)
+    swift run PhotoLab            # opens the last folder (or ⌘O; Settings can turn this off)
     swift run PhotoLab ~/Pictures # open a folder directly
     swift run PhotoLab ~/Pictures/DSC01.ARW   # open one photo in the loupe
     swift test                    # the test suite
@@ -77,8 +77,10 @@ in Xcode works too.
 | `⇧⌘P` | Save Preset… (in the loupe) |
 | `⇧⌘C` / `⇧⌘V` | Copy Settings / Paste Settings… |
 | `⇧⌘E` | Export… (the grid's selection, or the loupe's photo) |
+| `⌘,` | Settings… (thumbnail size, preview quality, reopen at launch, sort) |
 
-Every key above except `Return` and `Esc` is also a menu item: File (open,
+Every key above except `Return` and `Esc` is also a menu item (`⌘,` is
+PhotoLab › Settings…): File (open,
 Export…, Save to Photos), Edit (Undo / Redo, the settings items, Select All
 Photos), **View** (Grid, Loupe, Zoom to 1:1, Before and After, Show Original, Clipping
 Warning, Filmstrip, Info, Previous and Next Photo, below the toolbar items of the one View
@@ -98,6 +100,19 @@ another). Sorting a Photos album by Name first reads every photo's name in the
 background; the album keeps its order until the names are in, then sorts once. A file's capture date is its EXIF DateTimeOriginal, else the file's date. After an export, **Details…** lists every photo that failed or was
 skipped. Render timings stay out of the panel and the tooltips unless you run
 `defaults write <bundle id> showTimings -bool YES`.
+
+**Settings** (`⌘,`, PhotoLab › Settings…) has four choices, each applied
+at once and remembered: **Thumbnail size** (the grid cells' width, 120 to
+300 points, 180 to start; the same slider sits at the right of the strip
+under the grid, beside the photo count), **Preview quality** (Full renders
+the fitted photo at every screen pixel; Balanced and Fast at ¾ and ½ of
+them, drawn scaled up, so a slider responds sooner; 1:1 and exports are
+always full resolution), **Reopen the last folder or album** at launch (on
+to start; off, PhotoLab opens on the Welcome screen and Open Recent still
+lists it), and the **Sort** a folder and a Photos album open in (the same
+choice as View › Sort By, so changing either changes both; for the kind of
+source that is open, the grid re-sorts at once). Thumbnails are decoded at
+480 pixels, so the largest sizes upscale a little on a Retina screen.
 
 The same actions are clickable: Pick, Reject, Unflag and five stars in the
 loupe panel footer (the one photo) and in the batch bar (the selected
@@ -271,10 +286,11 @@ Everything the app writes, and nothing else:
   iCloud-only original is downloaded into it once). A cache: delete the
   folder to reclaim the space; the next open downloads again, and no edit
   is lost.
-- **Preferences** — in the app's UserDefaults: the last opened source (a
-  folder's path, or a Photos album's identifier), the sort (once for
-  folders, once for Photos albums), whether the filmstrip and the Info
-  section are shown, the
+- **Preferences** — in the app's UserDefaults: the Settings window's
+  thumbnail size, preview quality and reopen-at-launch choice, the last
+  opened source (a folder's path, or a Photos album's identifier) and Open
+  Recent's list, the sort (once for folders, once for Photos albums),
+  whether the filmstrip and the Info section are shown, the
   last export folder, target (Folder or Photos) and Photos album, and the
   last export options (format, quality, size, suffix, collision policy,
   metadata), so the next export sheet opens with them.
