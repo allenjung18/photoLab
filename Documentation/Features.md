@@ -307,7 +307,9 @@ keeps whatever marks the file already held.
 `SyncSheet(request:)` (`ContentView.swift`) is the Sync Settings and Paste
 Settings sheet: "From <source> onto n photos", the shortcuts **All**,
 **None**, **Look** and **Grade** (`SyncMask.everything`, `SyncMask.nothing`,
-`SyncMask.look`, `SyncMask.grade` in `Batch.swift`), then one
+`SyncMask.look`, `SyncMask.grade` in `Batch.swift`; only All copies the
+source's local adjustments, `SyncMask.masks`, the others keep each target's),
+then one
 `DisclosureGroup` per `AdjustmentKind.Section` with a checkbox for the
 section and, opened, one per adjustment; the HSL section shows its three
 channels (`AdjustmentKind.HSLChannel`) rather than twenty-four bands. A

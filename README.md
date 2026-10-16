@@ -216,7 +216,8 @@ the panel then says the edit could not be saved.
 
 ## Presets
 
-A preset is a named look: every slider except rotate and crop. The loupe's
+A preset is a named look: every slider except rotate and crop (and never
+local adjustments, which stay with their photo). The loupe's
 panel opens with a **Presets** strip, each preset drawn live on the current
 photo through the same renderer as the main view. Click one to apply it
 (one undo step, the sidecar is written; the photo keeps its own rotation
@@ -286,7 +287,10 @@ Everything the app writes, and nothing else:
   or rated photo, next to the photos. Removed when the photo is reset to the
   original and carries no flag or rating. A sidecar this version cannot
   read is kept beside the new one as `<file>.json.unreadable-<stamp>`,
-  never deleted.
+  never deleted. An edit with local adjustments is saved as format 2,
+  which an older PhotoLab (another Mac not yet updated) treats as
+  unreadable rather than opening it without them; an edit without any is
+  saved as format 1, exactly as before.
 - **Presets** — `~/Library/Application Support/PhotoLab/presets/<name>.json`,
   one per preset; the six starter looks are written there when that folder
   does not exist yet.

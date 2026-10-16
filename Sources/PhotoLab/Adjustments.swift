@@ -230,8 +230,15 @@ struct Adjustment: Codable, Hashable, Identifiable {
 /// and the sidecar persists it as JSON. A kind that is missing from the
 /// list (an older sidecar) reads as neutral; the renderer applies kinds in
 /// `AdjustmentKind.allCases` order whatever order the list has.
+///
+/// `masks` are the local adjustments (`LocalMask`, Masks.swift), in the
+/// order they apply. They are part of the edit like any slider: equality,
+/// `normalized`, `isDefault` and `isNeutral` all account for them, and the
+/// JSON carries a `masks` key only when there is one, so an unmasked recipe
+/// encodes exactly as it did before masks existed.
 struct Recipe: Codable, Hashable {
     var adjustments: [Adjustment]
+    var masks: [LocalMask] = []
 
     /// Every kind at its neutral value, enabled.
     static let neutral = Recipe(
@@ -240,12 +247,14 @@ struct Recipe: Codable, Hashable {
     /// Render identity: applying this recipe changes nothing. A disabled
     /// entry counts (it is not applied), so a recipe can be neutral and still
     /// carry values worth keeping; use `isDefault` for "is there an edit".
-    var isNeutral: Bool { adjustments.allSatisfy(\.isNoop) }
+    /// A disabled or all-no-op mask renders as identity too (`LocalMask.isNoop`).
+    var isNeutral: Bool { adjustments.allSatisfy(\.isNoop) && masks.allSatisfy(\.isNoop) }
 
     /// True when this is the default recipe: every kind at its neutral value
     /// and enabled. A disabled-only edit (a value kept but switched off) is
     /// NOT the default, so it stays in memory, keeps its sidecar and counts
-    /// as edited; `isNeutral` is the render-side notion.
+    /// as edited; `isNeutral` is the render-side notion. Any mask, even a
+    /// disabled or all-neutral one, is an edit (`.neutral` has none).
     var isDefault: Bool { normalized == .neutral }
 
     subscript(kind: AdjustmentKind) -> Adjustment {
@@ -270,14 +279,36 @@ struct Recipe: Codable, Hashable {
         return a.isNoop ? kind.neutral : a.value
     }
 
-    /// Every kind present once, in chain order: the canonical form, so two
-    /// recipes that render the same compare equal whatever a sidecar listed.
+    /// Every kind present once, in chain order, and every mask in its own
+    /// canonical form (`LocalMask.normalized`), list order kept: the
+    /// canonical form, so two recipes that render the same compare equal
+    /// whatever a sidecar listed.
     var normalized: Recipe {
-        Recipe(adjustments: AdjustmentKind.allCases.map { self[$0] })
+        Recipe(adjustments: AdjustmentKind.allCases.map { self[$0] }, masks: masks.map(\.normalized))
     }
 
     mutating func set(_ kind: AdjustmentKind, to value: Double) { self[kind].value = value }
     mutating func setEnabled(_ kind: AdjustmentKind, _ on: Bool) { self[kind].enabled = on }
     mutating func reset(_ kind: AdjustmentKind) { self[kind].value = kind.neutral }
     mutating func resetAll() { self = .neutral }
+}
+
+extension Recipe {
+    private enum CodingKeys: String, CodingKey { case adjustments, masks }
+
+    /// `masks` is optional in the JSON: a recipe written before masks
+    /// existed (sidecar version 1) decodes with none.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(adjustments: try c.decode([Adjustment].self, forKey: .adjustments),
+                  masks: try c.decodeIfPresent([LocalMask].self, forKey: .masks) ?? [])
+    }
+
+    /// `masks` is written only when there is one, so an unmasked recipe's
+    /// JSON (and its sidecar's bytes) is what a build without masks wrote.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(adjustments, forKey: .adjustments)
+        if !masks.isEmpty { try c.encode(masks, forKey: .masks) }
+    }
 }

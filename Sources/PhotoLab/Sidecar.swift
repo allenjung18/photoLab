@@ -12,8 +12,23 @@ import Foundation
 /// original's extension (`IMG_0001.JPG.json`, `IMG_0001.HEIC.json`), so two
 /// originals that differ only by extension never share a sidecar. The
 /// original is never written to.
+///
+/// `version` is the format: 1 is a recipe of sliders; 2 adds local
+/// adjustments (`Recipe.masks`). A file is written at the LOWEST version
+/// that holds its content (`Sidecar.version(for:)`), so an unmasked edit
+/// stays readable by a build that predates masks, and a masked one is
+/// refused there as unreadable (and backed up) rather than read without its
+/// masks and written back without them.
 struct Sidecar: Codable, Equatable {
-    static let currentVersion = 1
+    /// The newest format this build reads and writes.
+    static let currentVersion = 2
+
+    /// The lowest format version that holds `recipe`: 2 when it has masks,
+    /// else 1. Every writer (`SidecarStore.save`, `PhotosAdjustment`) stamps
+    /// this, never `currentVersion` blindly.
+    static func version(for recipe: Recipe) -> Int {
+        recipe.masks.isEmpty ? 1 : 2
+    }
 
     var version = Sidecar.currentVersion
     /// The original's file name, for a human reading the directory.
@@ -134,7 +149,8 @@ struct SidecarStore: Sendable {
     /// a flag or rating on a default recipe keeps its file. A recipe that
     /// only differs by a disabled entry is still written (`Recipe.isDefault`,
     /// not `isNeutral`). Unset marks are omitted from the JSON, not written
-    /// as null. The write is atomic (temp file + rename). `name` is the
+    /// as null. The file's `version` is `Sidecar.version(for:)` (1 unless the
+    /// recipe has masks). The write is atomic (temp file + rename). `name` is the
     /// `original` the file records; the id's own name when not given.
     func save(_ recipe: Recipe, marks: Marks, for id: PhotoID, name: String? = nil, now: Date = Date()) throws {
         let file = url(for: id)
@@ -145,7 +161,8 @@ struct SidecarStore: Sendable {
         }
         try FileManager.default.createDirectory(
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let doc = Sidecar(original: name ?? id.defaultName, updated: now, recipe: recipe,
+        let doc = Sidecar(version: Sidecar.version(for: recipe),
+                          original: name ?? id.defaultName, updated: now, recipe: recipe,
                           flag: marks.flag, rating: marks.rating == 0 ? nil : marks.rating)
         let data = try Self.encode(doc)
         try data.write(to: file, options: .atomic)

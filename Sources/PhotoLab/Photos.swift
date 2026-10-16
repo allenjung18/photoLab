@@ -110,7 +110,8 @@ protocol PhotoKitClient: Sendable {
 
 /// A PhotoLab edit as Photos stores it beside an asset (`PHAdjustmentData`):
 /// format identifier `local.photolab.recipe`, format version
-/// `Sidecar.currentVersion`, and as data the recipe-only sidecar JSON (no
+/// `Sidecar.version(for:)` of the recipe (1, or 2 with masks, as a sidecar
+/// file is stamped), and as data the recipe-only sidecar JSON (no
 /// flag or rating: marks are not an edit). Photos syncs it with the library
 /// and hands it back on a content-editing input, which is how a photo whose
 /// sidecar is gone gets its recipe back (`PhotosSource.recoverRecipe`).
@@ -129,8 +130,9 @@ struct PhotosAdjustment: Equatable, Sendable {
 
     /// PhotoLab's data for `recipe`; `name` is the sidecar's `original`.
     init(recipe: Recipe, name: String, now: Date = Date()) throws {
-        let doc = Sidecar(original: name, updated: now, recipe: recipe)
-        self.init(formatIdentifier: Self.formatIdentifier, formatVersion: String(Sidecar.currentVersion),
+        let version = Sidecar.version(for: recipe)
+        let doc = Sidecar(version: version, original: name, updated: now, recipe: recipe)
+        self.init(formatIdentifier: Self.formatIdentifier, formatVersion: String(version),
                   data: try SidecarStore.encode(doc))
     }
 

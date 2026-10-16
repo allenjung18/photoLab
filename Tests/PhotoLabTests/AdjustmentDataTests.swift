@@ -231,7 +231,9 @@ final class AdjustmentDataTests: XCTestCase {
 
     func testCanHandleIsOurIdentifierAtAVersionThisBuildReads() {
         XCTAssertTrue(PhotosAdjustment.canHandle(identifier: "local.photolab.recipe", version: "1"))
-        XCTAssertFalse(PhotosAdjustment.canHandle(identifier: "local.photolab.recipe", version: "2"))
+        XCTAssertTrue(PhotosAdjustment.canHandle(identifier: "local.photolab.recipe", version: "2"), "masks (format 2)")
+        XCTAssertFalse(PhotosAdjustment.canHandle(identifier: "local.photolab.recipe",
+                                                  version: String(Sidecar.currentVersion + 1)))
         XCTAssertFalse(PhotosAdjustment.canHandle(identifier: "local.photolab.recipe", version: "1.0"))
         XCTAssertFalse(PhotosAdjustment.canHandle(identifier: "com.example.other", version: "1"))
     }
@@ -293,8 +295,9 @@ final class AdjustmentDataTests: XCTestCase {
     func testANewerVersionIsRefusedAndListedUnreadable() async throws {
         let client = fake()
         var doc = Sidecar(original: "IMG_0001.HEIC", updated: Date(), recipe: exposure(0.5))
-        doc.version = 2
-        client.edits["A/L0/001"] = PhotosAdjustment(formatIdentifier: "local.photolab.recipe", formatVersion: "2",
+        let newer = Sidecar.currentVersion + 1
+        doc.version = newer
+        client.edits["A/L0/001"] = PhotosAdjustment(formatIdentifier: "local.photolab.recipe", formatVersion: String(newer),
                                                     data: try SidecarStore.encode(doc))
         let lib = open(client)
         lib.selection = a
@@ -305,9 +308,9 @@ final class AdjustmentDataTests: XCTestCase {
         XCTAssertNotNil(lib.sidecarError)
         XCTAssertFalse(store.exists(for: a))
         XCTAssertThrowsError(try client.edits["A/L0/001"]?.recipe()) { error in
-            XCTAssertEqual(error as? SidecarError, .unsupportedVersion(2))
+            XCTAssertEqual(error as? SidecarError, .unsupportedVersion(newer))
         }
-        // A version-1 label over version-2 JSON is refused the same way.
+        // A version-1 label over newer JSON is refused the same way.
         let relabelled = PhotosAdjustment(formatIdentifier: "local.photolab.recipe", formatVersion: "1",
                                           data: try SidecarStore.encode(doc))
         XCTAssertThrowsError(try relabelled.recipe())

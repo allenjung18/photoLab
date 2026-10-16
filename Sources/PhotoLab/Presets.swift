@@ -2,9 +2,10 @@ import Foundation
 import Observation
 
 /// A preset is a named recipe (README, Design). It carries every kind except
-/// geometry: a look is meant to travel between photos, a crop or a rotation
-/// is not, so saving a preset drops the geometry and applying one keeps the
-/// photo's own. Presets are user-level files, one JSON per preset, in
+/// geometry, and never masks: a look is meant to travel between photos, a
+/// crop, a rotation or a local adjustment pinned to one photo's pixels is
+/// not, so saving a preset drops the geometry and the masks and applying one
+/// keeps the photo's own. Presets are user-level files, one JSON per preset, in
 /// `PresetStore.defaultDirectory`.
 struct Preset: Codable, Hashable, Identifiable {
     static let currentVersion = 1
@@ -26,14 +27,16 @@ struct Preset: Codable, Hashable, Identifiable {
         self.updated = Date(timeIntervalSince1970: updated.timeIntervalSince1970.rounded(.down))
         var r = recipe.normalized
         for kind in AdjustmentKind.geometryKinds { r[kind] = Adjustment(kind: kind, value: kind.neutral) }
+        r.masks = []
         self.recipe = r
     }
 
     /// The recipe `current` becomes when this preset is applied: the preset's
-    /// look over the photo's own rotation and crop.
+    /// look over the photo's own rotation, crop and masks.
     func apply(to current: Recipe) -> Recipe {
         var out = recipe.normalized
         for kind in AdjustmentKind.geometryKinds { out[kind] = current[kind] }
+        out.masks = current.normalized.masks
         return out
     }
 

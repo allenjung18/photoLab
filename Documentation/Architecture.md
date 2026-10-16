@@ -309,7 +309,7 @@ there.
 
 ## 2. Data model
 
-All of it is in `Adjustments.swift`, `Sidecar.swift`, `Presets.swift`,
+All of it is in `Adjustments.swift`, `Masks.swift`, `Sidecar.swift`, `Presets.swift`,
 `Export.swift`, `PhotoSource.swift` and `Photos.swift`.
 
 ### `PhotoID`, `Photo` and `PhotoSource`
@@ -415,7 +415,8 @@ and the export show.
 
 Save to Photos writes a PhotoLab edit into the library non-destructively.
 `PhotosAdjustment` is the edit as Photos stores it: format identifier
-`local.photolab.recipe`, format version `Sidecar.currentVersion`, and as
+`local.photolab.recipe`, format version `Sidecar.version(for:)` of the
+recipe (1, or 2 when it has masks, the rule a sidecar file follows), and as
 data the recipe-only sidecar JSON (`SidecarStore.encode`, no flag or
 rating). `Library.saveToPhotos()` (enabled by `canSaveToPhotos`: the
 anchor is an edited photo of a Photos album and no save is running; the
@@ -492,13 +493,45 @@ memory, keeps its sidecar, counts as edited and comes back when the checkbox
 is ticked again. Everything below that asks "is there an edit" asks
 `isDefault`.
 
+`masks` is the recipe's local adjustments, a list of `LocalMask`
+(`Masks.swift`), in the order they apply; `Recipe.neutral` has none. A
+`LocalMask` is an `id`, a `MaskShape`, its own `adjustments` (only the kinds
+in `LocalMask.kinds`: exposure, temperature, tint, contrast, highlights,
+shadows, saturation; `init`, the subscript and decoding all drop any
+other), `enabled` and `inverted`. `MaskShape` is `.linear(start:end:)`
+(full effect at `start` fading to none at `end`),
+`.radial(center:radii:angle:feather:)` or `.brush(_:)`, a list of
+`BrushStroke` (`points`, `radius`, `feather`, `flow`, `erase`). All
+geometry is in the SOURCE frame, before the recipe's rotate and crop:
+a `MaskPoint` is a fraction of the source's width and height with the
+origin top-left, and every radius (`MaskRadii`, `BrushStroke.radius`) a
+fraction of the source's long side, so a mask stays on the same pixels
+under any crop or rotate. In the JSON a shape is one object with a `type`
+(`linear`, `radial`, `brush`) and that type's fields. Masks are part of
+the edit: equality and `normalized` (each mask in `LocalMask.normalized`
+form, list order kept) include them; any mask makes a recipe not
+`isDefault`; `isNeutral` also needs every mask to be a no-op
+(`LocalMask.isNoop`: disabled, or every adjustment a no-op), so a
+disabled or all-neutral mask renders as identity but is still an edit.
+`Recipe`'s `Codable` reads a missing `masks` key as none and writes the
+key only when there is a mask, so an unmasked recipe encodes exactly as it
+did before masks existed. Masks are not rendered yet.
+
 ### `Sidecar` and `SidecarStore`
 
-A `Sidecar` is the on-disk form of one photo's edit: `version`
-(`Sidecar.currentVersion`), `original` (the photo's file name, for a human
+A `Sidecar` is the on-disk form of one photo's edit: `version`,
+`original` (the photo's file name, for a human
 reading the directory), `updated` and `recipe`, plus two optional keys,
 `flag` and `rating`, the culling marks (`Marks`, below), absent when unset
-so a file written before they existed decodes unchanged. `SidecarStore` reads and
+so a file written before they existed decodes unchanged. The `version` is
+the format: 1 is a recipe of sliders, 2 adds `Recipe.masks`;
+`Sidecar.currentVersion` (2) is the newest this build reads, and every
+writer stamps `Sidecar.version(for:)`, the LOWEST version that holds the
+recipe (1 without masks, 2 with). An unmasked file therefore stays
+byte-identical to what a build before masks wrote and readable there, and
+a masked one is refused there as unreadable (and backed up) instead of
+being read without its masks and written back without them. A later
+format takes the next number under the same rule. `SidecarStore` reads and
 writes the sidecars of one source: a `directory` and a `SidecarStore.Naming`
 from a `PhotoID` to a file name in it (`SidecarStore.relativeName(for:)`).
 A folder's store, `SidecarStore(folder:)`, is `<folder>/.photolab/`
@@ -582,10 +615,10 @@ recipe's file. `PhotoFilter` (`Library.swift`) reads them for the grid.
 
 A `Preset` is a named recipe: `version` (`Preset.currentVersion`), `name`,
 `updated`, `recipe`. Its initialiser `Preset(name:from:updated:)` normalises
-the recipe and sets every geometry kind to neutral, so a look travels and a
-crop or rotation does not. `Preset.apply(to:)` is the inverse at apply time:
-the preset's look over the photo's own geometry, taken from the current
-recipe. `Preset.matches(_:)` tells the strip which preset the photo already
+the recipe, sets every geometry kind to neutral and drops `Recipe.masks`,
+so a look travels and a crop, a rotation or a local adjustment does not.
+`Preset.apply(to:)` is the inverse at apply time: the preset's look over
+the photo's own geometry and masks, taken from the current recipe. `Preset.matches(_:)` tells the strip which preset the photo already
 shows. `Preset.starters` is the starter set, a data table of slider values on
 the neutral recipe with a fixed `updated` date so the files are identical
 across installs.
@@ -712,7 +745,9 @@ one step each, like a menu command.
 
 `EditHistory` is per photo, kept for the open folder: an `undo` and a `redo`
 stack of whole recipes (a recipe is a few hundred bytes, so snapshots beat
-deltas), capped at `Library.maxUndoDepth`. Each `Step` carries the recipe to
+deltas), capped at `Library.maxUndoDepth`. Masks live in the recipe, so a
+mask edit is an ordinary step with no undo path of its own
+(`MaskModelTests`). Each `Step` carries the recipe to
 go back to and an optional batch tag. `Library.undo()` and `Library.redo()`
 act on the selected photo; when its top step carries a batch tag, every photo
 whose top step carries the same tag goes with it, and a photo edited again
@@ -733,12 +768,16 @@ here is persisted; `open` resets it.
 
 ### Batch
 
-`SyncMask` (`Batch.swift`) is a set of kinds: `.look` is every kind but
+`SyncMask` (`Batch.swift`) is a set of kinds and a `masks` flag (whether
+`Recipe.masks` travels, the whole list): `.look` is every kind but
 geometry (what applying a preset does), `.grade` is the look without
 exposure (each photo keeps its own brightness), `.everything` and `.nothing`
-are the sheet's All and None. `Recipe.syncing(_:from:)` is the one batch
+are the sheet's All and None; only `.everything` has `masks` on, so Look,
+Grade and Auto (`AutoTone.mask`) keep each target's masks and All copies
+the source's. `Recipe.syncing(_:from:)` is the one batch
 primitive: the receiver with every kind in the mask taken from the source,
-value and enabled flag alike, the other kinds kept, in normalized form.
+value and enabled flag alike, and the source's masks in place of its own
+when `masks` is on, the rest kept, in normalized form.
 
 `Library.sync(_:mask:to:)` runs that primitive over the target photos,
 each through `setRecipe` with one shared batch tag (a `UUID` made for the
@@ -746,7 +785,7 @@ call), skipping a photo the sync would not change and returning how many
 changed; because the tag is shared, `undo` from any photo of the batch takes
 the whole batch back. `Library.apply(_:mask:to:)` applies a preset to many
 photos as the same operation: `sync` with the preset's recipe and the mask
-minus the geometry kinds. Sync Settings (`requestSync`, the anchor's recipe
+minus the geometry kinds, `masks` off (a preset holds none). Sync Settings (`requestSync`, the anchor's recipe
 onto the other selected photos) and Paste Settings (`requestPaste`, the
 recipe `copySettings(from:)` remembered) both put up a `SyncRequest`, which
 the `SyncSheet` turns into one `sync` call with the mask the user ticked;

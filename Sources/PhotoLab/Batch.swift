@@ -10,15 +10,19 @@ import UniformTypeIdentifiers
 /// Which adjustments a batch operation carries from the source onto each
 /// target photo. A kind outside the mask keeps the target's own value, so
 /// "sync only the grade" leaves every photo its exposure and its crop.
+/// `masks` says whether the local adjustments (`Recipe.masks`, the whole
+/// list) travel too; off, each photo keeps its own masks.
 struct SyncMask: Hashable {
     var kinds: Set<AdjustmentKind>
+    var masks: Bool = false
 
-    /// Every kind except rotate and crop: the look travels, the framing does
-    /// not (what applying a preset does).
+    /// Every kind except rotate and crop: the look travels, the framing and
+    /// the masks do not (what applying a preset does).
     static let look = SyncMask(kinds: Set(AdjustmentKind.allCases).subtracting(AdjustmentKind.geometryKinds))
     /// The look without exposure: each photo keeps its own brightness.
     static let grade = SyncMask(kinds: look.kinds.subtracting([.exposure]))
-    static let everything = SyncMask(kinds: Set(AdjustmentKind.allCases))
+    /// Every kind and the masks: the target becomes a copy of the source.
+    static let everything = SyncMask(kinds: Set(AdjustmentKind.allCases), masks: true)
     static let nothing = SyncMask(kinds: [])
 
     func contains(_ kind: AdjustmentKind) -> Bool { kinds.contains(kind) }
@@ -41,11 +45,13 @@ struct SyncMask: Hashable {
 
 extension Recipe {
     /// `self` with every kind in `mask` taken from `source` (value and
-    /// enabled flag alike); the other kinds are kept. The result is in
-    /// canonical form (`normalized`).
+    /// enabled flag alike), and the source's masks in place of its own when
+    /// `mask.masks`; the rest is kept. The result is in canonical form
+    /// (`normalized`).
     func syncing(_ mask: SyncMask, from source: Recipe) -> Recipe {
         var out = normalized
         for kind in AdjustmentKind.allCases where mask.contains(kind) { out[kind] = source[kind] }
+        if mask.masks { out.masks = source.normalized.masks }
         return out
     }
 }
