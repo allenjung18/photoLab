@@ -244,7 +244,7 @@ final class PhotoInfoStore {
         var info = await task.value
         pending[photo.id] = nil
         if let hit = cache[photo.id] { return hit }
-        switch photo.id {
+        switch photo.id.master {
         case .file:
             captureDates.remember(info.captureDate, for: photo.id)
             info.captureDate = captureDates.date(for: photo)
@@ -252,6 +252,8 @@ final class PhotoInfoStore {
             info.fileName = photo.isNamed ? photo.name : nil
             info.folder = nil
             info.captureDate = photo.captureDate
+        case .copy:
+            break  // `master` is never a copy
         }
         cache[photo.id] = info
         return info
@@ -279,7 +281,7 @@ struct InfoSection: View {
         var info = loaded.flatMap { $0.id == photo.id ? $0.info : nil }
             ?? library.photoInfo.cached(photo.id)
             ?? PhotoInfoStore.listing(photo)
-        if case .asset = photo.id { info.fileName = photo.isNamed ? photo.name : nil }
+        if case .asset = photo.id.master { info.fileName = photo.isNamed ? photo.name : nil }
         return info
     }
 

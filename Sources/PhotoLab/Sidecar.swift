@@ -3,7 +3,9 @@ import Foundation
 /// The on-disk form of one photo's edit: `<folder>/.photolab/<filename>.json`
 /// for a photo in a folder (`SidecarStore.Naming.folder`), or
 /// `<directory>/<id with / as _>.json` for a photo of a source without a
-/// folder (`SidecarStore.Naming.flat`).
+/// folder (`SidecarStore.Naming.flat`). A virtual copy's sits beside its
+/// master's under the same naming plus `@copy<n>` before the extension
+/// (`IMG_0001.JPG@copy2.json`, `SidecarStore.copySuffix`).
 ///
 /// A folder's sidecars live in a hidden per-folder directory rather than
 /// beside each original so a folder of photos stays uncluttered, the library
@@ -153,7 +155,8 @@ struct SidecarStore: Sendable {
     }
 
     /// Writes the sidecar for the photo: the recipe, the marks and the
-    /// keywords. The file is removed instead when there is nothing to keep —
+    /// keywords. A virtual copy's file is always written (the file is how
+    /// the copy exists). A master's is removed instead when there is nothing to keep —
     /// the default recipe AND no marks AND no keywords — so a reset of an
     /// unmarked photo without keywords leaves no trace while a flag, a rating
     /// or a keyword on a default recipe keeps its file. A recipe that
@@ -168,7 +171,7 @@ struct SidecarStore: Sendable {
         let file = url(for: id)
         try Self.backUpIfUnreadable(file, now: now)
         let keywords = Keywords.normalized(keywords)
-        if recipe.isDefault && marks.isEmpty && keywords.isEmpty {
+        if recipe.isDefault && marks.isEmpty && keywords.isEmpty && !id.isCopy {
             try remove(for: id)
             return
         }
@@ -233,12 +236,66 @@ struct SidecarStore: Sendable {
     typealias Loaded = (recipes: [PhotoID: Recipe], marks: [PhotoID: Marks],
                         keywords: [PhotoID: [String]], unreadable: [PhotoID])
 
-    /// The file name (without the extension) for an id under `naming`.
+    /// The file name (without the extension) for an id under `naming`; a
+    /// virtual copy's is its master's plus `copySuffix` and its number.
     func relativeName(for id: PhotoID) -> String {
         switch (naming, id) {
+        case (_, .copy(let master, let n)): return relativeName(for: master) + Self.copySuffix + String(n)
         case (.folder(let base), .file(let url)): return Self.relativePath(of: url, under: base)
         case (.flat, .file(let url)): return Self.flatName(url.standardizedFileURL.path)
         case (_, .asset(let identifier)): return Self.flatName(identifier)
+        }
+    }
+
+    /// What a virtual copy's sidecar name adds to its master's, before the
+    /// copy number and `.json`: `IMG_0001.JPG@copy2.json`. No real photo's
+    /// sidecar name ends this way: a file's ends in its own name, whose
+    /// extension is an image type's (`Library.scan` lists nothing else, and
+    /// `jpg@copy2` is no type's), and a Photos identifier
+    /// (`UUID/L0/001`) has no `@`.
+    static let copySuffix = "@copy"
+
+    /// A sidecar file name read back as a copy: the master's relative name
+    /// and the copy number, or nil when `fileName` is not a copy's
+    /// (`<base>@copy<n>.json` with n ≥ 2 written without leading zeros).
+    static func parseCopy(_ fileName: String) -> (base: String, number: Int)? {
+        let ext = "." + fileExtension
+        guard fileName.hasSuffix(ext) else { return nil }
+        let stem = fileName.dropLast(ext.count)
+        guard let r = stem.range(of: copySuffix, options: .backwards) else { return nil }
+        let digits = stem[r.upperBound...]
+        guard let n = Int(digits), n >= PhotoID.firstCopyNumber, String(n) == digits,
+              r.lowerBound > stem.startIndex else { return nil }
+        return (String(stem[..<r.lowerBound]), n)
+    }
+
+    /// The virtual copies of `masters` whose sidecar is in this store, by
+    /// master then number: each directory a master's sidecar would be in
+    /// is listed once (one listing for a flat folder or an album), and a
+    /// file named as a copy of one of them (`parseCopy`) is its copy. A
+    /// copy file whose master is not among `masters` is not returned, and
+    /// never touched.
+    func copies(of masters: [PhotoID]) -> [PhotoID] {
+        var byDir: [String: [String: PhotoID]] = [:]
+        var dirs: [String] = []
+        for id in masters where !id.isCopy {
+            let name = relativeName(for: id)
+            let parent = (name as NSString).deletingLastPathComponent
+            if byDir[parent] == nil { dirs.append(parent) }
+            byDir[parent, default: [:]][(name as NSString).lastPathComponent] = id
+        }
+        var found: [PhotoID: [Int]] = [:]
+        for parent in dirs {
+            let dir = parent.isEmpty ? directory : directory.appendingPathComponent(parent, isDirectory: true)
+            guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { continue }
+            let names = byDir[parent]!
+            for file in files {
+                guard let (base, n) = Self.parseCopy(file), let master = names[base] else { continue }
+                found[master, default: []].append(n)
+            }
+        }
+        return masters.filter { !$0.isCopy }.flatMap { m in
+            (found[m] ?? []).sorted().map { PhotoID.copy(of: m, number: $0) }
         }
     }
 

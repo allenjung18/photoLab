@@ -489,6 +489,23 @@ says (camera, lens, exposure, dimensions, GPS) is a `PhotoInfo`
 places the library shows a photo's name (Copy Settings, the Sync sheet,
 the sidecar error) read `Library.name(for:)`, never the id.
 
+A virtual copy is a third case, `PhotoID.copy`: its master's id plus a copy
+number from `PhotoID.firstCopyNumber` (2), made by
+`PhotoID.copy(of:number:)`, which takes the master's master so a copy of a
+copy is a copy of the same photo. `PhotoID.master` is the id whose file or
+asset it reads, `PhotoID.copyNumber` its number. `fileURL` and
+`defaultName` answer with the master's (one file), so the renderer, the
+thumbnails, Info, the capture date and `ImageLoading` read the master's
+pixels, and `cacheKey` adds `#copy<n>`, so a copy's thumbnail is cached as
+its own. `Photo.virtualCopy(number:)` is a listed photo's copy: the same
+name, capture date and position. A source maps a copy to its master before
+reading (`PhotosSource.originalFile(for:)`, `thumbnail(for:maxPixelSize:)`
+and `name(for:)` switch on `id.master`; a folder's and a collection's
+already read `fileURL`). The copy's sidecar and its discovery are the
+store's (below); `Library.createVirtualCopy(of:)` and
+`Library.removeVirtualCopy(_:)` are the model's two operations (Features:
+Virtual copies).
+
 Where photos come from is a `PhotoSource`: `title` (the window title),
 `photos()` (in any order: `Library` sorts them by `Library.sort`, a
 `PhotoSort`, Features: Grid, Sort), `sidecars` (the `SidecarStore` its edits
@@ -736,6 +753,24 @@ without a folder injects its own directory with the flat naming
 are the same under both namings; every method takes a `PhotoID`, and the
 URL forms (`SidecarStore.url(for:)` of a file URL, and the rest) are
 `PhotoID.file` of it.
+
+A virtual copy's sidecar sits beside its master's under the same naming
+plus `SidecarStore.copySuffix` and the number: `.photolab/IMG_0001.JPG@copy2.json`,
+`UUID_L0_001@copy2.json`. No real photo's sidecar name ends that way: a
+file's ends in its own image extension (`jpg@copy2` is no image type, so
+`Library.scan` never lists such a file) and a Photos identifier has no `@`
+(`VirtualCopyTests.testNoRealPhotoSidecarNameParsesAsACopy`).
+`SidecarStore.parseCopy(_:)` reads a file name back as a master's relative
+name and a number (n ≥ 2, no leading zeros), and
+`SidecarStore.copies(of:)` lists each directory a master's sidecar would
+be in once and returns the copies found for the masters given, by master
+then number; a copy file whose master is not given is never returned or
+touched. `PhotoSource.virtualCopies(of:)` runs it per store
+(`sidecars(for:)`, so a collection reads each member's root), and
+`Library.open(_:)` lists the copies after the listing, before
+`loadSidecars` reads every id's file. `SidecarStore.save` always writes a
+copy's file, even at the default recipe with no marks or keywords: the
+file is how the copy exists.
 
 - `SidecarStore.save(_:marks:for:name:now:)` writes the recipe and the marks
   atomically (temp file and rename); `name` is the `original` the file

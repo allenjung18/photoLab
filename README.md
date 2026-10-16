@@ -414,7 +414,8 @@ Everything the app writes, and nothing else:
 
 - **Sidecars** — `<folder>/.photolab/<file>.json`, one per edited, flagged,
   rated or keyworded photo, next to the photos. Removed when the photo is reset to the
-  original and carries no flag, rating or keyword. A photo without keywords
+  original and carries no flag, rating or keyword. A virtual copy's is
+  `<file>@copy<n>.json` beside its master's, kept while the copy exists. A photo without keywords
   has no `keywords` key, so its file is exactly as before. A sidecar this version cannot
   read is kept beside the new one as `<file>.json.unreadable-<stamp>`,
   never deleted. An edit with local adjustments is saved as format 2,

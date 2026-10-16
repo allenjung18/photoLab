@@ -54,10 +54,34 @@ struct PhotoSort: Equatable, Hashable, Sendable {
 
     /// The photos in this order. Every value is read once per photo (the
     /// capture date may be a file read), then the list is sorted on them.
+    /// A virtual copy (`PhotoID.copy`) is not sorted on its own values: it
+    /// follows its master, copies by number, whatever the key and the
+    /// direction; a copy whose master is not in `photos` goes last.
     func sorted(_ photos: [Photo],
                 captureDate: (Photo) -> Date?,
                 rating: (Photo.ID) -> Int,
                 edited: (Photo.ID) -> Bool) -> [Photo] {
+        let copies = photos.filter(\.id.isCopy)
+        let masters = sortedMasters(photos.filter { !$0.id.isCopy },
+                                    captureDate: captureDate, rating: rating, edited: edited)
+        guard !copies.isEmpty else { return masters }
+        var byMaster: [Photo.ID: [Photo]] = [:]
+        for c in copies { byMaster[c.id.master, default: []].append(c) }
+        for k in byMaster.keys { byMaster[k]!.sort { ($0.id.copyNumber ?? 0) < ($1.id.copyNumber ?? 0) } }
+        var out: [Photo] = []
+        out.reserveCapacity(photos.count)
+        for m in masters {
+            out.append(m)
+            if let cs = byMaster.removeValue(forKey: m.id) { out += cs }
+        }
+        let orphans = byMaster.values.flatMap { $0 }.sorted { $0.id.cacheKey < $1.id.cacheKey }
+        return out + orphans
+    }
+
+    private func sortedMasters(_ photos: [Photo],
+                               captureDate: (Photo) -> Date?,
+                               rating: (Photo.ID) -> Int,
+                               edited: (Photo.ID) -> Bool) -> [Photo] {
         struct Row {
             let photo: Photo
             let date: Date?

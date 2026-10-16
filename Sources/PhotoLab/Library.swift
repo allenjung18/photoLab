@@ -476,7 +476,10 @@ final class Library {
     /// current source stays and `openError` says why. The shared thumbnail
     /// cache decodes `.asset` ids through the open source from here on. A
     /// pending Sync / Paste sheet is dropped: its targets were the old
-    /// source's photos.
+    /// source's photos. The virtual copies of every listed photo are found
+    /// beside their masters' sidecars (`PhotoSource.virtualCopies(of:)`) and
+    /// listed with them; a copy file whose master is not listed is ignored
+    /// and kept.
     func open(_ source: any PhotoSource) {
         let listed: [Photo]
         do {
@@ -511,7 +514,7 @@ final class Library {
         filter = .all
         searchText = ""
         sort = storedSort(for: sortKind)
-        photos = listed
+        photos = Self.withVirtualCopies(listed, source: source)
         store = source.sidecars
         missingMembers = (source as? CollectionSource)?.missing.count ?? 0
         let loaded = source.loadSidecars(for: photos.map(\.id))
@@ -568,7 +571,7 @@ final class Library {
         source = next
         Thumbnails.shared.source = next
         let kept = Set(collection.members.map(\.id))
-        let gone = Set(photos.map(\.id)).subtracting(kept)
+        let gone = Set(photos.map(\.id).filter { !kept.contains($0.master) })
         guard !gone.isEmpty else { return }
         photos.removeAll { gone.contains($0.id) }
         for id in gone {
@@ -580,6 +583,85 @@ final class Library {
         }
         if let edit = openEdit, gone.contains(edit.id) { openEdit = nil }
         reconcileSelection()
+    }
+
+    /// `listed` plus the virtual copies `source` finds for them, each copy
+    /// a `Photo.virtualCopy` of its master (the sort places it, `PhotoSort`).
+    private static func withVirtualCopies(_ listed: [Photo], source: any PhotoSource) -> [Photo] {
+        let copies = source.virtualCopies(of: listed.map(\.id))
+        guard !copies.isEmpty else { return listed }
+        let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return listed + copies.compactMap { id in
+            guard let n = id.copyNumber, let m = byID[id.master] else { return nil }
+            return m.virtualCopy(number: n)
+        }
+    }
+
+    // MARK: Virtual copies
+
+    /// Makes a virtual copy of `id` (a master, or a copy: the new one is
+    /// its master's): the lowest copy number from 2 that no listed copy and
+    /// no sidecar file holds, the source photo's current recipe and no
+    /// marks or keywords. Its sidecar is written at once, even at the
+    /// default recipe (the file is how it exists); it is listed right after
+    /// its master and the copies numbered below it, and selected. Nil, with
+    /// `sidecarError` set, when the write fails; nil for a photo not listed.
+    @discardableResult
+    func createVirtualCopy(of id: Photo.ID) -> Photo.ID? {
+        guard let source, let master = photos.first(where: { $0.id == id.master }) else { return nil }
+        closeOpenEdit()
+        let store = source.sidecars(for: master.id)
+        let taken = Set(photos.compactMap { $0.id.master == master.id ? $0.id.copyNumber : nil })
+        var n = PhotoID.firstCopyNumber
+        while taken.contains(n) || store.exists(for: .copy(of: master.id, number: n)) { n += 1 }
+        let copy = master.virtualCopy(number: n)
+        let recipe = recipe(for: id)
+        do {
+            try store.save(recipe, marks: .none, keywords: [], for: copy.id, name: copy.name)
+            sidecarWrites += 1
+            sidecarError = nil
+        } catch {
+            sidecarError = "Could not make a virtual copy of \(master.name): \(error.localizedDescription)"
+            return nil
+        }
+        if !recipe.isDefault { recipes[copy.id] = recipe }
+        let after = photos.lastIndex { $0.id == master.id || ($0.id.master == master.id && ($0.id.copyNumber ?? 0) < n) }
+        photos.insert(copy, at: (after ?? photos.count - 1) + 1)
+        selection = copy.id
+        return copy.id
+    }
+
+    /// Removes a virtual copy: its sidecar is deleted and it leaves the
+    /// photos, the recipes, the marks, the keywords and the undo history;
+    /// a selected copy hands the selection to its master. Refused (false)
+    /// for a master, a photo not listed, and when the file cannot be
+    /// deleted (`sidecarError` says why).
+    @discardableResult
+    func removeVirtualCopy(_ id: Photo.ID) -> Bool {
+        guard id.isCopy, let source, photos.contains(where: { $0.id == id }) else { return false }
+        if openEdit?.id == id { openEdit = nil }
+        do {
+            // An unreadable copy file is moved aside, never deleted.
+            let store = source.sidecars(for: id)
+            try SidecarStore.backUpIfUnreadable(store.url(for: id), now: Date())
+            try store.remove(for: id)
+        } catch {
+            sidecarError = "Could not remove the virtual copy of \(name(for: id)): \(error.localizedDescription)"
+            return false
+        }
+        photos.removeAll { $0.id == id }
+        recipes.removeValue(forKey: id)
+        marks.removeValue(forKey: id)
+        keywords.removeValue(forKey: id)
+        history.removeValue(forKey: id)
+        unreadableSidecars.remove(id)
+        if selection == id {
+            selection = photos.contains(where: { $0.id == id.master }) ? id.master : nil
+        } else if selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+        }
+        if selection == nil { loupe = false }
+        return true
     }
 
     /// The photo's display name as its source gave it (the file name for a
@@ -1257,7 +1339,7 @@ final class Library {
             // A Photos original's cached copy is named by its id: the output
             // takes the photo's own name instead. Folder photos keep theirs.
             var own: String?
-            if case .asset = id {
+            if case .asset = id.master {
                 await resolveName(id)
                 own = name(for: id)
             }

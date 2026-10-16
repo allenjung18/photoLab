@@ -6,31 +6,70 @@ import AppKit
 /// so where a photo's pixels and its name come from is the source's
 /// business (`PhotoSource`), never the library's. A folder photo is its
 /// file URL; a Photos asset is its `localIdentifier` (`UUID/L0/001`).
+///
+/// A virtual copy (`copy`) is a second identity of one file or asset: its
+/// master's id plus a copy number from 2 (`Library.createVirtualCopy`). It
+/// has its own recipe, marks and sidecar (`SidecarStore.relativeName`), and
+/// reads its master's pixels: `fileURL` is the master's file, and every
+/// source maps a copy to its master before reading. A copy's master is
+/// never itself a copy (`copy(of:number:)` flattens).
 enum PhotoID: Hashable, Codable, Sendable {
     case file(URL)
     case asset(String)
+    indirect case copy(PhotoID, Int)
 
-    /// The file when the identity is one; nil for an asset, whose file is
-    /// asked of its source (`PhotoSource.originalFile(for:)`).
-    var fileURL: URL? {
-        if case .file(let url) = self { return url }
+    /// The first copy number: the master is copy 1, implicitly.
+    static let firstCopyNumber = 2
+
+    /// Copy `number` of `master`'s master (a copy of a copy is a copy of
+    /// the same master).
+    static func copy(of master: PhotoID, number: Int) -> PhotoID {
+        .copy(master.master, number)
+    }
+
+    /// The photo whose file or asset this id reads: itself for a master,
+    /// the master for a virtual copy.
+    var master: PhotoID {
+        if case .copy(let m, _) = self { return m.master }
+        return self
+    }
+
+    /// The copy number of a virtual copy (2, 3, …); nil for a master.
+    var copyNumber: Int? {
+        if case .copy(_, let n) = self { return n }
         return nil
     }
 
+    var isCopy: Bool { copyNumber != nil }
+
+    /// The file when the identity is one (a copy: its master's file); nil
+    /// for an asset, whose file is asked of its source
+    /// (`PhotoSource.originalFile(for:)`).
+    var fileURL: URL? {
+        switch self {
+        case .file(let url): return url
+        case .asset: return nil
+        case .copy(let m, _): return m.fileURL
+        }
+    }
+
     /// The name a photo has when its source gives none: the file name, or
-    /// the asset identifier itself.
+    /// the asset identifier itself; a copy's is its master's (one file).
     var defaultName: String {
         switch self {
         case .file(let url): return url.lastPathComponent
         case .asset(let id): return id
+        case .copy(let m, _): return m.defaultName
         }
     }
 
-    /// A stable string for cache keys: the two cases never collide.
+    /// A stable string for cache keys: no two ids share one, so a copy's
+    /// thumbnail is its own, never its master's.
     var cacheKey: String {
         switch self {
         case .file(let url): return "file:" + url.absoluteString
         case .asset(let id): return "asset:" + id
+        case .copy(let m, let n): return m.cacheKey + "#copy" + String(n)
         }
     }
 }
@@ -72,6 +111,13 @@ struct Photo: Identifiable, Hashable, Sendable {
     /// What a cell's caption and tooltip show: the name, or nothing while
     /// the photo is unnamed (never the asset identifier).
     var caption: String { isNamed ? name : "" }
+
+    /// Virtual copy `number` of this photo: the same name, capture date and
+    /// position (one file), its own id (`PhotoID.copy(of:number:)`).
+    func virtualCopy(number: Int) -> Photo {
+        Photo(id: .copy(of: id, number: number), name: isNamed ? name : nil,
+              captureDate: captureDate, location: location)
+    }
 
     /// The photo with the name its source resolved.
     func named(_ name: String) -> Photo {
@@ -116,6 +162,11 @@ protocol PhotoSource: Sendable {
     /// The file holding the photo's original pixels, for the one decode
     /// path (`Renderer.previewMaster`, `Renderer.fullResolution`).
     func originalFile(for id: PhotoID) async throws -> URL
+    /// The virtual copies whose sidecar sits beside one of `ids`'s
+    /// (`SidecarStore.copies(of:)`): read at `open`, each listed after its
+    /// master. A copy file whose master is not among `ids` is not returned
+    /// (and left on disk).
+    func virtualCopies(of ids: [PhotoID]) -> [PhotoID]
     /// The name of a photo `photos()` listed unnamed (`Photo.isNamed`
     /// false), or nil. Synchronous: `Library.resolveName(_:)` calls it off
     /// the main thread, one visible cell at a time, and it may check
@@ -131,6 +182,22 @@ extension PhotoSource {
     func sidecars(for id: PhotoID) -> SidecarStore { sidecars }
 
     func loadSidecars(for ids: [PhotoID]) -> SidecarStore.Loaded { sidecars.loadAll(for: ids) }
+
+    /// Each photo's own store (`sidecars(for:)`) listed once for the
+    /// copies of the photos it holds.
+    func virtualCopies(of ids: [PhotoID]) -> [PhotoID] {
+        var byStore: [URL: [PhotoID]] = [:]
+        var order: [URL] = []
+        for id in ids where !id.isCopy {
+            let dir = sidecars(for: id).directory
+            if byStore[dir] == nil { order.append(dir) }
+            byStore[dir, default: []].append(id)
+        }
+        return order.flatMap { dir -> [PhotoID] in
+            let group = byStore[dir]!
+            return sidecars(for: group[0]).copies(of: group)
+        }
+    }
 }
 
 /// A folder of photos: `Library.scan` lists it, `SidecarStore(folder:)`

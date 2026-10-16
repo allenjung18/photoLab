@@ -69,6 +69,16 @@ not only the pass.
   slider over an everything-on recipe, and the load guard's own test
   (`FrameBudgetGuardTests`: the bound holds when quiet, scales when busy,
   skips only when unmeasurable, and a quiet miss is a red).
+- `VirtualCopyTests.swift` — virtual copies over a temporary folder and a
+  flat-naming source: the copy id reads its master's file with its own cache
+  key, the `@copy<n>` sidecar name under both namings and no real photo's
+  name parsing as a copy, create writing the suffixed sidecar and listing the
+  copy after its master, edits to either leaving the other's sidecar
+  byte-identical, reopen restoring both recipes and the copy's marks (in a
+  subfolder too), a default-recipe copy surviving reopen, the sort keeping a
+  copy after its master in every key and direction, remove deleting only the
+  copy's file and dropping it from every map, and an orphan copy file
+  ignored and kept.
 - `SidecarTests.swift` — a recipe saved for a photo comes back when the
   folder is opened again in a new `Library`, two originals that differ only
   by extension never share a sidecar, the original is untouched, the default

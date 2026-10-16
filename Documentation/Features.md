@@ -47,7 +47,8 @@ bundle, never to a bare binary.
   as neutral, reported in `sidecarError` and left alone until the user edits
   that photo; the first write then moves the old file to a
   `.unreadable-<stamp>` backup beside the new sidecar (`UnreadableBackup`)
-  and never over it.
+  and never over it. Every listed photo's virtual copies are found here
+  too (Virtual copies, below).
 - **Open Photos Library…** is `Library.choosePhotosAlbum` (`Library.swift`),
   which raises `Library.photosSheet`; the File menu's **⇧⌘O** calls the
   same method. The sheet is `PhotosAlbumSheet` (`PhotosSheet.swift`) over a
@@ -186,7 +187,9 @@ scrolls it into view.
   open source, shown or not) as "keyword (count)"; picking one sets
   `Library.searchText` to it. Disabled while no photo has a keyword.
 - **Sort** (`Sort.swift`). `Library.sort` is a `PhotoSort`: a `SortKey`
-  (Capture Date, Name, Rating, Edited) and a direction. `Library.photos`
+  (Capture Date, Name, Rating, Edited) and a direction. A virtual copy is
+  never sorted on its own values: it follows its master, copies by number,
+  in any key and direction. `Library.photos`
   is kept in that order (`Library.resort()` over
   `PhotoSort.sorted(_:captureDate:rating:edited:)`, one function for a
   folder and a Photos album), so the grid, `visiblePhotos`, the filmstrip,
@@ -398,6 +401,36 @@ version (`Sidecar.version(for:)` reads the recipe alone). The file is kept
 while the photo has a keyword, whatever its recipe and marks, and
 `SidecarStore.save(_:for:name:now:)` (recipe only) keeps the keywords the
 file held. `SidecarStore.loadAll(for:)` returns them on open.
+
+## Virtual copies
+
+A virtual copy is a second identity of one photo (`PhotoID.copy`, its
+master's id and a copy number from 2): its own recipe, flag, rating,
+keywords and undo history, the master's pixels. The model only, so far;
+the commands and the cell badge come next.
+
+- **Create.** `Library.createVirtualCopy(of:)` takes the lowest number from
+  2 that no listed copy of that master and no sidecar file holds, starts
+  from the source photo's current recipe with no marks and no keywords,
+  writes the copy's sidecar at once (`<file>@copy<n>.json` beside the
+  master's), lists it right after its master and the copies numbered below
+  it, and selects it. A copy of a copy is the master's next copy. When the
+  write fails nothing is made and `sidecarError` says why.
+- **Edit.** A copy is edited, marked and undone like any photo; its file is
+  the only one written, so the master's sidecar stays byte-identical, and
+  the reverse. A reset keeps a copy's file (a master's is removed when
+  nothing is left to keep).
+- **Open.** `Library.open(_:)` finds the copies of every listed photo
+  (`PhotoSource.virtualCopies(of:)`, one directory listing per sidecar
+  directory) and reads their sidecars with the rest. A copy file whose
+  master is not listed is ignored and kept.
+- **Remove.** `Library.removeVirtualCopy(_:)` deletes the copy's sidecar
+  (an unreadable one is moved aside as `.unreadable-<stamp>` first, never
+  deleted) and drops the copy from the photos, recipes, marks, keywords and
+  undo history; a selected copy hands the selection to its master. Refused
+  on a master.
+
+Writes: the copy's own sidecar, never the master's or the original.
 
 ## Collections
 

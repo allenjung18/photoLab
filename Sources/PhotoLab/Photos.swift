@@ -511,19 +511,20 @@ struct PhotosSource: PhotoSource {
     /// asset with no original resource is named by its identifier, as the
     /// listing named it before names were lazy.
     func name(for id: PhotoID) -> String? {
-        guard case .asset(let assetID) = id, client.authorizationStatus().canRead, !Task.isCancelled else { return nil }
+        guard case .asset(let assetID) = id.master, client.authorizationStatus().canRead, !Task.isCancelled else { return nil }
         return originals.name(of: assetID, client: client)
     }
 
     var sidecars: SidecarStore { SidecarStore(directory: sidecarDirectory, naming: .flat) }
 
     func thumbnail(for id: PhotoID, maxPixelSize: Int) -> NSImage? {
-        guard case .asset(let assetID) = id, client.authorizationStatus().canRead else { return nil }
+        guard case .asset(let assetID) = id.master, client.authorizationStatus().canRead else { return nil }
         return client.thumbnail(for: assetID, maxPixelSize: maxPixelSize)
     }
 
+    /// A virtual copy reads its master asset's original.
     func originalFile(for id: PhotoID) async throws -> URL {
-        guard case .asset(let assetID) = id else { throw PhotoSourceError.notInThisSource(id) }
+        guard case .asset(let assetID) = id.master else { throw PhotoSourceError.notInThisSource(id) }
         return try await originals.file(for: assetID, client: client)
     }
 
