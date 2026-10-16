@@ -886,6 +886,10 @@ struct LoupeView: View {
 /// Crop mode (`Library.cropMode`, R): the canvas renders the recipe without
 /// its crop (the rotated frame whole) and `CropOverlay` draws the crop over
 /// it; the zoom click and the pan are off while it is on.
+///
+/// Masks: `MaskOverlay` draws the selected linear or radial mask's handles
+/// over the After frame, at fit or 1:1, and takes a placement drag while
+/// New Linear or New Radial is armed; not in compare, crop mode or Before.
 private struct PreviewCanvas: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
@@ -943,6 +947,7 @@ private struct PreviewCanvas: View {
                 } else {
                     zoomable(afterFrame, fitFrame: preview.image)
                         .overlay { cropOverlay }
+                        .overlay { maskHandles }
                         .overlay(alignment: .topLeading) { if library.showBefore { badge("Before") } }
                         .overlay(alignment: .top) { whiteBalanceHint }
                 }
@@ -1156,6 +1161,49 @@ private struct PreviewCanvas: View {
                         end: { library.endCropDrag(photo.id) },
                         straighten: { a, b in library.straighten(from: a, to: b, for: photo.id) })
         }
+    }
+
+    /// The selected mask's handles, or the placement layer while New Linear
+    /// or New Radial is armed, over the frame shown: the 1:1 window once it
+    /// has landed, else the fit frame. Only once that frame was rendered
+    /// with the current rotate and crop (so the mapping is the frame's), and
+    /// never in crop mode or while Show Original is held (compare has no
+    /// overlay at all).
+    @ViewBuilder private var maskHandles: some View {
+        let current = library.recipe(for: photo.id)
+        let selected = library.selectedMask.flatMap { id in current.masks.first { $0.id == id } }
+        let shape: MaskShape? = selected.flatMap { if case .brush = $0.shape { return nil } else { return $0.shape } }
+        if shape != nil || library.maskPlacement != nil,
+           !library.cropMode, !library.showBefore, let file, preview.imageURL == file,
+           let cg = preview.image, let shown = preview.imageRecipe,
+           MaskRender.geometryKinds.allSatisfy({ shown.effective($0) == current.effective($0) }),
+           preview.masterSize.width > 0, preview.masterSize.height > 0 {
+            let geometry = MaskMath.Geometry(recipe: current, source: preview.masterSize)
+            let (viewport, bounds) = maskViewport(fitFrame: CGSize(width: cg.width, height: cg.height))
+            let id = photo.id, size = preview.masterSize
+            MaskOverlay(shape: shape, geometry: geometry, viewport: viewport, bounds: bounds,
+                        placing: library.maskPlacement,
+                        drag: { handle, a, b in
+                            if let mask = selected { library.dragMask(handle, mask.id, from: a, to: b, size: size, for: id) }
+                        },
+                        place: { kind, a, b in library.dragPlacement(kind, from: a, to: b, size: size, for: id) },
+                        click: { kind, p in library.placeMask(kind, at: p, for: id) },
+                        end: { library.endMaskDrag(id) })
+        }
+    }
+
+    /// Where the frame shown sits in this pane: the 1:1 window (centred,
+    /// unscaled) once it has landed, else the fit frame of `fitFrame`.
+    private func maskViewport(fitFrame: CGSize) -> (MaskMath.Viewport, CGRect) {
+        if zoomWindow != nil, let region = preview.zoomRegion, displayScale > 0 {
+            let shown = CGRect(x: (pane.width - region.width / displayScale) / 2,
+                               y: (pane.height - region.height / displayScale) / 2,
+                               width: region.width / displayScale, height: region.height / displayScale)
+            return (.window(region: region, frame: preview.zoomFrameSize, pane: pane, displayScale: displayScale),
+                    shown.intersection(CGRect(origin: .zero, size: pane)))
+        }
+        let fit = ZoomMath.fitRect(frame: fitFrame, pane: pane)
+        return (.fit(fit), fit)
     }
 
     /// "1:1" while zoomed, with a spinner until the first window lands.

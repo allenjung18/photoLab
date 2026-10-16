@@ -64,10 +64,10 @@ in Xcode works too.
 | `Z` | In the loupe, 1:1 (one photo pixel per screen pixel) at the middle of the photo, or back to fit |
 | `R` | In the loupe, crop mode: drag the crop's edges and corners on the photo (or **Crop on Photo** in Crop & Rotate); `R` or `Esc` again to finish |
 | `W` | In the loupe, the white-balance eyedropper (or **White Balance** in Color): click something that should be neutral grey or white, at fit or 1:1, and temperature and tint are set so it renders grey, one undo step; a clipped or near-black spot is refused with a note and changes nothing; `W` or `Esc` puts it down |
-| `M` / `⇧M` | In the loupe, a new linear / radial gradient mask (see Masks) |
+| `M` / `⇧M` | In the loupe, arm a new linear / radial gradient mask: drag on the photo to place it (start to end; centre to edge), or click for the default shape there; again or `Esc` disarms (see Masks) |
 | `K` | In the loupe, a new brush mask, armed for painting (painting on the photo is not built yet); `K` again or `Esc` puts the brush down |
 | `O` | Show the selected mask as a red tint over the loupe photo (View › Show Mask Overlay); never in Before or an export |
-| `Esc` | Put the white-balance eyedropper down; else the brush; else the straighten tool; else leave crop mode; else back to the grid; in the grid, collapse the selection to the anchor |
+| `Esc` | Put the white-balance eyedropper down; else the brush; else a new mask's placement; else the straighten tool; else leave crop mode; else deselect the mask (its handles go); else back to the grid; in the grid, collapse the selection to the anchor |
 | `←` `→` | Previous / next photo |
 | `\` | Toggle before / after (or hold the **Before** button) |
 | `Y` | Before and After side by side (or the toolbar's **Before / After** toggle); from the grid it opens the loupe |
@@ -204,11 +204,18 @@ row until the next edit drops them. The history is kept while the folder or
 album is open (the last 100 steps per photo) and is not saved.
 
 **Masks**, under the Presets strip, are local adjustments: **Linear** (or
-`M`) adds a gradient from the top edge of the photo to 40% down, **Radial**
-(`⇧M`) an ellipse centred a third of the way in from the top left,
-**Brush** (`K`) an empty brush mask (painting it on the photo comes in a
-later version). There are no handles on the photo yet, so a new mask sits
-at that default place. Each is listed by kind and order ("Linear 1",
+`M`) and **Radial** (`⇧M`) arm a new gradient, then a drag on the photo
+places it: a linear from where the effect is full to where it ends, a
+radial circle from its centre out to its edge (a click instead places a
+gradient 40% of the photo tall, or a 0.2 × 0.15 ellipse, centred there).
+**Brush** (`K`) adds an empty brush mask (painting it on the photo comes
+in a later version). The selected linear or radial has handles on the
+photo, at fit and at 1:1: a linear's centre pin moves it and the handles
+on its start and end lines turn it and set the fade's length about the
+pin; a radial's centre pin moves it, its four edge handles set its width
+and height, the knob above it turns it and the small diamond on the inner
+(dashed) ellipse sets the feather. Each drag is one undo step. The
+handles are hidden in compare, in crop mode and while Before shows. Each is listed by kind and order ("Linear 1",
 "Radial 1", "Linear 2"); click one to show its own exposure, temperature,
 tint, contrast, highlights, shadows and saturation sliders, a checkbox to
 switch it off, **Invert** (apply where the mask is not), **Duplicate**

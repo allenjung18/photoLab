@@ -132,6 +132,7 @@ final class Library {
                 selectedIDs = selection.map { [$0] } ?? []
                 loupeZoom = .fit
                 cropDragStart = nil
+                maskDragStart = nil
                 selectedMask = nil
             }
             saveViewState()
@@ -142,7 +143,7 @@ final class Library {
     /// Loupe (single photo) when true, grid otherwise.
     var loupe = false {
         didSet {
-            if !loupe { loupeZoom = .fit; cropMode = false; whiteBalancePicking = false; maskBrushArmed = false }
+            if !loupe { loupeZoom = .fit; cropMode = false; whiteBalancePicking = false; maskBrushArmed = false; maskPlacement = nil }
             if loupe { showMap = false }
             saveViewState()
         }
@@ -184,6 +185,7 @@ final class Library {
                 compare = false
                 whiteBalancePicking = false
                 maskBrushArmed = false
+                maskPlacement = nil
             } else {
                 cropDragStart = nil
                 straightening = false
@@ -218,6 +220,7 @@ final class Library {
                 compare = false
                 whiteBalanceNote = nil
                 maskBrushArmed = false
+                maskPlacement = nil
             }
         }
     }
@@ -240,6 +243,23 @@ final class Library {
             cropMode = false
             compare = false
             whiteBalancePicking = false
+            maskPlacement = nil
+        }
+    }
+    /// New Linear or New Radial is armed (M, Shift-M, the Masks section's
+    /// Linear and Radial): the next drag on the loupe photo places a new mask
+    /// of that kind (start to end; centre to edge), a click places its
+    /// default shape there (`placeMask`), and either selects it and disarms.
+    /// Tool state like the brush: arming leaves crop mode, ends compare and
+    /// puts the eyedropper and the brush down; any of those, Esc and leaving
+    /// the loupe disarm it.
+    var maskPlacement: MaskKind? {
+        didSet {
+            guard maskPlacement != oldValue, maskPlacement != nil else { return }
+            cropMode = false
+            compare = false
+            whiteBalancePicking = false
+            maskBrushArmed = false
         }
     }
     /// Show Mask Overlay (O, View menu, the Masks section's checkbox): the
@@ -255,6 +275,9 @@ final class Library {
     private(set) var whiteBalanceReading = false
     /// The crop a handle drag started from, while one is in progress.
     private var cropDragStart: CropMath.Crop?
+    /// The mask a handle or placement drag is moving and its shape when the
+    /// drag started, while one is in progress.
+    private var maskDragStart: (mask: UUID, shape: MaskShape)?
     /// Copy Settings: the recipe and the name of the photo it came from.
     private(set) var copiedSettings: (recipe: Recipe, name: String)?
     /// A Sync / Paste Settings sheet the window should show.
@@ -277,7 +300,7 @@ final class Library {
     /// Before / After side by side in the loupe (Y, or the toolbar toggle):
     /// the canvas splits into the neutral render and the recipe's.
     var compare = false {
-        didSet { if compare { cropMode = false; whiteBalancePicking = false; maskBrushArmed = false } }
+        didSet { if compare { cropMode = false; whiteBalancePicking = false; maskBrushArmed = false; maskPlacement = nil } }
     }
     /// Clipping warning: true paints the loupe's blown pixels red and its
     /// crushed pixels blue (J, or a histogram triangle).
@@ -1240,6 +1263,69 @@ final class Library {
     func endCropDrag(_ id: Photo.ID) {
         cropDragStart = nil
         endEdit(id)
+    }
+
+    /// A mask handle dragged from `from` to `to` (source points, the
+    /// pointer's start and where it is now) over a source of `size`: the
+    /// shape moves from where it was when the drag began
+    /// (`MaskHandles.drag`), through `setRecipe` inside one `beginEdit` …
+    /// `endEdit`, so the whole drag is ONE undo step and ONE sidecar write
+    /// (at `endMaskDrag`). The first call of a drag opens it; a mask the
+    /// photo does not hold changes nothing.
+    func dragMask(_ handle: MaskHandle, _ maskID: UUID, from: MaskPoint, to: MaskPoint, size: CGSize,
+                  for id: Photo.ID) {
+        if maskDragStart?.mask != maskID {
+            guard let mask = mask(maskID, for: id) else { return }
+            beginEdit(id)
+            maskDragStart = (maskID, mask.shape)
+        }
+        guard let start = maskDragStart?.shape else { return }
+        let shape = MaskHandles.drag(handle, shape: start, from: from, to: to, size: size)
+        updateMask(maskID, for: id) { $0.shape = shape }
+    }
+
+    /// A placement drag with `kind` armed, from `from` to `to` (source
+    /// points): its first call adds the mask inside a `beginEdit`, selected,
+    /// and every later one reshapes it (`MaskHandles.placed`), so a placement
+    /// is ONE new mask, ONE undo step (undo removes it) and ONE sidecar
+    /// write (at `endMaskDrag`, which also disarms).
+    func dragPlacement(_ kind: MaskKind, from: MaskPoint, to: MaskPoint, size: CGSize, for id: Photo.ID) {
+        guard maskPlacement == kind, let shape = MaskHandles.placed(kind, from: from, to: to, size: size) else { return }
+        if let drag = maskDragStart, self.mask(drag.mask, for: id) != nil {
+            updateMask(drag.mask, for: id) { $0.shape = shape }
+            return
+        }
+        beginEdit(id)
+        let mask = LocalMask(shape: shape)
+        var r = recipe(for: id)
+        r.masks.append(mask)
+        setRecipe(r, for: id)
+        maskDragStart = (mask.id, shape)
+        selectedMask = mask.id
+    }
+
+    /// A click with `kind` armed: the kind's default shape centred at
+    /// `point` (source), selected; one undo step and one write; disarms.
+    @discardableResult
+    func placeMask(_ kind: MaskKind, at point: MaskPoint, for id: Photo.ID) -> UUID? {
+        guard maskPlacement == kind, maskDragStart == nil, let shape = MaskHandles.placed(kind, at: point) else { return nil }
+        endEdit(id)
+        let mask = LocalMask(shape: shape)
+        var r = recipe(for: id)
+        r.masks.append(mask)
+        setRecipe(r, for: id)
+        selectedMask = mask.id
+        maskPlacement = nil
+        return mask.id
+    }
+
+    /// A mask handle's or a placement's mouse-up: the edit closes (one undo
+    /// step, one write) and a placement disarms.
+    func endMaskDrag(_ id: Photo.ID) {
+        let placed = maskDragStart != nil && maskPlacement != nil
+        maskDragStart = nil
+        endEdit(id)
+        if placed { maskPlacement = nil }
     }
 
     var canUndo: Bool { selection.map { history[$0]?.undo.isEmpty == false } ?? false }

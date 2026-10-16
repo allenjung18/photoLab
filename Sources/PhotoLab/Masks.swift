@@ -238,3 +238,126 @@ enum MaskMath {
         return ((u / radii.x) * (u / radii.x) + (v / radii.y) * (v / radii.y)).squareRoot()
     }
 }
+
+// MARK: - View to source: where a mask point sits on the loupe
+
+extension MaskMath {
+    /// Where the loupe draws the rendered frame (after rotate and crop), in
+    /// view points: scaled into a fit rect (`ZoomMath.fitRect`), or the 1:1
+    /// window, `region` pixels of a frame `frame` pixels in size drawn
+    /// unscaled at `displayScale` and centred in `pane` (as
+    /// `ZoomMath.point(forClick:region:frame:pane:displayScale:)` reads it,
+    /// without its snap to a pixel centre).
+    enum Viewport: Equatable {
+        case fit(CGRect)
+        case window(region: CGRect, frame: CGSize, pane: CGSize, displayScale: CGFloat)
+
+        /// A point normalised in the rendered frame (0...1, top-left) to view points.
+        func view(_ f: CGPoint) -> CGPoint {
+            switch self {
+            case .fit(let r):
+                return CGPoint(x: r.minX + f.x * r.width, y: r.minY + f.y * r.height)
+            case .window(let region, let frame, let pane, let scale):
+                let shown = Self.shownOrigin(region: region, pane: pane, displayScale: scale)
+                return CGPoint(x: shown.x + (f.x * frame.width - region.minX) / scale,
+                               y: shown.y + (f.y * frame.height - region.minY) / scale)
+            }
+        }
+
+        /// The inverse of `view`; nil for an empty fit rect or frame.
+        func frame(_ v: CGPoint) -> CGPoint? {
+            switch self {
+            case .fit(let r):
+                guard r.width > 0, r.height > 0 else { return nil }
+                return CGPoint(x: (v.x - r.minX) / r.width, y: (v.y - r.minY) / r.height)
+            case .window(let region, let frame, let pane, let scale):
+                guard frame.width > 0, frame.height > 0, scale > 0 else { return nil }
+                let shown = Self.shownOrigin(region: region, pane: pane, displayScale: scale)
+                return CGPoint(x: (region.minX + (v.x - shown.x) * scale) / frame.width,
+                               y: (region.minY + (v.y - shown.y) * scale) / frame.height)
+            }
+        }
+
+        /// The top-left of the 1:1 window as drawn, centred in the pane.
+        private static func shownOrigin(region: CGRect, pane: CGSize, displayScale: CGFloat) -> CGPoint {
+            CGPoint(x: (pane.width - region.width / displayScale) / 2,
+                    y: (pane.height - region.height / displayScale) / 2)
+        }
+    }
+
+    /// The recipe geometry a mask point goes through to reach the screen:
+    /// the source's size (only its aspect is used), the rotate stage's turn
+    /// (degrees, clockwise-positive on screen) and the crop insets of the
+    /// rotated frame. Mirrors `Renderer`'s chain order (rotate, then crop)
+    /// and its rotate stage: the turn about the centre, then the largest
+    /// same-aspect rectangle inside the turned frame. The renderer also
+    /// takes one pixel off each side of that rectangle; at a render's size
+    /// that is under a pixel of the frame, so it is left out here.
+    struct Geometry: Equatable {
+        var source: CGSize
+        var rotate: Double
+        var crop: CropMath.Crop
+
+        init(source: CGSize, rotate: Double = 0, crop: CropMath.Crop = .none) {
+            self.source = source
+            self.rotate = rotate
+            self.crop = crop
+        }
+
+        /// The geometry `recipe` renders over a source of `source`.
+        init(recipe: Recipe, source: CGSize) {
+            self.init(source: source, rotate: recipe.effective(.rotate), crop: CropMath.crop(of: recipe))
+        }
+
+        /// The inscribed rectangle's scale: its sides over the source's.
+        var inscribedScale: Double {
+            let w = Double(source.width), h = Double(source.height)
+            let t = rotate * .pi / 180
+            let c = abs(cos(t)), s = abs(sin(t))
+            guard w > 0, h > 0 else { return 1 }
+            return min(w / (w * c + h * s), h / (w * s + h * c))
+        }
+    }
+
+    /// A source point to the rendered frame, normalised (0...1 spans the
+    /// frame shown, top-left): turned about the source's centre, then
+    /// placed in the inscribed rectangle, then in the crop.
+    static func frame(_ p: MaskPoint, _ g: Geometry) -> CGPoint {
+        let w = Double(g.source.width), h = Double(g.source.height)
+        let t = g.rotate * .pi / 180
+        let dx = (p.x - 0.5) * w, dy = (p.y - 0.5) * h
+        // Clockwise on screen with y down.
+        let qx = dx * cos(t) - dy * sin(t), qy = dx * sin(t) + dy * cos(t)
+        let s = g.inscribedScale
+        let rx = qx / (w * s) + 0.5, ry = qy / (h * s) + 0.5
+        let k = g.crop.rect
+        return CGPoint(x: (rx - Double(k.minX)) / Double(k.width), y: (ry - Double(k.minY)) / Double(k.height))
+    }
+
+    /// The inverse of `frame`: a point of the rendered frame back to the
+    /// source (the crop undone, then the inscribed inset, then the turn).
+    static func source(_ f: CGPoint, _ g: Geometry) -> MaskPoint {
+        let w = Double(g.source.width), h = Double(g.source.height)
+        let k = g.crop.rect
+        let rx = Double(k.minX) + Double(f.x) * Double(k.width)
+        let ry = Double(k.minY) + Double(f.y) * Double(k.height)
+        let s = g.inscribedScale
+        let qx = (rx - 0.5) * w * s, qy = (ry - 0.5) * h * s
+        let t = g.rotate * .pi / 180
+        // The turn undone: rotate back by -t.
+        let dx = qx * cos(t) + qy * sin(t), dy = -qx * sin(t) + qy * cos(t)
+        return MaskPoint(x: dx / w + 0.5, y: dy / h + 0.5)
+    }
+
+    /// A source point to view points on the loupe.
+    static func sourceToView(_ p: MaskPoint, _ g: Geometry, _ viewport: Viewport) -> CGPoint {
+        viewport.view(frame(p, g))
+    }
+
+    /// A view point on the loupe to the source frame; nil when the viewport
+    /// is empty. Points off the photo map too (a gradient's end may lie
+    /// outside it).
+    static func viewToSource(_ v: CGPoint, _ g: Geometry, _ viewport: Viewport) -> MaskPoint? {
+        viewport.frame(v).map { source($0, g) }
+    }
+}

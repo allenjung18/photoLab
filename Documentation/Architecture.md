@@ -275,6 +275,28 @@ out at a uniform scale, so the angle seen on screen is the angle in the
 frame, and `StraightenMath` (also `CropMath.swift`) takes it off the
 current value.
 
+The mask handles (`MaskOverlay`, over the After frame outside crop mode)
+need the opposite direction: a mask lives in the SOURCE frame, before
+rotate and crop, and the frame shown is after both.
+`MaskMath.viewToSource` / `sourceToView` (`Masks.swift`) map between them
+in three steps, the forward one mirroring the chain: a view point to a
+fraction of the frame shown (`MaskMath.Viewport`: `.fit` over the rect
+`ZoomMath.fitRect` gives, or `.window` over the 1:1 region drawn unscaled
+and centred, as `ZoomMath.point(forClick:…)` reads a click, without its
+snap to a pixel centre); the crop undone (`CropMath.Crop.rect`); then the
+rotate stage undone, its inscribed rectangle
+(`MaskMath.Geometry.inscribedScale`, the formula of `Renderer`'s
+`.rotate` stage) and its clockwise turn about the centre. The renderer
+also takes a pixel off each side of the inscribed rectangle, which the
+mapping leaves out (under a pixel of the frame). `MaskMath.Geometry` is
+read from the current recipe and `PreviewModel.masterSize` (only its
+aspect is used), and the overlay is drawn only once
+`PreviewModel.imageRecipe` has the current rotate and crop
+(`MaskRender.geometryKinds`), so the mapping is the shown frame's. A
+handle drag maps its start and current pointer to the source and the
+shape moves there (`MaskHandles`), so a mask drag never re-requests a
+different geometry: only the overlay and the masked render move.
+
 ### The loupe at 1:1
 
 `PreviewModel.zoom` is `PreviewZoom.fit` (the whole frame in the view) or

@@ -663,7 +663,8 @@ Writes: nothing.
 - **Moving through the folder.** **←** and **→** are `Library.select(offset:)`,
   which walks the filtered list (`Library.visiblePhotos`), so the loupe
   never lands on a hidden photo and "n of N" counts the visible ones;
-  **Esc** leaves the loupe; **Return** and **E** enter it; **G** goes to the grid
+  **Esc** leaves the loupe (once no tool is armed and no mask is selected:
+  it puts those down first); **Return** and **E** enter it; **G** goes to the grid
   (see Menus and shortcuts).
 - **Save to Photos.** For a photo of a Photos album the toolbar gains
   **Save to Photos** (the File menu has it too), enabled by
@@ -748,13 +749,25 @@ redo, Reset, the render time and any sidecar error.
 - **Masks** (`MasksPanel.swift`). `MasksSection(photo:)` is a
   `DisclosureGroup` after the Presets strip (open, with a dot while the
   photo has a mask). **Linear**, **Radial** and **Brush** run the Photo
-  menu's commands (**M**, **⇧M**, **K**) through
-  `Library.addMask(_:for:)`: one mask at the end of `Recipe.masks` at its
-  `MaskKind.defaultShape` (no on-canvas handles yet: a linear from the top
-  edge to 40% down, `(0.5, 0)` to `(0.5, 0.4)`; a radial at `(1/3, 1/3)`
-  with radii 0.2 × 0.15 of the long side, feather 0.5; an empty brush),
-  selected, crop mode and the eyedropper put down; one undo step and one
-  sidecar write. A new mask has every adjustment at neutral, so it renders
+  menu's commands (**M**, **⇧M**, **K**). **Linear** and **Radial** are
+  toggles: they arm placement (`Library.maskPlacement`, checked in the
+  menu; the same key again, `Esc`, crop mode, compare, the eyedropper, the
+  brush and leaving the loupe disarm it; arming leaves crop mode, ends
+  compare and puts the eyedropper and the brush down). Armed, the loupe
+  photo takes the next drag (`MaskOverlay`'s placement layer, a hint at the
+  top): `Library.dragPlacement` adds the mask on the drag's first move
+  inside `beginEdit` and reshapes it on every later one
+  (`MaskHandles.placed(_:from:to:size:)`: a linear from the drag's start to
+  the pointer; a radial circle centred at the start, its radius the
+  distance in long-side units, angle 0, feather 0.5), so a placement is one
+  new mask, selected, one undo step and one sidecar write at mouse-up
+  (`Library.endMaskDrag`, which disarms). A click instead
+  (`Library.placeMask(_:at:for:)`) places `MaskKind.defaultShape` moved so
+  its centre is the click: a linear `(0.5, 0)` to `(0.5, 0.4)` shape (40%
+  of the height), a radial with radii 0.2 × 0.15 of the long side, feather
+  0.5. **Brush** adds through `Library.addMask(_:for:)`: one empty brush
+  mask at the end of `Recipe.masks`, selected, crop mode and the eyedropper
+  put down; one undo step and one sidecar write. A new mask has every adjustment at neutral, so it renders
   as nothing until a slider moves. The list names each mask by kind and
   order, "Linear 1", "Radial 1", "Linear 2" (`MaskKind.names(of:)`,
   derived, so a delete renumbers); a click selects it, again deselects.
@@ -774,6 +787,29 @@ redo, Reset, the render time and any sidecar error.
   the eyedropper down; `K` again, `Esc`, another mask selected, crop mode,
   compare, the eyedropper and leaving the loupe disarm it). Painting on the
   photo is not built yet: an armed brush does nothing on a drag.
+  **Handles** (`MaskOverlay.swift`): the selected linear or radial mask is
+  drawn over the loupe's After frame, at fit or in the 1:1 window, beside
+  `CropOverlay`. A linear shows its start and end lines (solid) and centre
+  line (dashed) across the photo, a centre pin and a handle on each end; a
+  radial its ellipse, its inner ellipse dashed (radii × (1 − feather)),
+  four edge handles, a centre pin, a rotate knob above the top edge and a
+  feather diamond on the inner ellipse (`MaskHandles.positions(of:size:)`).
+  What a drag does is `MaskHandles.drag(_:shape:from:to:size:)`, in
+  long-side units: a centre pin moves the shape by the pointer's source
+  delta; a linear end handle follows the pointer and the other end mirrors
+  it through the centre (the turn and the fade's length, the centre held);
+  a radial edge handle sets the one radius of its axis (the pointer's
+  offset projected on that axis, at least `MaskHandles.minRadius`); the
+  knob turns the ellipse by the angle the pointer sweeps about the centre;
+  the diamond sets feather to 1 − (its offset along the first axis) /
+  radii.x, held in 0…1. Every drag goes through
+  `Library.dragMask(_:_:from:to:size:for:)`, measured from the shape and
+  pointer at the drag's start, inside one `beginEdit` … `endEdit`: one
+  undo step and one sidecar write (`Library.endMaskDrag`). The handles
+  hide in compare, in crop mode and while Before shows, and wait until the
+  shown frame was rendered with the current rotate and crop; `Esc`
+  deselects the mask (after the tools it puts down, before it leaves the
+  loupe), and the handles go with it.
   **Show Overlay** is **View › Show Mask Overlay** (**O**,
   `Library.showMaskOverlay`, off by default and not remembered): the loupe
   tints the selected mask red at half strength (`MaskTint.compose`, the

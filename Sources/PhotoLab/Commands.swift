@@ -345,17 +345,20 @@ struct AppCommand: Identifiable {
                    isEnabled: { c in c.library.canAddToCollection && !c.targets.isEmpty },
                    perform: { $0.library.requestNewCollection(for: $0.targets) }),
         // Local adjustments on the loupe photo (Lightroom's M, Shift-M, K):
-        // a new mask at its default placement, selected in the Masks
-        // section; Brush adds an empty brush mask armed for painting, and
-        // puts the brush down when it is armed.
+        // New Linear and New Radial arm placement (`Library.maskPlacement`):
+        // the next drag on the photo places the mask, a click its default
+        // shape; the same key again disarms. Brush adds an empty brush mask
+        // armed for painting, and puts the brush down when it is armed.
         AppCommand(name: .newLinearMask, title: "New Linear Gradient", key: "m", modifiers: [],
                    placement: .photo, section: 5,
+                   isOn: { c in c.library.loupe && c.library.maskPlacement == .linear },
                    isEnabled: { c in c.library.loupe && c.library.selection != nil },
-                   perform: { c in if let id = c.library.selection { c.library.addMask(.linear, for: id) } }),
+                   perform: { c in togglePlacement(.linear, c.library) }),
         AppCommand(name: .newRadialMask, title: "New Radial Gradient", key: "m", modifiers: [.shift],
                    placement: .photo, section: 5,
+                   isOn: { c in c.library.loupe && c.library.maskPlacement == .radial },
                    isEnabled: { c in c.library.loupe && c.library.selection != nil },
-                   perform: { c in if let id = c.library.selection { c.library.addMask(.radial, for: id) } }),
+                   perform: { c in togglePlacement(.radial, c.library) }),
         AppCommand(name: .brushMask, title: "Brush", key: "k", modifiers: [],
                    placement: .photo, section: 5,
                    isOn: { c in c.library.loupe && c.library.maskBrushArmed },
@@ -384,8 +387,10 @@ struct AppCommand: Identifiable {
                    perform: { $0.library.sort.ascending = false }),
 
         // Keys with no menu item: Escape puts the white-balance eyedropper
-        // down, else disarms the brush, else the straighten tool, else leaves crop mode, else the loupe (from the grid it collapses the
-        // selection), Return opens it. Return is enabled only
+        // down, else disarms the brush, else mask placement, else the
+        // straighten tool, else leaves crop mode, else deselects the mask
+        // (its handles go), else leaves the loupe (from the grid it
+        // collapses the selection), Return opens it. Return is enabled only
         // when there is a photo to open, as Loupe (E) is: the Welcome view
         // has none, and its Open Folder… button holds Return there.
         AppCommand(name: .back, title: "Back", key: .escape, modifiers: [], placement: .keysOnly,
@@ -394,10 +399,14 @@ struct AppCommand: Identifiable {
                            c.library.whiteBalancePicking = false
                        } else if c.library.maskBrushArmed {
                            c.library.maskBrushArmed = false
+                       } else if c.library.maskPlacement != nil {
+                           c.library.maskPlacement = nil
                        } else if c.library.straightening {
                            c.library.straightening = false
                        } else if c.library.cropMode {
                            c.library.cropMode = false
+                       } else if c.library.loupe, c.library.selectedMask != nil {
+                           c.library.selectedMask = nil
                        } else if c.library.loupe {
                            c.library.loupe = false
                        } else {
@@ -436,6 +445,11 @@ struct AppCommand: Identifiable {
     private static func enterLoupe(_ library: Library) {
         if library.selection == nil { library.selection = library.visiblePhotos.first?.id }
         library.loupe = library.selection != nil
+    }
+
+    /// M / Shift-M: arms placement of `kind`, or disarms it when armed.
+    private static func togglePlacement(_ kind: MaskKind, _ library: Library) {
+        library.maskPlacement = library.maskPlacement == kind ? nil : kind
     }
 }
 

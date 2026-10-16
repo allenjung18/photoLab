@@ -127,3 +127,114 @@ final class MaskMathTests: XCTestCase {
         XCTAssertEqual(MaskMath.weight(of: brush, at: p(0.95, 0.5), in: wide), 1)
     }
 }
+
+// MARK: - View to source and back
+
+/// `MaskMath.viewToSource` / `sourceToView`: a point on the loupe goes back
+/// through the fit rect or the 1:1 window, the crop and the rotate stage's
+/// turn and inscribed inset to the source frame, and returns to where it
+/// was; and the forward mapping lands where the renderer puts the pixel.
+final class MaskMathMappingTests: XCTestCase {
+    let wide = CGSize(width: 1200, height: 800)
+
+    private let crop20 = CropMath.Crop(left: 0.2, top: 0, right: 0, bottom: 0)
+    private let cropMixed = CropMath.Crop(left: 0.1, top: 0.05, right: 0.1, bottom: 0.05)
+
+    /// Fit: a 3:2 frame in an 1000 x 700 pane.
+    private func fit(_ g: MaskMath.Geometry) -> MaskMath.Viewport {
+        // The frame's aspect after rotate (kept) and crop.
+        let k = g.crop.rect
+        let frame = CGSize(width: g.source.width * k.width, height: g.source.height * k.height)
+        return .fit(ZoomMath.fitRect(frame: frame, pane: CGSize(width: 1000, height: 700)))
+    }
+
+    /// 1:1: a 1600 x 1000 pixel window of a 2400 x 1600 frame at 2x.
+    private let window = MaskMath.Viewport.window(region: CGRect(x: 300, y: 250, width: 1600, height: 1000),
+                                                  frame: CGSize(width: 2400, height: 1600),
+                                                  pane: CGSize(width: 820, height: 520), displayScale: 2)
+
+    private let viewPoints = [CGPoint(x: 120, y: 90), CGPoint(x: 500, y: 350), CGPoint(x: 811, y: 47),
+                              CGPoint(x: 333, y: 602), CGPoint(x: -40, y: 20)]
+
+    func testViewToSourceToViewRoundTripsWithinHalfAPoint() {
+        for rotate in [0.0, 7.5, -30] {
+            for crop in [CropMath.Crop.none, crop20, cropMixed] {
+                let g = MaskMath.Geometry(source: wide, rotate: rotate, crop: crop)
+                for viewport in [fit(g), window] {
+                    for v in viewPoints {
+                        let s = try! XCTUnwrap(MaskMath.viewToSource(v, g, viewport))
+                        let back = MaskMath.sourceToView(s, g, viewport)
+                        XCTAssertLessThan(hypot(back.x - v.x, back.y - v.y), 0.5,
+                                          "rotate \(rotate), crop \(crop), \(viewport), \(v) -> \(s) -> \(back)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testWithNoRotateOrCropTheFitMappingIsTheFitRect() {
+        let g = MaskMath.Geometry(source: wide)
+        let viewport = fit(g)
+        guard case .fit(let r) = viewport else { return XCTFail() }
+        let s = try! XCTUnwrap(MaskMath.viewToSource(CGPoint(x: r.minX + r.width / 4, y: r.maxY), g, viewport))
+        XCTAssertEqual(s.x, 0.25, accuracy: 1e-9)
+        XCTAssertEqual(s.y, 1, accuracy: 1e-9)
+    }
+
+    func testTheCropAndTheTurnAreUndone() {
+        // A 20% left crop: the frame's left edge is source x 0.2.
+        let cropped = MaskMath.Geometry(source: wide, crop: crop20)
+        let left = MaskMath.source(CGPoint(x: 0, y: 0.5), cropped)
+        XCTAssertEqual(left.x, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(left.y, 0.5, accuracy: 1e-9)
+        // A turn keeps the centre, and the frame's centre is the source's.
+        let turned = MaskMath.Geometry(source: wide, rotate: 7.5)
+        let c = MaskMath.source(CGPoint(x: 0.5, y: 0.5), turned)
+        XCTAssertEqual(c.x, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(c.y, 0.5, accuracy: 1e-9)
+        // Clockwise: the frame's top-middle comes from a source point to the
+        // LEFT of the middle (the picture turned right under it), and inside
+        // the source by the inscribed inset.
+        let top = MaskMath.source(CGPoint(x: 0.5, y: 0), turned)
+        XCTAssertLessThan(top.x, 0.5)
+        XCTAssertGreaterThan(top.y, 0)
+    }
+
+    /// The forward mapping is the renderer's: a red dot at a source point,
+    /// rendered through rotate 7.5 and a crop, lands where `MaskMath.frame`
+    /// says, within 1.5 px of a 512 px frame.
+    func testTheMappingLandsWhereTheRendererPutsThePixel() throws {
+        // Off-centre, so a wrong turn direction or a missing inset moves
+        // it; inside the frame each case keeps.
+        let spot = MaskPoint(x: 0.4, y: 0.35)
+        let w = 512, h = 384
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        let c = CGPoint(x: spot.x * Double(w), y: (1 - spot.y) * Double(h))
+        ctx.fillEllipse(in: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8))
+        let src = CIImage(cgImage: ctx.makeImage()!)
+        for (rotate, crop) in [(7.5, cropMixed), (-30, crop20), (0, crop20)] {
+            var r = Recipe.neutral
+            r.set(.rotate, to: rotate)
+            CropMath.write(crop, edges: CropMath.Edge.allCases, into: &r)
+            let out = try XCTUnwrap(Renderer.shared.render(src, recipe: r)).image
+            guard let data = out.dataProvider?.data, let px = CFDataGetBytePtr(data) else { return XCTFail() }
+            var sx = 0.0, sy = 0.0, n = 0.0
+            for y in 0..<out.height {
+                for x in 0..<out.width {
+                    let i = y * out.bytesPerRow + x * 4
+                    if Int(px[i]) > Int(px[i + 1]) + 60 { sx += Double(x) + 0.5; sy += Double(y) + 0.5; n += 1 }
+                }
+            }
+            XCTAssertGreaterThan(n, 10, "the dot survives rotate \(rotate)")
+            let f = MaskMath.frame(spot, MaskMath.Geometry(recipe: r, source: CGSize(width: w, height: h)))
+            let ex = f.x * Double(out.width), ey = f.y * Double(out.height)
+            XCTAssertLessThan(hypot(sx / n - ex, sy / n - ey), 1.5,
+                              "rotate \(rotate): rendered at (\(sx / n), \(sy / n)), mapped to (\(ex), \(ey))")
+        }
+    }
+}

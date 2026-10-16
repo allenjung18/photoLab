@@ -5,9 +5,11 @@ import CoreImage.CIFilterBuiltins
 // MARK: - Mask kinds, names and default placements
 
 /// The three kinds of local adjustment, as the Masks section and the Photo
-/// menu offer them. A new mask gets `defaultShape` (no on-canvas handles
-/// yet): a linear from the top edge to 40% down, a radial ellipse centred
-/// at a third of the frame, an empty brush.
+/// menu offer them. A linear or radial is placed by a drag on the photo
+/// (`MaskHandles.placed`); `defaultShape` is what a click places (moved to
+/// the click) and what `Library.addMask` adds: a linear from the top edge
+/// to 40% down, a radial ellipse centred at a third of the frame, an empty
+/// brush.
 enum MaskKind: CaseIterable {
     case linear, radial, brush
 
@@ -240,7 +242,7 @@ struct MasksSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 addRow
                 if masks.isEmpty {
-                    Text("No masks. A new one starts at a default place; drag handles come later.")
+                    Text("No masks. Pick Linear or Radial, then drag on the photo to place one.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -277,20 +279,8 @@ struct MasksSection: View {
 
     private var addRow: some View {
         HStack(spacing: 6) {
-            Button {
-                AppCommand.command(.newLinearMask).perform(context)
-            } label: {
-                Label("Linear", systemImage: MaskKind.linear.systemImage)
-            }
-            .disabled(!AppCommand.command(.newLinearMask).isEnabled(context))
-            .help(help(.newLinearMask, "A new linear gradient, from the top edge to 40% down"))
-            Button {
-                AppCommand.command(.newRadialMask).perform(context)
-            } label: {
-                Label("Radial", systemImage: MaskKind.radial.systemImage)
-            }
-            .disabled(!AppCommand.command(.newRadialMask).isEnabled(context))
-            .help(help(.newRadialMask, "A new radial gradient, centred at a third of the frame"))
+            placementToggle(.linear, .newLinearMask, "A new linear gradient: drag on the photo from full effect to none")
+            placementToggle(.radial, .newRadialMask, "A new radial gradient: drag on the photo from its centre to its edge")
             Toggle(isOn: Binding(get: { library.maskBrushArmed },
                                  set: { if $0 != library.maskBrushArmed { AppCommand.command(.brushMask).perform(context) } })) {
                 Label("Brush", systemImage: MaskKind.brush.systemImage)
@@ -300,6 +290,18 @@ struct MasksSection: View {
             .help(help(.brushMask, "A new brush mask, armed for painting"))
         }
         .controlSize(.small)
+    }
+
+    /// New Linear / New Radial: armed while the next drag on the photo will
+    /// place one (`Library.maskPlacement`).
+    private func placementToggle(_ kind: MaskKind, _ name: AppCommand.Name, _ text: String) -> some View {
+        Toggle(isOn: Binding(get: { library.maskPlacement == kind },
+                             set: { if $0 != (library.maskPlacement == kind) { AppCommand.command(name).perform(context) } })) {
+            Label(kind.title, systemImage: kind.systemImage)
+        }
+        .toggleStyle(.button)
+        .disabled(!AppCommand.command(name).isEnabled(context))
+        .help(help(name, text))
     }
 
     private func list(_ masks: [LocalMask]) -> some View {

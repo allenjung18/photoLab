@@ -267,11 +267,28 @@ final class MasksPanelTests: XCTestCase {
         for c in [linear, radial, brush, overlay] { XCTAssertFalse(c.isEnabled(ctx), "\(c.name) off while typing") }
         lib.textEntryActive = false
 
+        // M and Shift-M arm placement (the drag on the photo is
+        // MaskHandleTests'); a click with one armed places its default shape.
         lib.cropMode = true
         run(.newLinearMask, ctx)
-        XCTAssertFalse(lib.cropMode, "a new mask leaves crop mode")
+        XCTAssertFalse(lib.cropMode, "arming a new mask leaves crop mode")
+        XCTAssertEqual(lib.maskPlacement, .linear)
+        XCTAssertEqual(linear.isOn?(ctx), true)
+        XCTAssertTrue(lib.recipe(for: ids[0]).masks.isEmpty, "arming adds nothing")
+        run(.newLinearMask, ctx)
+        XCTAssertNil(lib.maskPlacement, "M again disarms")
+        run(.newLinearMask, ctx)
+        lib.placeMask(.linear, at: MaskPoint(x: 0.5, y: 0.2), for: ids[0])
+        XCTAssertNil(lib.maskPlacement, "a placement disarms")
         run(.newRadialMask, ctx)
+        XCTAssertEqual(radial.isOn?(ctx), true)
+        run(.back, ctx)
+        XCTAssertNil(lib.maskPlacement, "Esc disarms placement")
+        XCTAssertTrue(lib.loupe)
+        run(.newRadialMask, ctx)
+        lib.placeMask(.radial, at: MaskPoint(x: 1.0 / 3, y: 1.0 / 3), for: ids[0])
         let masks = lib.recipe(for: ids[0]).masks
+        XCTAssertEqual(masks.first?.shape, MaskKind.linear.defaultShape, "a click places the default, centred there")
         XCTAssertEqual(masks.map { MaskKind($0.shape) }, [.linear, .radial])
         XCTAssertEqual(lib.selectedMask, masks[1].id)
 
