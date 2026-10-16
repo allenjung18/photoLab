@@ -295,6 +295,16 @@ not only the pass.
   preview-sized frame, and the overlay flags exactly the clipped pixels of a
   frame holding every 8-bit level and of a rendered frame, agreeing with
   that frame's histogram.
+- `ImageStatsTests.swift` — `ImageStats` on images built in memory: a grey
+  ramp's luma percentiles within one code of q × 255, luma Rec. 709 (pure
+  green at 0.7152 of white, every percentile within one code of
+  `Histogram.luminance`'s), a warm-tinted grey's mean red above its blue,
+  the shadow and highlight means of a two-tone frame with the midtone range
+  nil, a desaturated copy's lower saturation and chroma (black 0, not NaN),
+  `distance(to:weights:)` zero to itself, symmetric and linear in its
+  weights, a Codable round trip, `of(master:recipe:)` equal to measuring the
+  frame `Renderer` renders at `AutoTone.analysisPixelSize`, and the timed
+  512 px measurement.
 - `CompareTests.swift` — compare mode in `PreviewModel`: Before and After
   come out at equal pixel size from one master, Before equal to the neutral
   render (maxDiff 0) and After to the recipe's; no second frame outside
@@ -893,6 +903,9 @@ each prints a `BENCH` line and fails above a bound.
   and is printed beside the gated number, not gated.
 - `testPreviewSizedFrameUnderTwentyMilliseconds` (`HistogramTests`): the
   histogram of a preview-sized frame after one warm-up.
+- `testMeasuresAnalysisFrameUnderTwentyMilliseconds` (`ImageStatsTests`):
+  `ImageStats.measure` of a 512×341 frame (the analysis size) after one
+  warm-up, printed as BENCH-IMAGESTATS.
 - `testRegionStepRendersWithinTheFrameBudget` (`ZoomTests`): a sweep of
   exposure steps rendering a 2600×1600 1:1 window of the 24 MP
   full-resolution master with clarity, sharpening and vignette on; the

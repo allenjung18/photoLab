@@ -449,6 +449,31 @@ by `WhiteBalance.neutralising`) and measures the histogram on the recipe
 with that temperature and tint; `AutoTone.base` zeroes only the six, so the
 second run reads the same frame and sets the same eight values.
 
+`ImageStats` (`ImageStats.swift`) is the measurement a look is compared by:
+the shared core of learning from edits (a solver that minimises
+`ImageStats.distance(to:weights:)` between a photo and a reference) and of
+Auto in my style. `ImageStats.measure(_:)` reads one 8-bit frame through
+`RGBA8Pixels`, the bytes `Histogram` counts, and returns, on a 0…1 scale of
+the sRGB-encoded frame: Rec. 709 luma (`ImageStats.lumaWeights`, as
+`Histogram.luminance`) at each of `ImageStats.percentileLevels` (0.5, 5,
+25, 50, 75, 95 and 99.5 %, read by `AutoTone.percentile` from 256 bins);
+the mean colour (`ImageStats.RGB`); the mean colour of each
+`AdjustmentKind.GradeRange` (`ImageStats.rangeMeans`: luma below
+`ImageStats.shadowCeiling`, a third, is shadow, above
+`ImageStats.highlightFloor`, two thirds, highlight, the rest midtone; nil
+for a range no pixel falls in); mean HSV saturation and mean chroma. It is
+vectorised (vDSP over Double planes and one vImage histogram), well under
+a frame at 512 px (`ImageStatsTests`). `ImageStats.Weights` names the three terms of
+the distance (`tone`: the mean absolute difference of the percentiles;
+`colour`: the mean RGB distance of the overall and per-range means, a
+range only one frame has counting `ImageStats.missingRange`; `saturation`:
+the saturation and chroma differences), zero to itself and symmetric.
+`ImageStats.of(master:recipe:)` renders the recipe as it stands through
+`Renderer.shared` at `AutoTone.analysisPixelSize`, as
+`AutoTone.histogram(of:recipe:)` does without its neutral base, and
+measures that frame. Nothing reads it yet: it has no UI and touches no
+`Library` state.
+
 ### The preset strip
 
 `PresetThumbnails.render(master:presets:base:pixelSize:renderer:)`
