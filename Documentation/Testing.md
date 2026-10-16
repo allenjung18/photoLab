@@ -480,7 +480,9 @@ not only the pass.
   (2 skipped)"; Add keeps one sample per photo; a run with nothing to learn
   or a cancel keeps the saved style; the store (a temp directory only)
   round-trips, moves a damaged or version-2 file aside with its bytes, and
-  Forget Style deletes it. Mutants (mean for median; no bucket split) fail
+  Forget Style deletes it; an all-black photo with temperature +20 left at
+  Auto (no readable white balance) is skipped; a library made without a
+  store has none. Mutants (mean for median; no bucket split) fail
   the medians test.
 - `AutoToneTests.swift` — Auto (`AutoTone`, `Library.autoTone`) on
   synthetic grays: a dark frame gets more than +0.5 EV and its median

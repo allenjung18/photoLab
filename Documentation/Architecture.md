@@ -527,7 +527,7 @@ thread; a test replaces it), results keyed by `Photo.ID` and applied by one
 `Library.runAutoJob`, generic over what each read returns, and Learn Style
 (`Library.learnStyle(from:replace:)`, `AutoStyle.swift`) is its second
 user: each read through `Library.styleMeasure` gives a `StyleSample`'s
-`StyleBucket` and Auto's values for the photo at neutral, the photo's own
+`StyleBucket` and the values Auto gives the photo, the photo's own
 values are taken from its recipe as the job started, and
 `StyleProfile.learn(from:)` (pure) turns the samples into per-bucket
 medians of own − Auto with an all-photo fallback, saved by `StyleStore`.

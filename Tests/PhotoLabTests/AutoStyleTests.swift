@@ -162,6 +162,28 @@ final class AutoStyleTests: XCTestCase {
         XCTAssertEqual(lib.styleProfile?.sampleCount, 2)
     }
 
+    func testAPhotoLeftAtAutoWithAnUnreadableWhiteBalanceIsSkipped() async throws {
+        // All black: Auto reads no white balance and keeps the photo's own.
+        let url = folder.appendingPathComponent("black.png")
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, frame(low: 0, high: 0), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+        let lib = library()
+        let id = try XCTUnwrap(lib.photos.first?.id)
+        var r = Recipe.neutral
+        r.set(.temperature, to: 20)
+        lib.setRecipe(r, for: id)
+        await lib.autoTone([id])
+        XCTAssertEqual(lib.recipe(for: id).value(of: .temperature), 20, "Auto kept the white balance")
+        let learned = await lib.learnStyle(from: [id], replace: true)
+        XCTAssertEqual(learned, 0)
+        XCTAssertEqual(lib.autoNote, "Learned from 0 photos (1 skipped)")
+    }
+
+    func testALibraryMadeWithoutAStoreNeverReadsOne() {
+        XCTAssertNil(Library(rememberFolder: true, defaults: UserDefaults(suiteName: "photolab-style-\(UUID().uuidString)")!).styleStore)
+    }
+
     func testARunWithNothingToLearnOrACancelKeepsTheSavedStyle() async throws {
         try makePhotos(2)
         let lib = library()

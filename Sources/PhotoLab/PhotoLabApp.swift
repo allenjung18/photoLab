@@ -16,7 +16,7 @@ struct PhotoLabApp: App {
 
     init() {
         let settings = AppSettings()
-        _library = State(initialValue: Library(settings: settings, collections: .app, trasher: LiveFileTrasher()))
+        _library = State(initialValue: Library(settings: settings, collections: .app, style: StyleStore(), trasher: LiveFileTrasher()))
         _exports = State(initialValue: ExportQueue(settings: settings))
         _imports = State(initialValue: Importer(settings: settings))
         // Running from `swift run` has no bundle; make the process a real

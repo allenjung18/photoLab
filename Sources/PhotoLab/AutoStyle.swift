@@ -27,8 +27,8 @@ enum StyleBucket: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// One photo's evidence: its bucket, Auto's values for it (measured with its
-/// Basic and white-balance kinds at neutral) and the photo's own values,
+/// One photo's evidence: its bucket, the values Auto gives it (whatever its
+/// Basic values are, as `measure` says) and the photo's own values,
 /// each over `AutoTone.kinds`. Values are keyed by `AdjustmentKind` raw value
 /// so the JSON stays readable.
 struct StyleSample: Codable, Equatable, Sendable {
@@ -40,8 +40,8 @@ struct StyleSample: Codable, Equatable, Sendable {
     init(photo: PhotoID, bucket: StyleBucket, auto: [AdjustmentKind: Double], own: [AdjustmentKind: Double]) {
         self.photo = photo
         self.bucket = bucket
-        // A kind Auto left alone (a white balance it could not read) is
-        // Auto's neutral: it is measured on the neutral base.
+        // A kind missing from `auto` counts as neutral; `measure` fills in
+        // a white balance Auto keeps.
         self.auto = Dictionary(uniqueKeysWithValues: AutoTone.kinds.map { ($0.rawValue, auto[$0] ?? $0.neutral) })
         self.own = Dictionary(uniqueKeysWithValues: AutoTone.kinds.map { ($0.rawValue, own[$0] ?? $0.neutral) })
     }
@@ -71,12 +71,17 @@ struct StyleSample: Codable, Equatable, Sendable {
         return r
     }
 
-    /// What one photo's decode gives a sample: the bucket and Auto's values,
-    /// both from `neutralBase(recipe)`. Synchronous; call off the main thread.
+    /// What one photo's decode gives a sample: the bucket, from
+    /// `neutralBase(recipe)`, and the values Auto gives the photo now
+    /// (`AutoTone.values(for:recipe:)` on `AutoTone.base(recipe)`: the six at
+    /// neutral; `WhiteBalance.auto` resets white balance itself). Where Auto
+    /// cannot read a white balance it keeps the photo's own, and so does
+    /// the answer here, so a photo left at Auto is always `.unrefined`.
+    /// Synchronous; call off the main thread.
     static func measure(master: CIImage, recipe: Recipe) -> (bucket: StyleBucket, auto: [AdjustmentKind: Double])? {
-        let base = neutralBase(recipe)
-        guard let stats = ImageStats.of(master: master, recipe: base), let median = stats.luma(at: 0.5),
-              let auto = AutoTone.values(for: master, recipe: base) else { return nil }
+        guard let stats = ImageStats.of(master: master, recipe: neutralBase(recipe)), let median = stats.luma(at: 0.5),
+              var auto = AutoTone.values(for: master, recipe: AutoTone.base(recipe)) else { return nil }
+        for kind in AutoTone.whiteBalanceKinds where auto[kind] == nil { auto[kind] = recipe.effective(kind) }
         return (StyleBucket.of(lumaMedian: median), auto)
     }
 }

@@ -1210,8 +1210,10 @@ redo, Reset, the render time and any sidecar error.
   Basic and white-balance kinds at neutral (`StyleSample.neutralBase`) for
   its bucket (`ImageStats.of(master:recipe:)`'s luma median, by
   `StyleBucket.of(lumaMedian:)`: below `ImageStats.shadowCeiling` dark,
-  above `ImageStats.highlightFloor` bright, else mid) and for Auto's values
-  (`AutoTone.values(for:recipe:)`). A `StyleSample` keeps those and the
+  above `ImageStats.highlightFloor` bright, else mid), and with the six at
+  neutral (`AutoTone.base`) for the values Auto gives it
+  (`AutoTone.values(for:recipe:)`; a white balance Auto cannot read stays
+  the photo's own, as Auto keeps it). A `StyleSample` keeps those and the
   photo's own values (`Recipe.effective`) over `AutoTone.kinds`; one whose
   own values are all neutral or equal Auto's (`StyleSample.skip`), or whose
   original cannot be read, is skipped and counted. `StyleProfile.learn(from:)`,
@@ -1536,8 +1538,9 @@ remembered.
   shows `Library.styleError` when the file could not be read or written.
   The file is not an `AppSettings` value: `StyleStore`,
   `~/Library/Application Support/PhotoLab/style.json`
-  (`StyleStore.defaultDirectory`, injected so tests use a temp directory;
-  a `Library(rememberFolder: false)` without one keeps the style in memory),
+  (`StyleStore.defaultDirectory`; `PhotoLabApp` passes it as
+  `Library(style:)`, and a library made without one, as tests make it,
+  keeps the style in memory),
   read at launch (`Library.loadStyle()`), written atomically, and on
   `PresetStore`'s rules: a file this build cannot decode, or whose
   `version` is newer than `StyleProfile.currentVersion` (`StyleError`), is

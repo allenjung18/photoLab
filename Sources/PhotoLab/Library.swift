@@ -430,8 +430,9 @@ final class Library {
     }
     /// Most photos Auto reads at once: 4, or half the processors if fewer.
     static var autoConcurrency: Int { min(4, max(1, ProcessInfo.processInfo.activeProcessorCount / 2)) }
-    /// Where the learned style is kept (`StyleStore`); nil keeps it in
-    /// memory only (a library made with `rememberFolder: false` and no store).
+    /// Where the learned style is kept (`StyleStore`; the app passes the
+    /// default one); nil keeps it in memory only, so a library made without
+    /// one, as every test's is, never reads the user's `style.json`.
     let styleStore: StyleStore?
     /// The learned style, nil when none is saved (or it could not be read).
     private(set) var styleProfile: StyleProfile?
@@ -513,7 +514,7 @@ final class Library {
          style: StyleStore? = nil,
          trasher: (any FileTrasher)? = nil) {
         self.settings = settings ?? AppSettings(defaults: defaults, persistent: rememberFolder)
-        self.styleStore = style ?? (rememberFolder ? StyleStore() : nil)
+        self.styleStore = style
         self.trasher = trasher
         self.captureDates = captureDates
         self.collectionStore = collections
