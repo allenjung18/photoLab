@@ -1,7 +1,7 @@
 import Foundation
 
 /// Every adjustment, listed in the order the chain applies them (lens
-/// corrections, geometry, then exposure and white balance, tone, color, per-band HSL, color
+/// corrections, geometry, noise reduction, then exposure and white balance, tone, color, per-band HSL, color
 /// grading, detail, effects). Values are user-facing units (EV for exposure, degrees for
 /// rotate, percent of the frame for a crop edge, -100…100 or 0…100 for the
 /// rest); `Renderer` maps them onto Core Image parameters.
@@ -16,6 +16,11 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
     case lensDistortion, lensVignette
     // Geometry
     case rotate, cropLeft, cropTop, cropRight, cropBottom
+    // Noise reduction: after the crop (the fewest pixels; first in the chain
+    // measured ~1.5 ms slower at loupe size, the lens warp reading a larger
+    // area of it) and before exposure and tone lift the shadows (and the
+    // noise in them). Shown at the head of Detail.
+    case luminanceNoise, colorNoise
     // Exposure and white balance
     case exposure, temperature, tint, contrast
     // Tone (one lookup)
@@ -86,6 +91,8 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .saturation: return "Saturation"
         case .clarity: return "Clarity"
         case .sharpening: return "Sharpening"
+        case .luminanceNoise: return "Noise reduction"
+        case .colorNoise: return "Color noise"
         case .grain: return "Grain"
         case .vignette: return "Vignette"
         case .lensDistortion: return "Distortion"
@@ -103,7 +110,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .exposure: return -5...5
         case .rotate: return -45...45
         case .cropLeft, .cropTop, .cropRight, .cropBottom: return 0...40
-        case .sharpening, .grain: return 0...100
+        case .sharpening, .grain, .luminanceNoise, .colorNoise: return 0...100
         case .gradeShadowHue, .gradeMidtoneHue, .gradeHighlightHue: return 0...360
         case .gradeShadowSat, .gradeMidtoneSat, .gradeHighlightSat: return 0...100
         default: return -100...100
@@ -118,7 +125,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .exposure: return String(format: "%+.2f", value)
         case .rotate: return String(format: "%+.1f°", value)
         case .cropLeft, .cropTop, .cropRight, .cropBottom: return String(format: "%.0f%%", value)
-        case .sharpening, .grain,
+        case .sharpening, .grain, .luminanceNoise, .colorNoise,
              .gradeShadowSat, .gradeMidtoneSat, .gradeHighlightSat: return String(format: "%.0f", value)
         case .gradeShadowHue, .gradeMidtoneHue, .gradeHighlightHue: return String(format: "%.0f°", value)
         default: return String(format: "%+.0f", value)
@@ -156,7 +163,7 @@ enum AdjustmentKind: String, CaseIterable, Codable, Identifiable {
         case .exposure, .contrast, .highlights, .shadows, .whites, .blacks: return .basic
         case .temperature, .tint, .vibrance, .saturation: return .color
         case .curveBlacks, .curveShadows, .curveMidtones, .curveHighlights, .curveWhites: return .curve
-        case .clarity, .sharpening, .grain: return .detail
+        case .luminanceNoise, .colorNoise, .clarity, .sharpening, .grain: return .detail
         case .vignette: return .effects
         case .lensDistortion, .lensVignette: return .lens
         default:
@@ -353,6 +360,26 @@ struct Recipe: Codable, Hashable {
     mutating func setEnabled(_ kind: AdjustmentKind, _ on: Bool) { self[kind].enabled = on }
     mutating func reset(_ kind: AdjustmentKind) { self[kind].value = kind.neutral }
     mutating func resetAll() { self = .neutral }
+
+    /// The noise-reduction kinds, which a drag's preview leaves out (`draft`).
+    static let noiseKinds: [AdjustmentKind] = [.luminanceNoise, .colorNoise]
+
+    /// The recipe the loupe renders mid-drag (`Library.previewRecipe`): this
+    /// one with noise reduction left out once the drag has moved something
+    /// else since `before` (its value at `beginEdit`), so every frame of a
+    /// slider, wheel, handle or brush drag keeps to the 60 Hz budget with
+    /// everything on. Unchanged until the drag moves something (no swap on a
+    /// mere press), and while the drag is moving noise reduction itself (its
+    /// own slider shows its effect live). Never saved, exported or written:
+    /// the frame at mouse-up has it back.
+    func draft(since before: Recipe) -> Recipe {
+        guard self != before,
+              Self.noiseKinds.allSatisfy({ self[$0] == before[$0] }),
+              Self.noiseKinds.contains(where: { !self[$0].isNoop }) else { return self }
+        var r = self
+        for kind in Self.noiseKinds { r.reset(kind) }
+        return r
+    }
 }
 
 extension Recipe {

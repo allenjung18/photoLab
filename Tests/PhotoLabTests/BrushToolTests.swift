@@ -350,7 +350,8 @@ final class BrushStrokeBudgetTests: XCTestCase {
             let misses = BrushRasterCache.shared.rasters
             var times: [Double] = []
             for f in 1...frames {
-                let r = Self.recipe(liveStroke: Array(all.prefix(f * perFrame)))
+                // What the loupe renders mid-stroke (`Library.previewRecipe`).
+                let r = Self.recipe(liveStroke: Array(all.prefix(f * perFrame))).draft(since: still)
                 let out = try XCTUnwrap(renderer.render(master, recipe: r, maxPixelSize: target))
                 times.append(out.milliseconds)
                 XCTAssertEqual(BrushRasterCache.shared.lastPath, f == 1 ? .followed : .grew,

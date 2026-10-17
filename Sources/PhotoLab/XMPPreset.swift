@@ -84,6 +84,10 @@ enum XMPPreset {
         // Detail and effects: Lightroom's Sharpening amount runs 0...150
         ("Sharpness", .sharpening, 100.0 / 150),
         ("GrainAmount", .grain, 1),
+        // Noise reduction; Lightroom's colour NR default of 25 maps to 0
+        // (`apply`), so a preset carrying the default changes nothing.
+        ("LuminanceSmoothing", .luminanceNoise, 1),
+        ("ColorNoiseReduction", .colorNoise, 1),
         ("PostCropVignetteAmount", .vignette, 1),
         // HSL, eight bands each
         ("HueAdjustmentRed", .hueRed, 1),
@@ -223,7 +227,6 @@ enum XMPPreset {
             (v.number ?? 50) != 50
         },
         UnsupportedRule(settings: ["ConvertToGrayscale"], label: "Black & white", isActive: isTrue),
-        UnsupportedRule(settings: ["LuminanceSmoothing"], label: "Noise reduction", isActive: nonZero),
         UnsupportedRule(settings: ["LensProfileEnable", "AutoLateralCA", "LensManualDistortionAmount",
                                    "VignetteAmount", "DefringePurpleAmount", "DefringeGreenAmount"],
                         label: "Lens corrections", isActive: nonZero),
@@ -270,8 +273,9 @@ enum XMPPreset {
         var setKinds: Set<AdjustmentKind> = []
 
         for row in mapping {
-            guard let raw = settings[row.setting], let number = raw.number,
+            guard let raw = settings[row.setting], var number = raw.number,
                   !setKinds.contains(row.kind) else { continue }
+            if row.setting == "ColorNoiseReduction", number == Self.secondaryDefaults["ColorNoiseReduction"] { number = 0 }
             setKinds.insert(row.kind)
             let scaled = number * row.scale
             let value = clamp(scaled, row.kind)

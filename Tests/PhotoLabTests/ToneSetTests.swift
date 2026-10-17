@@ -122,7 +122,7 @@ final class ToneSetTests: XCTestCase {
 
     func testEveryKindHasExactlyOneRecipeEntryAndTheSidecarShapeIsUnchanged() throws {
         XCTAssertEqual(Recipe.neutral.adjustments.map(\.kind), AdjustmentKind.allCases)
-        XCTAssertEqual(AdjustmentKind.allCases.count, 60)
+        XCTAssertEqual(AdjustmentKind.allCases.count, 62)
         XCTAssertEqual(AdjustmentKind.members(of: .hsl).count, 24)
         XCTAssertEqual(AdjustmentKind.members(of: .grade).count, 10)
         XCTAssertEqual(AdjustmentKind.members(of: .tone).count, 9)
@@ -536,7 +536,8 @@ final class ToneSetTests: XCTestCase {
                         // Sweep the middle 60% of the range (a 40% crop would be degenerate).
                         let t = 0.2 + 0.6 * Double(i) / Double(steps - 1)
                         stepper.set(&r, lo + (hi - lo) * t)
-                        let out = try XCTUnwrap(renderer.render(master, recipe: r, maxPixelSize: target))
+                        // What the loupe renders mid-drag (`Library.previewRecipe`).
+                        let out = try XCTUnwrap(renderer.render(master, recipe: r.draft(since: base), maxPixelSize: target))
                         times.append(out.milliseconds)
                     }
                     let sorted = times.sorted()

@@ -245,6 +245,46 @@ final class Renderer: @unchecked Sendable {
             f.contrast = 1
             f.brightness = 0
             return f.outputImage ?? image
+        case .luminanceNoise:
+            // Core Image's edge-aware noise reduction. Its level is a
+            // threshold (noise under it goes), so it rises with the slider
+            // to 0.1 at 100 and a photo's noise, which spans many levels, is
+            // taken away a little more at each step. The sharpness that
+            // protects edges rises with it (0 → 0.4): at a low level it would
+            // only sharpen the noise. One input, no blend, so the chain
+            // before it is computed once.
+            let k = a.value / 100
+            let f = CIFilter.noiseReduction()
+            f.inputImage = image.clampedToExtent()
+            f.noiseLevel = Float(0.1 * k)
+            f.sharpness = Float(0.4 * k)
+            return f.outputImage?.cropped(to: image.extent) ?? image
+        case .colorNoise:
+            // Blur the colour only: a blurred copy's hue and saturation over
+            // the original's luminance (the colour blend mode), so detail and
+            // edges stay. The radius is a fraction of the long side, up to
+            // 0.5% at 100, so preview and export match. Colour blotches are
+            // wide, so the copy is blurred at a quarter of the size and scaled
+            // back: the same look for a sixteenth of the pixels.
+            let k = a.value / 100
+            let e = image.extent
+            let q: CGFloat = 0.25
+            let small = image.clampedToExtent()
+                .transformed(by: CGAffineTransform(translationX: -e.minX, y: -e.minY))
+                .transformed(by: CGAffineTransform(scaleX: q, y: q))
+                .cropped(to: CGRect(x: 0, y: 0, width: e.width * q, height: e.height * q))
+            let blur = CIFilter.gaussianBlur()
+            blur.inputImage = small.clampedToExtent()
+            blur.radius = Float(max(0.5, longest * 0.005 * k * q))
+            guard let blurred = blur.outputImage else { return image }
+            let back = blurred.samplingLinear()
+                .transformed(by: CGAffineTransform(scaleX: 1 / q, y: 1 / q))
+                .transformed(by: CGAffineTransform(translationX: e.minX, y: e.minY))
+                .cropped(to: e)
+            let blend = CIFilter.colorBlendMode()
+            blend.inputImage = back
+            blend.backgroundImage = image
+            return blend.outputImage?.cropped(to: e) ?? image
         case .clarity:
             // Local contrast in gamma space: an unsharp mask with a radius of
             // 2% of the long side; negative values mix toward the blur (soften).

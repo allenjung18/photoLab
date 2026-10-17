@@ -62,9 +62,37 @@ its parameter values: dragging an unrelated slider reuses the cube, a step of
 one of the cube's own sliders builds a new one.
 
 Every spatial parameter in `stage` (the clarity and blur radius, the
-sharpening radius, the grain cell, the vignette radius) is a fraction of the
-image's own long side, so a preview and an export of the same recipe look the
-same at their different sizes.
+sharpening radius, the colour-noise blur, the grain cell, the vignette
+radius) is a fraction of the image's own long side, so a preview and an
+export of the same recipe look the same at their different sizes.
+
+The two noise stages run after the crop and before exposure, so the tone
+stages never lift noise first, on the fewest pixels (placed first in the
+chain they measured ~1.5 ms slower at loupe size: more pixels, and the lens
+warp reads a larger area of them). `colorNoise` blurs a quarter-size copy (up to
+0.5% of the long side) and puts its hue and saturation over the original's
+luminance (`CIColorBlendMode`): colour blotches go, detail and edges stay,
+and the blur costs a sixteenth of the pixels. `luminanceNoise` is
+`CINoiseReduction` with the level (a threshold: noise under it goes) at
+0.1 × the slider and the edge-protecting sharpness rising with it (0 → 0.4;
+a fixed sharpness at a low level only sharpened the noise). It takes one
+input on purpose: a dissolve from the original made Core Image compute the
+chain before it twice, about 0.8 ms at loupe size, which the everything-on
+frame budget could not spare.
+
+Even so, the two stages cost about 0.75 ms a frame at loupe size, and the
+everything-on gates (`ToneSetTests` slider steps with masks,
+`BrushStrokeBudgetTests`) had no such room. So a drag's frames leave them
+out: the loupe renders `Library.previewRecipe(for:)`, which mid-drag
+(`beginEdit` … `endEdit`: a slider, a grade wheel, a mask handle, a brush
+stroke) is `Recipe.draft(since:)` the value at `beginEdit` — noise reduction
+reset once the drag has moved something else, unchanged on a press that
+moved nothing, and kept while the drag moves noise reduction itself (its
+own slider shows its effect live). The recipe, the sidecar, every export and
+the frame at mouse-up are never drafted; the two gates time the draft, which
+is what the screen shows mid-drag. One real limit: the preview is a
+downsampled master, which already hides much of a RAW's noise, so judge
+noise reduction at 1:1 (the zoomed loupe renders a full-resolution region).
 
 The two lens corrections, `lensDistortion` and `lensVignette`, are the first
 stages, before rotate, so they act on the whole frame the lens made
@@ -1073,7 +1101,9 @@ parameters are never read as global settings. Malformed XML throws
 `XMPPreset.interpret` applies D-471 (a). `XMPPreset.mapping` is the one
 table of direct settings (the file's key, the `AdjustmentKind` it sets, a
 scale): the 2012 basic tone, the incremental temperature and tint,
-vibrance, saturation, clarity, Sharpness (0…150 onto 0…100), grain, the
+vibrance, saturation, clarity, Sharpness (0…150 onto 0…100), grain,
+`LuminanceSmoothing` and `ColorNoiseReduction` (Lightroom's RAW default 25
+read as 0, so a preset carrying it changes nothing), the
 post-crop vignette, the 24 HSL sliders, Color Grading and the older Split
 Toning, an earlier row winning when two set one kind. A value outside the
 kind's `range` is clamped and named in `XMPImport.clamped`. The point curve

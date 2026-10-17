@@ -2116,6 +2116,15 @@ final class Library {
     /// True while a continuous edit (`beginEdit`) is open on `id`.
     func isEditOpen(on id: Photo.ID) -> Bool { openEdit?.id == id }
 
+    /// The recipe the loupe renders for `id`: `recipe(for:)`, or mid-drag its
+    /// `Recipe.draft(since:)` the value at `beginEdit` (noise reduction left
+    /// out while something else moves). Only the preview reads it.
+    func previewRecipe(for id: Photo.ID) -> Recipe {
+        let r = recipe(for: id)
+        guard let edit = openEdit, edit.id == id else { return r }
+        return r.draft(since: edit.before)
+    }
+
     private func closeOpenEdit() {
         guard let edit = openEdit else { return }
         openEdit = nil

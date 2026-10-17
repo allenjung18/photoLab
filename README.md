@@ -287,7 +287,10 @@ and **Delete**. Every add, delete, switch and slider drag is one undo step.
   the drag is one undo step, and a double-click on a wheel resets that
   range's hue and saturation. The luminance and Balance sliders sit under
   the wheels; **Hue & Saturation** opens the six exact sliders.
-- **Detail** — clarity (local contrast), sharpening, grain.
+- **Detail** — noise reduction (luminance) and color noise, clarity (local
+  contrast), sharpening, grain. Judge noise reduction zoomed in at 1:1.
+  While you drag another control the preview leaves noise reduction out
+  (to stay smooth) and puts it back when you let go; exports always have it.
 - **Effects** — vignette (negative darkens the corners).
 - **Lens Corrections** — manual sliders, no lens-profile database.
   **Distortion** (−100…+100): positive straightens barrel distortion (lines

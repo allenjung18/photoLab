@@ -713,6 +713,25 @@ not only the pass.
   `PhotosSource.saveOptions.watermark` is nil; a folder export through
   `Exporter.export` writes the mark into the JPEG. Shown to bite by
   ignoring the position (always bottom right; 7 failures in 2 tests).
+- `NoiseReductionTests.swift` — on seeded synthetic pictures (a dark/bright
+  edge plus colour or brightness noise): colour noise cuts the red−blue
+  spread by half or more while the brightness and the edge step hold;
+  noise reduction lowers brightness noise at 50 and clearly more at 100
+  (the slider's top half works) and keeps 80% of the edge; both at 0 are
+  the identity; the kinds head Detail and run after the crop, before exposure; a preset's `LuminanceSmoothing` / `ColorNoiseReduction` map and
+  Lightroom's colour default 25 reads as 0. Shown to bite by swapping the
+  colour blend's layers, skipping the luminance filter, and a fixed
+  level (the slider's top half does nothing); under a crop the quarter-size
+  colour blur must land back in place (red stays red
+  either side of a red/blue boundary; shown to bite by dropping the
+  translate back).
+  `NoiseReductionDragTests` (same file): the draft drops noise reduction
+  only once something else has moved, never on a press or while noise
+  reduction itself moves, and `Library.previewRecipe` drafts mid-drag while
+  `recipe(for:)`, mouse-up and the sidecar keep it (shown to bite by a
+  `previewRecipe` that never drafts). The everything-on slider-step and
+  brush-stroke budgets time `draft(since:)`, the frame the loupe draws
+  mid-drag.
 - `ExportPresetTests.swift` — export presets (`ExportPreset`,
   `ExportPresetStore`, `ExportPresetLibrary`, `ExportForm`), every store in a
   temporary directory: a preset round-trips through a fresh store with

@@ -1116,7 +1116,7 @@ private struct PreviewCanvas: View {
 
     private var recipe: Recipe {
         if library.showBefore { return .neutral }
-        let r = library.recipe(for: photo.id)
+        let r = library.previewRecipe(for: photo.id)
         return library.cropMode ? CropMath.uncropped(r) : r
     }
 

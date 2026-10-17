@@ -1314,7 +1314,8 @@ last preset error.
   takes the first free "name 2", "name 3"), `XMPImportModel.moved` (the sliders
   `RecipeDiff.moved(from:to:)` finds against `Recipe.neutral`, titled "Moves N
   sliders"), `XMPImport.approximated` and `clamped`, and `unsupportedLabels`
-  ("No equivalent in PhotoLab"). Save calls `PresetLibrary.save(_:as:)`; Cancel
+  ("No equivalent in PhotoLab"; noise reduction now maps, Lightroom's colour
+  noise default of 25 reading as 0). Save calls `PresetLibrary.save(_:as:)`; Cancel
   and a parse error (shown in the sheet, with Close) write nothing.
 - **The Presets menu** (`PhotoLabApp.swift`): **Save Preset…** (loupe only),
   then every preset by name; a choice applies it to `Library.batchTargets`
