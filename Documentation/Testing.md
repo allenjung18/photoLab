@@ -747,7 +747,13 @@ not only the pass.
   gives the companion the new stem, keeps the marks, writes it no sidecar,
   and Undo moves both back; a companion's new name already taken refuses
   the plan. Shown to bite by pairing an edited JPEG, renaming and trashing
-  without the companion (7 failures).
+  without the companion (7 failures). Review fixes, each shown to bite by
+  undoing it: an Overwrite export named like the companion is refused and
+  leaves the camera JPEG's bytes (undone: it was overwritten); a JPEG
+  flagged in a parent folder's store is not paired; a companion edit
+  saved elsewhere after the listing refuses the rename
+  (`companionHasEdit`); two pairs renamed onto one companion name are a
+  `duplicate`; a collection holding the companion follows the rename.
 - `ExportPresetTests.swift` — export presets (`ExportPreset`,
   `ExportPresetStore`, `ExportPresetLibrary`, `ExportForm`), every store in a
   temporary directory: a preset round-trips through a fresh store with

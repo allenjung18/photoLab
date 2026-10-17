@@ -141,4 +141,85 @@ final class RawJpegPairTests: XCTestCase {
         XCTAssertEqual(lib.rename(plan), 0)
         XCTAssertTrue(exists("DSC1.JPG")); XCTAssertTrue(exists("trip.JPG"))
     }
+
+    // MARK: Review fixes
+
+    func testAnOverwriteExportNeverReplacesTheCompanion() async throws {
+        try touch("DSC1.ARW", "DSC1.JPG")
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let raw = try XCTUnwrap(lib.photos.first).id
+        XCTAssertNotNil(lib.photos.first?.companion)
+        let items = try await lib.exportItems(for: [raw])
+        let companion = folder.appendingPathComponent("DSC1.JPG")
+        XCTAssertTrue(items[0].protected.map(\.standardizedFileURL.path).contains(companion.standardizedFileURL.path),
+                      "the companion is an original too: \(items[0].protected.map(\.path))")
+
+        // End to end: a decodable source whose export is named like the companion.
+        let other = root.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let src = other.appendingPathComponent("DSC1.png")
+        let ctx = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithURL(src as CFURL, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, ctx.makeImage()!, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+        var o = ExportOptions()
+        o.collision = .overwrite
+        o.format = .jpeg
+        let before = try Data(contentsOf: companion)
+        XCTAssertThrowsError(try Exporter.export(src, recipe: .neutral, into: folder, options: o, protected: items[0].protected))
+        XCTAssertEqual(try Data(contentsOf: companion), before, "the camera JPEG untouched")
+    }
+
+    func testAJPEGWithAnEditInAParentFoldersStoreIsNotPaired() throws {
+        try touch("sub/a.ARW", "sub/a.JPG")
+        let sub = folder.appendingPathComponent("sub", isDirectory: true)
+        // The parent opened once and flagged the JPEG: its sidecar lives in the parent's store.
+        try SidecarStore(folder: folder).save(.neutral, marks: Marks(flag: .pick), for: .file(sub.appendingPathComponent("a.JPG")))
+        let lib = Library(rememberFolder: false)
+        lib.open(sub)
+        XCTAssertEqual(listing(lib), ["a.ARW", "a.JPG"], "the flagged JPEG keeps its cell")
+    }
+
+    func testRenameIsRefusedWhenTheCompanionHasAnEditSavedElsewhere() throws {
+        try touch("sub/a.ARW", "sub/a.JPG")
+        let sub = folder.appendingPathComponent("sub", isDirectory: true)
+        let lib = Library(rememberFolder: false)
+        lib.open(sub)
+        XCTAssertEqual(listing(lib), ["a.ARW+a.JPG"])
+        // An edit for the JPEG appears in another store after the listing (another window, a collection root).
+        try SidecarStore(folder: folder).save(.neutral, marks: Marks(flag: .pick), for: .file(sub.appendingPathComponent("a.JPG")))
+        let raw = try XCTUnwrap(lib.photos.first).id
+        let plan = lib.renamePlan(RenameTemplate(pattern: "trip"), for: [raw])
+        XCTAssertEqual(plan.refusal, .companionHasEdit("a.JPG"))
+        XCTAssertEqual(lib.rename(plan), 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sub.appendingPathComponent("a.JPG").path))
+    }
+
+    func testTwoPairsCannotRenameOntoOneCompanionName() throws {
+        try touch("A.CR2", "A.JPG", "B.NEF", "B.JPG")
+        let lib = Library(rememberFolder: false)
+        lib.open(folder)
+        let plan = lib.renamePlan(RenameTemplate(pattern: "X"), for: lib.photos.map(\.id))
+        XCTAssertEqual(plan.refusal, .duplicate("X.JPG"), "X.CR2 and X.NEF differ, their JPEGs would not")
+        XCTAssertEqual(lib.rename(plan), 0)
+        for n in ["A.CR2", "A.JPG", "B.NEF", "B.JPG"] { XCTAssertTrue(exists(n), n) }
+    }
+
+    func testACollectionHoldingTheCompanionFollowsTheRename() throws {
+        try touch("DSC1.JPG")
+        let collections = CollectionStore(directory: root.appendingPathComponent("Collections", isDirectory: true))
+        let lib = Library(rememberFolder: false, collections: collections)
+        lib.open(folder)
+        let c = try XCTUnwrap(lib.createCollection(named: "Picks", adding: [try XCTUnwrap(lib.photos.first).id]))
+        try touch("DSC1.ARW")   // the RAW arrives later: the next open pairs them
+        lib.open(folder)
+        XCTAssertEqual(listing(lib), ["DSC1.ARW+DSC1.JPG"])
+        let raw = try XCTUnwrap(lib.photos.first).id
+        XCTAssertEqual(lib.rename(lib.renamePlan(RenameTemplate(pattern: "trip"), for: [raw])), 1)
+        XCTAssertEqual(collections.load(c.id)?.members.map(\.file.lastPathComponent), ["trip.JPG"],
+                       "the member follows its file")
+    }
 }

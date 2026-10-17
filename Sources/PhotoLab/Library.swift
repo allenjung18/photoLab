@@ -1268,13 +1268,26 @@ final class Library {
         }
         guard plan.refusal == nil else { return plan }
         // A paired RAW's companion takes the new name too: refused when a
-        // file other than the companion itself is there.
+        // file other than the companion itself is there, when two names of
+        // the batch (RAWs or companions) would meet, or when the companion
+        // has an edit saved in some store (a parent folder's, a collection
+        // root's) that the move would leave under the old name.
+        func key(_ url: URL) -> String { url.standardizedFileURL.path.lowercased() }
+        var names = Set(plan.entries.map { key($0.new) })
         for e in plan.changing {
             guard let companion = photos.first(where: { $0.id == e.id })?.companion else { continue }
             let target = RenameMove.companionTarget(companion, for: e.new)
-            if target.path.lowercased() != companion.path.lowercased(),
-               FileManager.default.fileExists(atPath: target.path) {
+            guard names.insert(key(target)).inserted else {
+                return RenamePlan(entries: plan.entries, refusal: .duplicate(target.lastPathComponent))
+            }
+            if key(target) != key(companion), FileManager.default.fileExists(atPath: target.path) {
                 return RenamePlan(entries: plan.entries, refusal: .fileExists(target.lastPathComponent))
+            }
+            let cid = PhotoID.file(companion)
+            if sidecarStores(for: cid, source: source, roots: roots).contains(where: {
+                $0.exists(for: cid) || !$0.copies(of: [cid]).isEmpty
+            }) {
+                return RenamePlan(entries: plan.entries, refusal: .companionHasEdit(companion.lastPathComponent))
             }
         }
         return plan
@@ -1430,7 +1443,11 @@ final class Library {
         newCollectionRequest = nil
         renameRequest = nil
         removeCopyRequest = nil
-        rekeyCollections(map)
+        // A collection may hold a companion as a member of its own (it lists
+        // files unpaired): it follows the companion's move too.
+        var collectionMap = map
+        for m in moves { if let c = m.companion { collectionMap[.file(c.old)] = .file(c.new) } }
+        rekeyCollections(collectionMap)
         rekeyRecentAnchors(map)
         resort()
         reconcileSelection()
@@ -2123,7 +2140,9 @@ final class Library {
             resolved.append((try await originalFile(for: id), recipe(for: id), own, keywords(for: id), date,
                              id.copyNumber))
         }
-        let protected = Set(photos.compactMap(\.fileURL)).union(resolved.map(\.0))
+        // A paired RAW's companion is an original too: an Overwrite export
+        // named like it (DSC1.CR2 -> DSC1.jpg) must not replace it.
+        let protected = Set(photos.compactMap(\.fileURL)).union(photos.compactMap(\.companion)).union(resolved.map(\.0))
         return resolved.map {
             ExportQueue.Item(source: $0.0, recipe: $0.1, name: $0.2, protected: protected, keywords: $0.3,
                              captureDate: $0.4, copyNumber: $0.5)
@@ -2661,9 +2680,13 @@ final class Library {
             if t.conforms(to: .heic) || t.conforms(to: .heif) { return 1 }
             return nil
         }
+        let rawKeys = Set(photos.compactMap { p in
+            p.fileURL.flatMap { type($0)?.conforms(to: .rawImage) == true ? key($0) : nil }
+        })
         var candidates: [String: [URL]] = [:]
+        // `hasEdit` reads the disk: asked only of a JPEG with a RAW beside it.
         for p in photos {
-            guard let url = p.fileURL, rank(url) != nil, !hasEdit(p.id) else { continue }
+            guard let url = p.fileURL, rank(url) != nil, rawKeys.contains(key(url)), !hasEdit(p.id) else { continue }
             candidates[key(url), default: []].append(url)
         }
         var companionOf: [PhotoID: URL] = [:]

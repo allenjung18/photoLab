@@ -242,11 +242,20 @@ struct FolderSource: PhotoSource {
 
     /// Every image under the folder, a RAW+JPEG shot as one photo
     /// (`Library.pairRawAndJPEG`) unless the JPEG carries its own edit,
-    /// marks, keywords or virtual copy in this folder's store (D-474 (a)).
+    /// marks, keywords or virtual copy in this folder's store or in the
+    /// store of any folder above the file (a parent opened once keeps
+    /// `sub/a.jpg.json`; D-474 (a)).
     func photos() throws -> [Photo] {
-        let store = sidecars
-        return Library.pairRawAndJPEG(Library.scan(folder)) { id in
-            store.exists(for: id) || !store.copies(of: [id]).isEmpty
+        Library.pairRawAndJPEG(Library.scan(folder)) { id in
+            guard let file = id.fileURL else { return false }
+            var dir = file.deletingLastPathComponent().standardizedFileURL
+            while true {
+                let store = SidecarStore(folder: dir)
+                if store.exists(for: id) || !store.copies(of: [id]).isEmpty { return true }
+                let up = dir.deletingLastPathComponent().standardizedFileURL
+                if up.path == dir.path { return false }
+                dir = up
+            }
         }
     }
 

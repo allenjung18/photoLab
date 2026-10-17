@@ -115,6 +115,10 @@ enum RenameRefusal: Equatable, Sendable {
     /// A photo of the batch is not a file of a folder or a collection, or
     /// is no longer listed.
     case notFiles
+    /// A paired RAW's companion has an edit of its own saved somewhere (a
+    /// parent folder's or a collection root's `.photolab/`): moving it with
+    /// the RAW would leave that edit under the old name.
+    case companionHasEdit(String)
 
     var message: String {
         switch self {
@@ -124,6 +128,7 @@ enum RenameRefusal: Equatable, Sendable {
         case .sidecarExists(let n): return "An edit for a file named \(n) is already saved in the folder's .photolab."
         case .hidden(let n): return "\(n) starts with a dot, so the file would be hidden."
         case .notFiles: return "Only photos of a folder or a collection can be renamed."
+        case .companionHasEdit(let n): return "\(n), paired with its RAW, has an edit of its own saved elsewhere; open its folder and rename it on its own."
         }
     }
 }
