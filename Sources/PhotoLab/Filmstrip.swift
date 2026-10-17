@@ -138,7 +138,11 @@ private struct FilmstripCell: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if let n = item.photo.id.copyNumber { VirtualCopyBadge(number: n, size: 7).padding(2) }
+            HStack(spacing: 2) {
+                if let label = item.photo.pairLabel { PairBadge(label: label, size: 6) }
+                if let n = item.photo.id.copyNumber { VirtualCopyBadge(number: n, size: 7) }
+            }
+            .padding(2)
         }
         .opacity(item.marks.flag == .reject ? 0.55 : 1)
         .contentShape(Rectangle())

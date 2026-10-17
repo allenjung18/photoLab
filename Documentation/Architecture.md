@@ -669,9 +669,19 @@ by `Library.open`; `sidecars.loadAll` unless overridden), `thumbnail(for:maxPixe
 unadjusted original, synchronous, run off the main thread by `Thumbnails`)
 and `originalFile(for:)` (the one file the loupe master and the export
 decode; async, since a source may have to fetch it). `FolderSource` is the
-folder: `Library.scan` lists it, `SidecarStore(folder:)` keeps the edits
-under `.photolab/`, `ImageLoading.downsampled` makes the thumbnails, and a
-photo's original is its own file. `Library.open(_:)` takes a source, or a
+folder: `Library.scan` lists it and `Library.pairRawAndJPEG` folds each
+RAW+JPEG shot into one photo (D-474 (a): the RAW, with the JPEG or HEIC of
+the same name in the same directory, any case, as `Photo.companion`; a
+companion with its own sidecar or copy sidecar in the folder's store is
+never paired, so no edit hides behind a RAW), `SidecarStore(folder:)` keeps
+the edits under `.photolab/`, `ImageLoading.downsampled` makes the
+thumbnails, and a photo's original is its own file (the RAW of a pair; the
+companion is never decoded). Trash moves a pair as one (`TrashedPhoto.
+companionTrashedURL`; the companion first, put back if the RAW will not
+go), and Rename gives the companion the new stem (`RenameMove.companion`,
+`companionTarget`; refused when another file holds that name), both undone
+as one. A collection lists its members unpaired: a RAW trashed from one
+leaves its JPEG in the folder. `Library.open(_:)` takes a source, or a
 URL that it wraps in a `FolderSource` (a folder, or a file whose folder
 opens with that photo in the loupe), and `Library.open(album:access:)` an
 album wrapped in a `PhotosSource`, and `Library.open(collection:)` a saved

@@ -738,6 +738,16 @@ not only the pass.
   `previewRecipe` that never drafts). The everything-on slider-step and
   brush-stroke budgets time `draft(since:)`, the frame the loupe draws
   mid-drag.
+- `RawJpegPairTests.swift` — `Library.pairRawAndJPEG`'s rules (a pair; lone
+  RAW and JPEG; a JPEG before a HEIC; any case; a JPEG with its own edit
+  keeps its cell; one companion per shot; another folder never pairs; a
+  HEIC pairs with no JPEG) and `pairLabel`; a folder with a flagged JPEG
+  keeps it apart; Trash moves both files and Undo brings both back, listed
+  as the pair; a RAW the Trash refuses puts its companion back; Rename
+  gives the companion the new stem, keeps the marks, writes it no sidecar,
+  and Undo moves both back; a companion's new name already taken refuses
+  the plan. Shown to bite by pairing an edited JPEG, renaming and trashing
+  without the companion (7 failures).
 - `ExportPresetTests.swift` — export presets (`ExportPreset`,
   `ExportPresetStore`, `ExportPresetLibrary`, `ExportForm`), every store in a
   temporary directory: a preset round-trips through a fresh store with

@@ -77,8 +77,9 @@ final class InfoTests: XCTestCase {
         let url = try write("tagged.jpg", in: base.appendingPathComponent("shoot"), properties: Self.tagged)
         let info = PhotoInfo.read(url)
         let rows = info.rows(edited: false, keywords: ["beach", "Sunset"],
-                             virtualCopy: PhotoInfo.virtualCopy(2, of: "tagged.jpg"))
+                             virtualCopy: PhotoInfo.virtualCopy(2, of: "tagged.jpg"), pairedWith: "tagged.JPG")
         XCTAssertEqual(rows.map(\.label), PhotoInfo.labels, "every field present, in order")
+        XCTAssertEqual(value(rows, "Paired With"), "tagged.JPG")
         XCTAssertEqual(value(rows, "Virtual Copy"), "Virtual copy 2 of tagged.jpg")
         XCTAssertNil(value(info.rows(edited: false), "Virtual Copy"), "a master has no Virtual Copy row")
         XCTAssertEqual(value(rows, "Keywords"), "beach, Sunset")

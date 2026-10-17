@@ -882,6 +882,23 @@ struct VirtualCopyBadge: View {
     }
 }
 
+/// "RAW+JPG" on a paired RAW's cell (`Photo.pairLabel`), beside a virtual
+/// copy's number: one cell stands for both files.
+struct PairBadge: View {
+    let label: String
+    var size: CGFloat = 9
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, size * 0.45).padding(.vertical, size * 0.15)
+            .background(.black.opacity(0.7), in: Capsule())
+            .help("A RAW and its \(label.dropFirst(4)), shown as one photo")
+            .accessibilityLabel(label)
+    }
+}
+
 struct ThumbnailCell: View {
     let photo: Photo
     let selected: Bool
@@ -953,7 +970,11 @@ struct ThumbnailCell: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if let n = photo.id.copyNumber { VirtualCopyBadge(number: n, size: 10).padding(6) }
+                HStack(spacing: 3) {
+                    if let label = photo.pairLabel { PairBadge(label: label, size: 9) }
+                    if let n = photo.id.copyNumber { VirtualCopyBadge(number: n, size: 10) }
+                }
+                .padding(6)
             }
             .opacity(marks.flag == .reject ? 0.55 : 1)
             Text(photo.caption)

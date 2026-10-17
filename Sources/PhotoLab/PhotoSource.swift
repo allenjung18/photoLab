@@ -97,6 +97,11 @@ struct Photo: Identifiable, Hashable, Sendable {
     let captureDate: Date?
     /// The listing's GPS position (`PhotosAsset.location`); nil for a file.
     let location: GeoPoint?
+    /// A folder RAW's paired JPEG or HEIC (same folder, same name; D-474):
+    /// one photo per shot, the RAW decoded, edited and exported, the
+    /// companion moved with it by Trash and Rename. nil for anything else
+    /// (`Library.pairRawAndJPEG`).
+    private(set) var companion: URL?
 
     /// `name` nil: the listing did not name the photo (`isNamed` false).
     init(id: PhotoID, name: String?, captureDate: Date? = nil, location: GeoPoint? = nil) {
@@ -106,6 +111,21 @@ struct Photo: Identifiable, Hashable, Sendable {
         self.fileURL = id.fileURL
         self.captureDate = captureDate
         self.location = location
+        self.companion = nil
+    }
+
+    /// "RAW+JPG" (or "RAW+HEIC") for a paired RAW, from the companion's
+    /// extension (JPEG and JPE read as JPG); nil when unpaired.
+    var pairLabel: String? {
+        guard let ext = companion?.pathExtension.uppercased(), !ext.isEmpty else { return nil }
+        return "RAW+" + (["JPEG", "JPE"].contains(ext) ? "JPG" : ext)
+    }
+
+    /// This photo with `companion` paired to it (nil unpairs).
+    func paired(with companion: URL?) -> Photo {
+        var p = self
+        p.companion = companion
+        return p
     }
 
     /// What a cell's caption and tooltip show: the name, or nothing while
@@ -220,7 +240,15 @@ struct FolderSource: PhotoSource {
 
     var title: String { folder.lastPathComponent }
 
-    func photos() throws -> [Photo] { Library.scan(folder) }
+    /// Every image under the folder, a RAW+JPEG shot as one photo
+    /// (`Library.pairRawAndJPEG`) unless the JPEG carries its own edit,
+    /// marks, keywords or virtual copy in this folder's store (D-474 (a)).
+    func photos() throws -> [Photo] {
+        let store = sidecars
+        return Library.pairRawAndJPEG(Library.scan(folder)) { id in
+            store.exists(for: id) || !store.copies(of: [id]).isEmpty
+        }
+    }
 
     var sidecars: SidecarStore { SidecarStore(folder: folder) }
 

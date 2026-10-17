@@ -40,13 +40,14 @@ struct PhotoInfo: Equatable, Sendable {
 
     /// The labels in display order (`rows(edited:keywords:virtualCopy:)` shows a subset of them).
     static let labels = ["Virtual Copy", "Camera", "Lens", "Focal Length", "Aperture", "Shutter", "ISO",
-                         "Dimensions", "File", "Size", "Folder", "Captured", "GPS", "Keywords", "Edited"]
+                         "Dimensions", "File", "Paired With", "Size", "Folder", "Captured", "GPS", "Keywords", "Edited"]
 
     /// The present fields, formatted, in `labels` order; Virtual Copy only
     /// for a copy (`virtualCopy`, from `PhotoInfo.virtualCopy(_:of:)`, first so
     /// it is not missed); Keywords (the photo's, comma-separated) only when
     /// it has any; Edited is always there.
-    func rows(edited: Bool, keywords: [String] = [], virtualCopy: String? = nil) -> [Row] {
+    /// Paired With is a RAW's companion file name (`Photo.companion`), right under File.
+    func rows(edited: Bool, keywords: [String] = [], virtualCopy: String? = nil, pairedWith: String? = nil) -> [Row] {
         var out: [Row] = []
         func add(_ label: String, _ value: String?) {
             guard let value, !value.isEmpty else { return }
@@ -61,6 +62,7 @@ struct PhotoInfo: Equatable, Sendable {
         add("ISO", iso.flatMap { $0 > 0 ? "ISO \($0)" : nil })
         if let w = pixelWidth, let h = pixelHeight, w > 0, h > 0 { add("Dimensions", "\(w) × \(h)") }
         add("File", fileName)
+        add("Paired With", pairedWith)
         add("Size", fileSize.map(Self.size))
         add("Folder", folder.map { ($0.path as NSString).abbreviatingWithTildeInPath })
         add("Captured", captureDate.map(Self.date))
@@ -304,7 +306,8 @@ struct InfoSection: View {
         let info = shown
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
             ForEach(info.rows(edited: library.isEdited(photo.id), keywords: library.keywords(for: photo.id),
-                              virtualCopy: Self.virtualCopy(photo))) { row in
+                              virtualCopy: Self.virtualCopy(photo),
+                              pairedWith: photo.companion?.lastPathComponent)) { row in
                 GridRow {
                     Text(row.label)
                         .foregroundStyle(.secondary)

@@ -76,6 +76,8 @@ struct TrashRequest: Identifiable, Equatable {
 struct TrashedPhoto: Equatable {
     let photo: Photo
     let trashedURL: URL
+    /// Where the Trash put a paired RAW's companion (`Photo.companion`).
+    var companionTrashedURL: URL? = nil
 }
 
 /// What Edit › Undo Move to Trash and the banner's Undo take back: the last

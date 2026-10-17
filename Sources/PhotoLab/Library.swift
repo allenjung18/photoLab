@@ -1113,7 +1113,15 @@ final class Library {
         for id in ids where eligible.contains(id) {
             guard let photo = photos.first(where: { $0.id == id }), let url = photo.fileURL else { continue }
             do {
-                moved.append(TrashedPhoto(photo: photo, trashedURL: try trasher.trash(url)))
+                // A pair goes as one: the companion first, put back if the RAW will not go.
+                let companionTrashed = try photo.companion.map { try trasher.trash($0) }
+                do {
+                    moved.append(TrashedPhoto(photo: photo, trashedURL: try trasher.trash(url),
+                                              companionTrashedURL: companionTrashed))
+                } catch {
+                    if let c = companionTrashed, let back = photo.companion { try? trasher.restore(c, to: back) }
+                    throw error
+                }
             } catch {
                 failures.append("Could not move \(photo.name) to the Trash: \(error.localizedDescription)")
             }
@@ -1172,7 +1180,17 @@ final class Library {
                 if FileManager.default.fileExists(atPath: original.path) {
                     throw TrashError.pathTaken(original.lastPathComponent)
                 }
-                try trasher.restore(item.trashedURL, to: original)
+                if let c = item.companionTrashedURL, let to = item.photo.companion {
+                    if FileManager.default.fileExists(atPath: to.path) { throw TrashError.pathTaken(to.lastPathComponent) }
+                    try trasher.restore(c, to: to)
+                }
+                do {
+                    try trasher.restore(item.trashedURL, to: original)
+                } catch {
+                    // The RAW stayed in the Trash: its companion goes back there too.
+                    if item.companionTrashedURL != nil, let to = item.photo.companion { _ = try? trasher.trash(to) }
+                    throw error
+                }
                 back.append(item.photo)
             } catch {
                 failures.append("Could not put \(item.photo.name) back: \(error.localizedDescription)")
@@ -1243,11 +1261,23 @@ final class Library {
             return (id, file, captureDates.date(for: photo))
         }
         let roots = collectionRoots()
-        return RenamePlan.make(template, photos: batch) { entry in
+        let plan = RenamePlan.make(template, photos: batch) { entry in
             sidecarStores(for: entry.id, source: source, roots: roots).contains {
                 RenameMove.sidecarTaken(in: $0, old: entry.old, new: entry.new)
             }
         }
+        guard plan.refusal == nil else { return plan }
+        // A paired RAW's companion takes the new name too: refused when a
+        // file other than the companion itself is there.
+        for e in plan.changing {
+            guard let companion = photos.first(where: { $0.id == e.id })?.companion else { continue }
+            let target = RenameMove.companionTarget(companion, for: e.new)
+            if target.path.lowercased() != companion.path.lowercased(),
+               FileManager.default.fileExists(atPath: target.path) {
+                return RenamePlan(entries: plan.entries, refusal: .fileExists(target.lastPathComponent))
+            }
+        }
+        return plan
     }
 
     /// Every saved collection's member roots, by file (one listing).
@@ -1301,8 +1331,10 @@ final class Library {
         }
         closeOpenEdit()
         let roots = collectionRoots()
-        let moves = plan.changing.map {
-            RenameMove(old: $0.old, new: $0.new, stores: sidecarStores(for: $0.id, source: source, roots: roots))
+        let moves = plan.changing.map { e -> RenameMove in
+            let companion = photos.first(where: { $0.id == e.id })?.companion
+            return RenameMove(old: e.old, new: e.new, stores: sidecarStores(for: e.id, source: source, roots: roots),
+                              companion: companion.map { ($0, RenameMove.companionTarget($0, for: e.new)) })
         }
         do {
             try RenameMove.perform(moves)
@@ -1382,9 +1414,12 @@ final class Library {
         keywords = re(keywords)
         history = re(history)
         unreadableSidecars = Set(unreadableSidecars.map { map[$0] ?? $0 })
+        let companions = Dictionary(moves.compactMap { m in m.companion.map { (m.newID, $0.new) } },
+                                    uniquingKeysWith: { a, _ in a })
         photos = photos.map { p in
             guard let id = map[p.id], let file = id.fileURL else { return p }
             return Photo(id: id, name: file.lastPathComponent, captureDate: p.captureDate, location: p.location)
+                .paired(with: companions[id] ?? p.companion)
         }
         let ids = Set(selectedIDs.map { map[$0] ?? $0 })
         if let anchor = selection, let moved = map[anchor] { selection = moved }
@@ -2604,6 +2639,46 @@ final class Library {
             undo.append(Step(recipe: recipe, batch: batch))
             if undo.count > Library.maxUndoDepth { undo.removeFirst(undo.count - Library.maxUndoDepth) }
             redo.removeAll()
+        }
+    }
+
+    /// One photo per RAW+JPEG shot (D-474 (a)): in `photos` (a folder scan,
+    /// sorted), a RAW and a JPEG or HEIC in the same directory with the same
+    /// name apart from the extension (any case) become the RAW with the
+    /// other as its `companion`, the companion's own entry dropped. A
+    /// companion for which `hasEdit` is true (its own sidecar or a virtual
+    /// copy's) is never paired: it keeps its cell, so no edit, mark or
+    /// keyword hides behind the RAW. Each RAW takes one companion, a JPEG
+    /// before a HEIC; any other file of the name stays its own photo.
+    nonisolated static func pairRawAndJPEG(_ photos: [Photo], hasEdit: (PhotoID) -> Bool) -> [Photo] {
+        func key(_ url: URL) -> String {
+            url.deletingPathExtension().standardizedFileURL.path.lowercased()
+        }
+        func type(_ url: URL) -> UTType? { UTType(filenameExtension: url.pathExtension) }
+        func rank(_ url: URL) -> Int? {
+            guard let t = type(url) else { return nil }
+            if t.conforms(to: .jpeg) { return 0 }
+            if t.conforms(to: .heic) || t.conforms(to: .heif) { return 1 }
+            return nil
+        }
+        var candidates: [String: [URL]] = [:]
+        for p in photos {
+            guard let url = p.fileURL, rank(url) != nil, !hasEdit(p.id) else { continue }
+            candidates[key(url), default: []].append(url)
+        }
+        var companionOf: [PhotoID: URL] = [:]
+        var taken: Set<URL> = []
+        for p in photos {
+            guard let url = p.fileURL, type(url)?.conforms(to: .rawImage) == true,
+                  let pick = candidates[key(url)]?.filter({ !taken.contains($0) })
+                    .min(by: { (rank($0)!, $0.lastPathComponent) < (rank($1)!, $1.lastPathComponent) })
+            else { continue }
+            companionOf[p.id] = pick
+            taken.insert(pick)
+        }
+        return photos.compactMap { p in
+            if let url = p.fileURL, taken.contains(url) { return nil }
+            return companionOf[p.id].map { p.paired(with: $0) } ?? p
         }
     }
 

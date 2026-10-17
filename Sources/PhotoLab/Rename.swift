@@ -187,10 +187,25 @@ struct RenameMove: Sendable {
     /// the open source's, and each other folder or collection root that
     /// keeps one, so no root is left with an edit under the old name.
     let stores: [SidecarStore]
+    /// A paired RAW's companion JPEG or HEIC (`Photo.companion`), renamed to
+    /// the new name with its own extension in the same move; it has no
+    /// sidecar of its own (a JPEG with one is never paired).
+    var companion: (old: URL, new: URL)? = nil
 
     var oldID: PhotoID { .file(old) }
     var newID: PhotoID { .file(new) }
-    var reversed: RenameMove { RenameMove(old: new, new: old, stores: stores) }
+    var reversed: RenameMove {
+        RenameMove(old: new, new: old, stores: stores, companion: companion.map { ($0.new, $0.old) })
+    }
+
+    /// Where a companion goes when its RAW is renamed `newFile`: the new
+    /// stem with the companion's own extension, in its own directory.
+    static func companionTarget(_ companion: URL, for newFile: URL) -> URL {
+        let stem = newFile.deletingPathExtension().lastPathComponent
+        let ext = companion.pathExtension
+        return companion.deletingLastPathComponent()
+            .appendingPathComponent(ext.isEmpty ? stem : stem + "." + ext, isDirectory: false)
+    }
 
     /// Moves the file, then its sidecar when it has one, then each virtual
     /// copy's sidecar; anything that will not move puts back what moved
@@ -208,6 +223,10 @@ struct RenameMove: Sendable {
         try FileManager.default.moveItem(at: old, to: new)
         var done: [(URL, URL)] = []
         do {
+            if let companion, companion.old != companion.new {
+                try FileManager.default.moveItem(at: companion.old, to: companion.new)
+                done.append((companion.old, companion.new))
+            }
             for (from, to) in pairs {
                 try FileManager.default.moveItem(at: from, to: to)
                 done.append((from, to))
@@ -217,7 +236,7 @@ struct RenameMove: Sendable {
             try? FileManager.default.moveItem(at: new, to: old)
             throw error
         }
-        for (_, to) in done { Self.rewriteOriginal(at: to, name: new.lastPathComponent) }
+        for (_, to) in done where to != companion?.new { Self.rewriteOriginal(at: to, name: new.lastPathComponent) }
     }
 
     /// The sidecar path `file` (the old name's, or a copy's) takes for the
