@@ -69,16 +69,23 @@ export of the same recipe look the same at their different sizes.
 The two noise stages run after the crop and before exposure, so the tone
 stages never lift noise first, on the fewest pixels (placed first in the
 chain they measured ~1.5 ms slower at loupe size: more pixels, and the lens
-warp reads a larger area of them). `colorNoise` blurs a quarter-size copy (up to
-0.5% of the long side) and puts its hue and saturation over the original's
-luminance (`CIColorBlendMode`): colour blotches go, detail and edges stay,
-and the blur costs a sixteenth of the pixels. `luminanceNoise` is
-`CINoiseReduction` with the level (a threshold: noise under it goes) at
-0.1 × the slider and the edge-protecting sharpness rising with it (0 → 0.4;
-a fixed sharpness at a low level only sharpened the noise). It takes one
-input on purpose: a dissolve from the original made Core Image compute the
-chain before it twice, about 0.8 ms at loupe size, which the everything-on
-frame budget could not spare.
+warp reads a larger area of them). Both live in `NoiseReduction.swift` and
+keep values outside 0…1 (a Display P3 red, a highlight above white), which
+exposure may still bring back. `colorNoise` blurs a downsized copy at a
+fixed `colorRadiusShare` (0.5%) of the long side, the copy scaled so the
+blur is `smallRadius` (2.5) of its pixels (so the round trip's pitch is a
+share of the frame and preview and export match), then mixes the blurred
+colour over the original's luminance by the slider in one Metal kernel,
+`chromaMix` (Rec. 709 weights, no clamp). `CIColorBlendMode` did this
+first and was dropped: it clamps to 0…1, and with a slider-scaled radius
+and a fixed quarter size the effect jumped at 1 and then barely moved.
+`luminanceNoise` is `CINoiseReduction` on gamma-encoded values (in linear
+values a shadow's noise is so small that any level smeared it before
+exposure lifts it), level (a threshold: noise under it goes) 0.1 × the
+slider, the edge-protecting sharpness rising with it (0 → 0.4; a fixed one
+at a low level only sharpened the noise). It takes one input on purpose: a
+dissolve from the original made Core Image compute the chain before it
+twice, about 0.8 ms at loupe size.
 
 Even so, the two stages cost about 0.75 ms a frame at loupe size, and the
 everything-on gates (`ToneSetTests` slider steps with masks,

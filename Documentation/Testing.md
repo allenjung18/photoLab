@@ -725,6 +725,12 @@ not only the pass.
   colour blur must land back in place (red stays red
   either side of a red/blue boundary; shown to bite by dropping the
   translate back).
+  Also: a highlight above white and a Display P3 red pass both stages
+  untouched, so exposure −1.5 after them matches (CIColorBlendMode clamped:
+  red); colour noise lowers the spread at 25, more at 50, more at 100 (the
+  old slider-scaled radius was flat from 25 on: red); the same picture at 1×
+  and 4× loses the same share of colour noise at 30 (the old fixed quarter
+  size: red).
   `NoiseReductionDragTests` (same file): the draft drops noise reduction
   only once something else has moved, never on a press or while noise
   reduction itself moves, and `Library.previewRecipe` drafts mid-drag while

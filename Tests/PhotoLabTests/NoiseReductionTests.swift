@@ -148,6 +148,51 @@ final class NoiseReductionTests: XCTestCase {
         }
     }
 
+    /// A flat patch of `color` in the renderer's working space (values outside 0…1 allowed).
+    private func flatPatch(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> CIImage {
+        CIImage(color: CIColor(red: r, green: g, blue: b, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)!)
+            .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    }
+
+    func testBothKeepValuesOutsideZeroToOneForExposureToBringBack() throws {
+        // A highlight above white and a Display P3 red (negative green in sRGB):
+        // flat, so noise reduction has nothing to remove and must change
+        // nothing; exposure -1.5 after it shows whether they were clipped first.
+        for (name, patch) in [("highlight", flatPatch(2.0, 1.8, 1.6)), ("P3 red", flatPatch(1.2, -0.05, 0.02))] {
+            var base = Recipe.neutral
+            base.set(.exposure, to: -1.5)
+            let ref = try XCTUnwrap(renderer.render(patch, recipe: base)).image
+            for kind in [AdjustmentKind.luminanceNoise, .colorNoise] {
+                var r = base
+                r.set(kind, to: 100)
+                let out = try XCTUnwrap(renderer.render(patch, recipe: r)).image
+                XCTAssertLessThanOrEqual(maxDiff(out, ref), 3, "\(name) through \(kind): \(meanRGB(out)) vs \(meanRGB(ref))")
+            }
+        }
+    }
+
+    func testColorNoiseRisesEvenlyWithTheSlider() throws {
+        let src = noisy(chroma: 0.12)
+        let chroma = { (r: Double, _: Double, b: Double) in r - b }
+        let spread = try [0.0, 25, 50, 100].map { std(flat(try render(src, .colorNoise, $0), chroma)) }
+        XCTAssertGreaterThan(spread[0] - spread[1], 2, "25 already helps: \(spread)")
+        XCTAssertGreaterThan(spread[1] - spread[2], 2, "50 more than 25: \(spread)")
+        XCTAssertGreaterThan(spread[2] - spread[3], 2, "100 more than 50 (no dead zone): \(spread)")
+    }
+
+    func testColorNoiseLooksTheSameAtPreviewAndExportSize() throws {
+        // The same noisy picture at 1× and 4× (each noise speck 4 px wide at
+        // 4×): at a low setting the share of colour noise removed matches.
+        let small = noisy(chroma: 0.12)
+        let large = small.samplingNearest().transformed(by: CGAffineTransform(scaleX: 4, y: 4))
+        let chroma = { (r: Double, _: Double, b: Double) in r - b }
+        func share(_ img: CIImage) throws -> Double {
+            std(flat(try render(img, .colorNoise, 30), chroma)) / std(flat(try render(img, .colorNoise, 0), chroma))
+        }
+        let a = try share(small), b = try share(large)
+        XCTAssertEqual(a, b, accuracy: 0.15, "preview-size \(a) vs export-size \(b)")
+    }
+
     func testBothAtZeroAreTheIdentityAndTheSizeHolds() throws {
         let src = noisy(chroma: 0.1, luma: 0.05)
         let neutral = try XCTUnwrap(renderer.render(src, recipe: .neutral)).image
