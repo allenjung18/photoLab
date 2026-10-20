@@ -110,9 +110,7 @@ enum PresetError: LocalizedError, Equatable {
 struct PresetStore {
     /// `~/Library/Application Support/PhotoLab/presets/`.
     static let defaultDirectory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("PhotoLab/presets", isDirectory: true)
+        AppDirectories.applicationSupport.appendingPathComponent("PhotoLab/presets", isDirectory: true)
     }()
     static let fileExtension = "json"
     static let maxNameLength = 80

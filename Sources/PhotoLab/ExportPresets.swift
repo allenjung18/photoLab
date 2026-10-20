@@ -70,9 +70,7 @@ struct ExportPresetStore {
     /// develop presets' `presets/` (`PresetStore.defaultDirectory`), never
     /// inside it.
     static let defaultDirectory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("PhotoLab/export-presets", isDirectory: true)
+        AppDirectories.applicationSupport.appendingPathComponent("PhotoLab/export-presets", isDirectory: true)
     }()
     static let fileExtension = "json"
 

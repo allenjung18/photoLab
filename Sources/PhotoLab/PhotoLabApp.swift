@@ -15,8 +15,11 @@ struct PhotoLabApp: App {
     @State private var launched = false
 
     init() {
-        let settings = AppSettings()
-        _library = State(initialValue: Library(settings: settings, collections: .app, style: StyleStore(), trasher: LiveFileTrasher()))
+        // A live tour (`LiveTour`) runs on settings of its own and a trash
+        // inside its run directory; the stores already point there.
+        let settings = LiveTour.isActive ? LiveTour.makeSettings() : AppSettings()
+        let trasher: any FileTrasher = LiveTour.trasher ?? LiveFileTrasher()
+        _library = State(initialValue: Library(settings: settings, collections: .app, style: StyleStore(), trasher: trasher))
         _exports = State(initialValue: ExportQueue(settings: settings))
         _imports = State(initialValue: Importer(settings: settings))
         // Running from `swift run` has no bundle; make the process a real
@@ -36,6 +39,10 @@ struct PhotoLabApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                     guard !launched else { return }
                     launched = true
+                    if LiveTour.isActive {
+                        LiveTour.start(library: library, presets: presets, exports: exports)
+                        return
+                    }
                     // `PhotoLab <folder>` opens that folder; otherwise the last
                     // one, unless Settings says not to (`restoreLastSource`).
                     // Flags (`-NSDocumentRevisionsDebugMode` from Xcode,

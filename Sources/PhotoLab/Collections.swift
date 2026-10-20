@@ -92,8 +92,8 @@ struct CollectionStore: Sendable {
 
     /// The app's store, under Application Support.
     static var app: CollectionStore {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return CollectionStore(directory: base.appendingPathComponent("PhotoLab/Collections", isDirectory: true))
+        CollectionStore(directory: AppDirectories.applicationSupport
+            .appendingPathComponent("PhotoLab/Collections", isDirectory: true))
     }
 
     func url(for id: UUID) -> URL {

@@ -457,14 +457,12 @@ struct PhotosAccess: Sendable {
 
     /// `~/Library/Application Support/PhotoLab/photos-sidecars/`.
     static var defaultSidecarDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PhotoLab/photos-sidecars", isDirectory: true)
+        AppDirectories.applicationSupport.appendingPathComponent("PhotoLab/photos-sidecars", isDirectory: true)
     }
 
     /// `~/Library/Caches/PhotoLab/originals/`.
     static var defaultOriginalsDirectory: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PhotoLab/originals", isDirectory: true)
+        AppDirectories.caches.appendingPathComponent("PhotoLab/originals", isDirectory: true)
     }
 
     func source(for album: PhotosAlbum) -> PhotosSource {

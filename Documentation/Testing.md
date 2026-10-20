@@ -1031,6 +1031,46 @@ only for the cells in the viewport, as in the app; materials may render
 flatter than on screen (read `index.txt`); system alerts, file panels and
 the menu bar are not part of the catalogue.
 
+## The live tour
+
+The suite and the snapshot harness never run the app itself. The live tour
+does: `scripts/live-tour.sh` copies three RAWs into a new run directory
+(the first is the noise-reduction subject, the other two each get a JPEG
+beside them to make two RAW+JPEG pairs, and three plain JPEGs are made from
+them), then launches the real app with `PHOTOLAB_LIVE_TOUR=<dir>`. The app
+drives itself through `LiveTour.swift` and quits:
+
+    scripts/live-tour.sh <noisy.ARW> <pair-a.ARW> <pair-b.ARW>          # build/PhotoLab.app
+    scripts/live-tour.sh --debug --out <dir> <three RAWs>               # .build/debug
+    PHOTOLAB_LIVE_TOUR_STEPS=07,11 scripts/live-tour.sh --debug <three RAWs>
+
+How it drives: keys are `CGEvent`s from the key code, posted to the app's
+own pid (`postToPid`), so the window server and the keyboard layout make
+the characters as for a real key and no Accessibility grant is needed; a
+hand-built `NSEvent` matched the menus differently (⌘I reached ⇧⌘I) and is
+not used. Menu items are chosen in the real menu bar after the calls an
+opening menu gets (SwiftUI fills submenus only then). A SwiftUI pop-up has
+no items until its menu opens, so the tour opens it with `performClick`
+and picks the item from inside the menu's tracking loop. SwiftUI's banner
+buttons are not AppKit views and its in-process accessibility tree is
+nearly empty, so layout is judged from the screenshots. Grid clicks are
+`Library.click`, the call the cell's tap makes; slider values are set with
+`setRecipe` (no mouse drag).
+
+What it writes: `<dir>/report.md`, one section per step with a verdict
+(PASS / FAIL checked by the tour, LOOK for a layout an eye must judge from
+the named shot, SKIP for what needs the user: a Photos grant, an SD card),
+step 00 the menu bar's key equivalents, `<dir>/shots/` (the window and any
+sheet over it, `cacheDisplay`), `<dir>/exports/` and `app.log`. The script
+exits 1 when a step FAILs. It takes the screen for about two minutes.
+
+Isolation: `AppDirectories` (Settings.swift) gives every store's default
+directory, and under the tour it points into `<dir>/state`; the settings
+are the UserDefaults suite `local.photolab.livetour`, cleared at start and
+end; the Trash is `LiveTour.Trasher` (`<dir>/trash`). Nothing the tour
+does reaches the user's presets, collections, style, Photos sidecars,
+defaults or Trash.
+
 ## The direction tests
 
 `ToneSetTests` pins the sign of every kind: each test moves one slider on

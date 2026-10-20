@@ -1,6 +1,23 @@
 import Foundation
 import Observation
 
+/// The user's Application Support and Caches folders: every store's default
+/// directory is made from these two, so a live tour (`LiveTour`), which
+/// points them inside its own run directory, never reads or writes the
+/// user's presets, collections, style or Photos sidecars.
+enum AppDirectories {
+    static var applicationSupport: URL {
+        if let state = LiveTour.stateDirectory { return state.appendingPathComponent("Application Support", isDirectory: true) }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+    }
+
+    static var caches: URL {
+        if let state = LiveTour.stateDirectory { return state.appendingPathComponent("Caches", isDirectory: true) }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    }
+}
+
 /// How the loupe's fit frame is rendered: at every screen pixel of the
 /// canvas, or at a fraction of them (`scale`) and drawn scaled up, which
 /// renders fewer pixels per slider step. The 1:1 window is never scaled (it

@@ -162,9 +162,7 @@ enum StyleError: LocalizedError, Equatable {
 struct StyleStore {
     /// `~/Library/Application Support/PhotoLab/`.
     static let defaultDirectory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("PhotoLab", isDirectory: true)
+        AppDirectories.applicationSupport.appendingPathComponent("PhotoLab", isDirectory: true)
     }()
     static let fileName = "style.json"
 
