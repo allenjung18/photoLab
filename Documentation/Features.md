@@ -1641,9 +1641,15 @@ key is typed anywhere else; the README's Keys table is the user's list.
   - Edit, after `.pasteboard`: **Copy Settings** **⇧⌘C**
     (`Library.copySettings(from:)`), **Paste Settings…** **⇧⌘V**
     (`Library.requestPaste`), **Sync Settings…** (`Library.requestSync`,
-    from two selected), **Select All Photos** **⌘A** (`Library.selectAll`,
-    grid only); then **Search Photos** **⌘F** (see Grid, Search), enabled
-    while the source has photos.
+    from two selected), **Select All Photos** (`Library.selectAll`,
+    grid only, no key); then **Search Photos** **⌘F** (see Grid, Search), enabled
+    while the source has photos. **⌘A** is the system's **Select All**, which
+    SwiftUI supplies in `.pasteboard`: the menu bar keeps its key and drops a
+    second ⌘A from a table item (the live tour found Select All Photos
+    without one, 2026-10-19). Its `selectAll:` goes down the responder chain:
+    a focused text field selects its text; otherwise `AppDelegate`
+    (PhotoLabApp.swift), the last responder, performs Select All Photos and
+    validates the item by that command's `isEnabled`.
   - Edit, replacing `.undoRedo`: **Undo** **⌘Z** and **Redo** **⇧⌘Z**
     (`Library.undo()`, `Library.redo()`; the window's own undo manager is
     unused), then **Undo Move to Trash** (`Library.undoMoveToTrash()`,

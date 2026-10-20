@@ -227,7 +227,11 @@ struct AppCommand: Identifiable {
         AppCommand(name: .syncSettings, title: "Sync Settings…", key: nil, placement: .pasteboard,
                    isEnabled: { $0.library.selectedIDs.count >= 2 },
                    perform: { $0.library.requestSync() }),
-        AppCommand(name: .selectAll, title: "Select All Photos", key: "a", placement: .pasteboard, section: 1,
+        // No key here: ⌘A is the system's Edit › Select All, which SwiftUI
+        // supplies and which kept ⌘A (a ⌘A on this item was dropped from the
+        // menu bar). Its `selectAll:` reaches `AppDelegate` when no text
+        // field takes it, and performs this command.
+        AppCommand(name: .selectAll, title: "Select All Photos", key: nil, placement: .pasteboard, section: 1,
                    isEnabled: { c in !c.library.loupe && !c.library.photos.isEmpty },
                    perform: { $0.library.selectAll() }),
         // The grid's search field (`FilterBar`): from the loupe it goes back

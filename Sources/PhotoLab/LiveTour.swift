@@ -426,7 +426,7 @@ final class LiveTour {
     }
 
     private func searchKeys() async {
-        begin("11", "Search: ⌘F focuses the field, typed letters do not fire bare keys, ⌘A and ⌘Z typed in it act on the photos, Esc clears")
+        begin("11", "⌘A selects every photo in the grid; search: ⌘F focuses the field, typed letters fire no bare key, ⌘A there is the field's own, ⌘Z undoes the photo's edit, Esc clears")
         if library.loupe { await press("g", 5) }
         guard let target = library.visiblePhotos.first(where: { $0.fileURL?.lastPathComponent.hasPrefix("DSC") == true }) else {
             return end(.fail, "no DSC photo")
@@ -456,7 +456,7 @@ final class LiveTour {
         await settle(0.5)
         let editor = window.firstResponder as? NSTextView
         let textSelected = editor.map { $0.selectedRange().length } ?? 0
-        let allPhotos = library.selectedIDs.count == library.visiblePhotos.count && library.visiblePhotos.count > 1
+        let photosKept = library.selectedIDs.count == selectedBefore
         note("⌘A: photos selected \(selectedBefore) -> \(library.selectedIDs.count) of \(library.visiblePhotos.count) shown; field text selected \(textSelected) characters")
         shot("11b-search-cmd-a")
         library.click(target.id)
@@ -475,10 +475,10 @@ final class LiveTour {
         if typed != "dsc" { bad.append("typing did not reach the field") }
         if !marksSame { bad.append("a typed letter fired a bare key") }
         if !gridAll { bad.append("⌘A in the grid did not select every photo") }
-        if !allPhotos { bad.append("⌘A in the search field did not select the photos") }
+        if !photosKept { bad.append("⌘A in the search field changed the photo selection") }
         if !photoUndo { bad.append("⌘Z did not undo the photo's edit") }
         if !cleared { bad.append("Esc did not clear and unfocus") }
-        end(bad.isEmpty ? .pass : .fail, bad.isEmpty ? "all as the theory says" : bad.joined(separator: "; "))
+        end(bad.isEmpty ? .pass : .fail, bad.isEmpty ? "each key did what it should" : bad.joined(separator: "; "))
     }
 
     private func skipped() {

@@ -32,9 +32,11 @@ final class CommandsTests: XCTestCase {
     }
 
     /// Keys the system's own menus hold (Quit, Close, Hide, Minimize,
-    /// Settings, Cut, Copy, Paste): a table key on one of them is a collision.
+    /// Settings, Cut, Copy, Paste, Select All): a table key on one of them is
+    /// a collision. The menu bar keeps the system's key and drops the
+    /// table's (the live tour found Select All Photos without its ⌘A).
     private var systemKeys: [Combo] {
-        ["q", "w", "h", "m", ",", "x", "c", "v"].map { combo(KeyEquivalent(Character($0)), .command) }
+        ["q", "w", "h", "m", ",", "x", "c", "v", "a"].map { combo(KeyEquivalent(Character($0)), .command) }
     }
 
     // MARK: Keys
@@ -405,5 +407,25 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(AppCommand.command(.export).menuTitle(ctx), "Export 3 Photos…")
         // Save Preset needs the loupe; it raises the preset store's alert.
         XCTAssertFalse(AppCommand.command(.savePreset).isEnabled(ctx))
+    }
+
+    /// ⌘A is the system's Select All: its `selectAll:` reaches `AppDelegate`
+    /// when no text field takes it, which selects every visible photo in the
+    /// grid and turns the item off in the loupe, as Select All Photos does.
+    func testSelectAllActionReachingTheAppDelegateSelectsThePhotos() throws {
+        let (lib, ctx, ids) = try openThree()
+        let delegate = AppDelegate()
+        let item = NSMenuItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a")
+        XCTAssertFalse(delegate.validateMenuItem(item), "no window yet: nothing to select")
+        delegate.context = { ctx }
+        lib.selection = ids[0]
+        XCTAssertTrue(delegate.validateMenuItem(item))
+        delegate.selectAll(nil)
+        XCTAssertEqual(lib.selectedIDs, Set(ids))
+        lib.selection = ids[1]
+        lib.loupe = true
+        XCTAssertFalse(delegate.validateMenuItem(item), "the loupe shows one photo")
+        delegate.selectAll(nil)
+        XCTAssertEqual(lib.selectedIDs, [ids[1]], "off in the loupe")
     }
 }

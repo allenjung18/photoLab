@@ -1,8 +1,29 @@
 import SwiftUI
 import AppKit
 
+/// The last responder an action message reaches. Edit › Select All (⌘A, the
+/// system's item) sends `selectAll:` down the responder chain: a focused
+/// text field takes it and selects its text; otherwise it arrives here and
+/// selects the photos (`AppCommand.Name.selectAll`, enabled as that command is).
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+    var context: (() -> CommandContext)?
+
+    @objc func selectAll(_ sender: Any?) {
+        guard let context = context?() else { return }
+        let command = AppCommand.command(.selectAll)
+        if command.isEnabled(context) { command.perform(context) }
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item.action == #selector(selectAll(_:)) else { return true }
+        return context.map { AppCommand.command(.selectAll).isEnabled($0()) } ?? false
+    }
+}
+
 @main
 struct PhotoLabApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     /// The one `AppSettings` (UserDefaults.standard): the library, the
     /// export queue and the importer remember into it, and the Settings window edits it.
     @State private var library: Library
@@ -39,6 +60,10 @@ struct PhotoLabApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                     guard !launched else { return }
                     launched = true
+                    let (library, presets, exports, imports) = (library, presets, exports, imports)
+                    appDelegate.context = {
+                        CommandContext(library: library, presets: presets, exports: exports, imports: imports)
+                    }
                     if LiveTour.isActive {
                         LiveTour.start(library: library, presets: presets, exports: exports)
                         return
